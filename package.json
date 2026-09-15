@@ -11,8 +11,7 @@
   },
   "workspaces": ["client", "server"],
   "devDependencies": {
-    "concurrently": "^8.2.2",
-    "@types/pg": "^8.11.10"
+    "concurrently": "^8.2.2"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
@@ -24,7 +23,6 @@
     "express-rate-limit": "^7.4.0",
     "jsonwebtoken": "^9.0.2",
     "prisma": "^6.19.3",
-    "pg": "^8.13.0",
     "zod": "^3.24.0"
   }
 }

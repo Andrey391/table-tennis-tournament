@@ -4,6 +4,6 @@
   "buildCommand": "prisma generate --schema=server/prisma/schema.prisma && npm run build -w client",
   "framework": null,
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api" }
+    { "source": "/api/(.*)", "destination": "/api/index" }
   ]
 }
