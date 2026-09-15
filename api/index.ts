@@ -3,6 +3,7 @@ import cors from "cors";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { PrismaClient } from "@prisma/client";
+import { Client } from "pg";
 
 const prisma = new PrismaClient();
 
@@ -21,6 +22,47 @@ function authMiddleware(req: any, res: any, next: any) {
 
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", time: new Date().toISOString() });
+});
+
+app.get("/api/setup", async (_req, res) => {
+  const client = new Client({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+  try {
+    await client.connect();
+    const statements = [
+      `CREATE TYPE IF NOT EXISTS "Role" AS ENUM ('ADMIN', 'ORGANIZER', 'JUDGE', 'PLAYER', 'VIEWER')`,
+      `CREATE TYPE IF NOT EXISTS "TournamentType" AS ENUM ('SINGLE', 'DOUBLE', 'TEAM')`,
+      `CREATE TYPE IF NOT EXISTS "TournamentSystem" AS ENUM ('ROUND_ROBIN', 'OLYMPIC', 'DOUBLE_ELIMINATION', 'MIXED')`,
+      `CREATE TYPE IF NOT EXISTS "MatchFormat" AS ENUM ('BEST_OF_3', 'BEST_OF_5', 'BEST_OF_7')`,
+      `CREATE TYPE IF NOT EXISTS "GameState" AS ENUM ('NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED')`,
+      `CREATE TYPE IF NOT EXISTS "PlayerStatus" AS ENUM ('REGISTERED', 'WITHDRAWN', 'DISQUALIFIED')`,
+      `CREATE TYPE IF NOT EXISTS "MatchType" AS ENUM ('SINGLE', 'DOUBLE', 'TEAM')`,
+      `CREATE TABLE IF NOT EXISTS "User" ("id" TEXT NOT NULL, "email" TEXT NOT NULL, "password" TEXT NOT NULL, "firstName" TEXT NOT NULL, "lastName" TEXT NOT NULL, "role" "Role" NOT NULL DEFAULT 'PLAYER', "club" TEXT, "rating" INTEGER NOT NULL DEFAULT 1000, "dateOfBirth" TIMESTAMP(3), "phone" TEXT, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "User_pkey" PRIMARY KEY ("id"))`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "User_email_key" ON "User"("email")`,
+      `CREATE TABLE IF NOT EXISTS "Player" ("id" TEXT NOT NULL, "userId" TEXT, "firstName" TEXT NOT NULL, "lastName" TEXT NOT NULL, "club" TEXT, "rating" INTEGER NOT NULL DEFAULT 1000, "dateOfBirth" TIMESTAMP(3), "status" "PlayerStatus" NOT NULL DEFAULT 'REGISTERED', "teamId" TEXT, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "Player_pkey" PRIMARY KEY ("id"))`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "Player_userId_key" ON "Player"("userId")`,
+      `CREATE TABLE IF NOT EXISTS "Team" ("id" TEXT NOT NULL, "name" TEXT NOT NULL, "club" TEXT, "captainId" TEXT, "tournamentId" TEXT, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "Team_pkey" PRIMARY KEY ("id"))`,
+      `CREATE TABLE IF NOT EXISTS "Tournament" ("id" TEXT NOT NULL, "name" TEXT NOT NULL, "type" "TournamentType" NOT NULL, "system" "TournamentSystem" NOT NULL, "format" "MatchFormat" NOT NULL, "maxGroups" INTEGER, "playersPerGroup" INTEGER, "playersOut" INTEGER, "tablesCount" INTEGER NOT NULL DEFAULT 4, "status" TEXT NOT NULL DEFAULT 'DRAFT', "startTime" TIMESTAMP(3), "endTime" TIMESTAMP(3), "organizerId" TEXT NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "Tournament_pkey" PRIMARY KEY ("id"))`,
+      `CREATE TABLE IF NOT EXISTS "TournamentUser" ("id" TEXT NOT NULL, "tournamentId" TEXT NOT NULL, "userId" TEXT NOT NULL, "teamId" TEXT, "seed" INTEGER, "status" "PlayerStatus" NOT NULL DEFAULT 'REGISTERED', "joinedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "TournamentUser_pkey" PRIMARY KEY ("id"))`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "TournamentUser_tournamentId_userId_key" ON "TournamentUser"("tournamentId", "userId")`,
+      `CREATE TABLE IF NOT EXISTS "Group" ("id" TEXT NOT NULL, "tournamentId" TEXT NOT NULL, "name" TEXT NOT NULL, "playersInGroup" INTEGER NOT NULL, "standings" TEXT NOT NULL DEFAULT '[]', "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "Group_pkey" PRIMARY KEY ("id"))`,
+      `CREATE TABLE IF NOT EXISTS "Match" ("id" TEXT NOT NULL, "tournamentId" TEXT NOT NULL, "groupId" TEXT, "bracketId" TEXT, "round" INTEGER, "tableNumber" INTEGER, "player1Id" TEXT, "player2Id" TEXT, "team1Id" TEXT, "team2Id" TEXT, "judgeId" TEXT, "matchType" "MatchType" NOT NULL DEFAULT 'SINGLE', "format" "MatchFormat" NOT NULL, "status" "GameState" NOT NULL DEFAULT 'NOT_STARTED', "score1" INTEGER NOT NULL DEFAULT 0, "score2" INTEGER NOT NULL DEFAULT 0, "gamesWon1" INTEGER NOT NULL DEFAULT 0, "gamesWon2" INTEGER NOT NULL DEFAULT 0, "sets1" JSONB DEFAULT '[]', "sets2" JSONB DEFAULT '[]', "startedAt" TIMESTAMP(3), "endedAt" TIMESTAMP(3), "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "Match_pkey" PRIMARY KEY ("id"))`,
+      `CREATE TABLE IF NOT EXISTS "Game" ("id" TEXT NOT NULL, "matchId" TEXT NOT NULL, "player1Score" INTEGER NOT NULL, "player2Score" INTEGER NOT NULL, "letCount" INTEGER NOT NULL DEFAULT 0, "serverSide" INTEGER NOT NULL DEFAULT 1, "state" TEXT NOT NULL DEFAULT 'IN_PROGRESS', "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "Game_pkey" PRIMARY KEY ("id"))`,
+      `CREATE TABLE IF NOT EXISTS "Bracket" ("id" TEXT NOT NULL, "tournamentId" TEXT NOT NULL, "type" TEXT NOT NULL DEFAULT 'WINNERS', "round" INTEGER NOT NULL DEFAULT 1, "matchups" JSONB NOT NULL DEFAULT '[]', "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "Bracket_pkey" PRIMARY KEY ("id"))`,
+      `CREATE TABLE IF NOT EXISTS "Rating" ("id" TEXT NOT NULL, "tournamentId" TEXT NOT NULL, "playerId" TEXT NOT NULL, "userId" TEXT, "points" INTEGER NOT NULL, "won" INTEGER NOT NULL, "lost" INTEGER NOT NULL, "draws" INTEGER NOT NULL, "pointsFor" INTEGER NOT NULL, "pointsAgainst" INTEGER NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "Rating_pkey" PRIMARY KEY ("id"))`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "Rating_tournamentId_playerId_key" ON "Rating"("tournamentId", "playerId")`,
+      `CREATE TABLE IF NOT EXISTS "AuditLog" ("id" TEXT NOT NULL, "userId" TEXT NOT NULL, "action" TEXT NOT NULL, "entity" TEXT NOT NULL, "entityId" TEXT, "oldValue" JSONB, "newValue" JSONB, "ip" TEXT, "timestamp" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "AuditLog_pkey" PRIMARY KEY ("id"))`,
+      `CREATE TABLE IF NOT EXISTS "Session" ("id" TEXT NOT NULL, "userId" TEXT NOT NULL, "token" TEXT NOT NULL, "expiresAt" TIMESTAMP(3) NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "Session_pkey" PRIMARY KEY ("id"))`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "Session_token_key" ON "Session"("token")`,
+    ];
+    const results: string[] = [];
+    for (const stmt of statements) {
+      try { await client.query(stmt); results.push("ok"); } catch (e: any) { results.push(e.message); }
+    }
+    await client.end();
+    res.json({ status: "ok", results });
+  } catch (e: any) {
+    res.status(500).json({ status: "error", error: e.message });
+  }
 });
 
 app.post("/api/auth/login", async (req, res) => {

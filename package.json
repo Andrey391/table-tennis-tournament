@@ -5,23 +5,26 @@
   "scripts": {
     "dev": "concurrently \"npm run dev -w server\" \"npm run dev -w client\"",
     "build": "npm run build -w client",
-    "vercel-build": "npm run build -w client",
+    "postinstall": "prisma generate --schema=server/prisma/schema.prisma",
+    "vercel-build": "prisma generate --schema=server/prisma/schema.prisma && npm run build -w client",
     "db:push": "npx prisma db push --schema=./server/prisma/schema.prisma"
   },
   "workspaces": ["client", "server"],
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "@types/pg": "^8.11.10"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
-    "express": "^4.21.0",
-    "cors": "^2.8.5",
     "bcryptjs": "^2.4.3",
-    "jsonwebtoken": "^9.0.2",
+    "cors": "^2.8.5",
     "dotenv": "^16.4.0",
+    "express": "^4.21.0",
     "helmet": "^7.1.0",
     "express-rate-limit": "^7.4.0",
-    "zod": "^3.24.0",
-    "prisma": "^6.19.3"
+    "jsonwebtoken": "^9.0.2",
+    "prisma": "^6.19.3",
+    "pg": "^8.13.0",
+    "zod": "^3.24.0"
   }
 }
