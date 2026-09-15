@@ -12,6 +12,7 @@ import PublicTournament from "./pages/PublicTournament";
 import LiveScore from "./pages/LiveScore";
 import PlayersPage from "./pages/PlayersPage";
 import ResultsPage from "./pages/ResultsPage";
+import RatingPage from "./pages/RatingPage";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { token } = useAuth();
@@ -29,6 +30,7 @@ function App() {
           <Route path="/" element={<RequireAuth><Dashboard /></RequireAuth>} />
           <Route path="/players" element={<RequireAuth><PlayersPage /></RequireAuth>} />
           <Route path="/results" element={<RequireAuth><ResultsPage /></RequireAuth>} />
+          <Route path="/rating" element={<RequireAuth><RatingPage /></RequireAuth>} />
           <Route path="/tournament/new" element={<RequireAuth><CreateTournament /></RequireAuth>} />
           <Route path="/tournament/:id" element={<RequireAuth><TournamentPage /></RequireAuth>} />
           <Route path="/tournament/:id/match/:matchId" element={<RequireAuth><MatchPage /></RequireAuth>} />

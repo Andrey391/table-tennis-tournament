@@ -1,39 +1,56 @@
 import axios from "axios";
 
-const apiClient = axios.create({ baseURL: "/api", headers: { "Content-Type": "application/json" } });
+const api = axios.create({ baseURL: "/api", headers: { "Content-Type": "application/json" } });
 
-apiClient.interceptors.request.use((config) => {
+api.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
-export const api = {
+export const apiService = {
   auth: {
-    login: (d: { email: string; password: string }) => apiClient.post("/auth/login", d),
-    register: (d: any) => apiClient.post("/auth/register", d),
-    me: () => apiClient.get("/auth/me"),
+    login: (d: { email: string; password: string }) => api.post("/auth/login", d),
+    register: (d: any) => api.post("/auth/register", d),
+    me: () => api.get("/auth/me"),
   },
   players: {
-    getAll: () => apiClient.get("/players"),
+    getAll: () => api.get("/players"),
+    update: (id: string, d: any) => api.put(`/players/${id}`, d),
   },
   tournaments: {
-    getAll: () => apiClient.get("/tournaments"),
-    getById: (id: string) => apiClient.get(`/tournaments/${id}`),
-    create: (d: any) => apiClient.post("/tournaments", d),
-    update: (id: string, d: any) => apiClient.put(`/tournaments/${id}`, d),
-    draw: (id: string) => apiClient.post(`/tournaments/${id}/draw`),
-    standings: (id: string) => apiClient.get(`/tournaments/${id}/standings`),
-    addPlayers: (id: string, d: { userIds: string[] }) => apiClient.post(`/tournaments/${id}/players`, d),
+    getAll: () => api.get("/tournaments"),
+    getById: (id: string) => api.get(`/tournaments/${id}`),
+    create: (d: any) => api.post("/tournaments", d),
+    update: (id: string, d: any) => api.put(`/tournaments/${id}`, d),
+    addPlayers: (id: string, d: { userIds: string[] }) => api.post(`/tournaments/${id}/players`, d),
+    removePlayer: (id: string, userId: string) => api.delete(`/tournaments/${id}/players/${userId}`),
+    seed: (id: string) => api.post(`/tournaments/${id}/seed`),
+    draw: (id: string) => api.post(`/tournaments/${id}/draw`),
+    standings: (id: string) => api.get(`/tournaments/${id}/standings`),
   },
   matches: {
-    getByTournament: (id: string) => apiClient.get(`/matches/tournament/${id}`),
-    getById: (id: string) => apiClient.get(`/matches/${id}`),
-    create: (d: any) => apiClient.post("/matches", d),
-    updateScore: (id: string, d: any) => apiClient.put(`/matches/${id}/score`, d),
-    recordLet: (id: string) => apiClient.post(`/matches/${id}/let`),
-    end: (id: string) => apiClient.post(`/matches/${id}/end`),
+    getByTournament: (id: string) => api.get(`/matches/tournament/${id}`),
+    getById: (id: string) => api.get(`/matches/${id}`),
+    create: (d: any) => api.post("/matches", d),
+    startGame: (id: string) => api.post(`/matches/${id}/start`),
+    score: (id: string, d: { side: number }) => api.post(`/matches/${id}/score`, d),
+    undo: (id: string) => api.post(`/matches/${id}/undo`),
+    recordLet: (id: string) => api.post(`/matches/${id}/let`),
+    end: (id: string) => api.post(`/matches/${id}/end`),
+    assignJudge: (id: string, d: any) => api.put(`/matches/${id}/assign-judge`, d),
+    schedule: (id: string, d: any) => api.put(`/matches/${id}/schedule`, d),
+  },
+  live: {
+    get: (tournamentId: string) => api.get(`/live/${tournamentId}`),
+  },
+  public: {
+    tournament: (id: string) => api.get(`/public/tournament/${id}`),
+    standings: (id: string) => api.get(`/public/tournament/${id}/standings`),
+  },
+  rating: {
+    getAll: () => api.get("/rating"),
   },
 };
 
-export default api;
+export default apiService;

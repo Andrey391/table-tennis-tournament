@@ -10,13 +10,12 @@ const NAV = [
   { to: "/rating", label: "Rating", icon: "🏆" },
 ];
 
-export default function PlayersPage() {
+export default function RatingPage() {
   const { user, logout } = useAuth();
   const location = useLocation();
   const [players, setPlayers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => { apiService.players.getAll().then(r => setPlayers(r.data)).catch(console.error).finally(() => setLoading(false)); }, []);
+  useEffect(() => { apiService.rating.getAll().then(r => setPlayers(r.data)).catch(console.error); }, []);
 
   return (
     <div className="min-h-screen bg-gray-900">
@@ -40,24 +39,26 @@ export default function PlayersPage() {
         </div>
       </header>
       <main className="max-w-6xl mx-auto p-6">
-        <h1 className="text-2xl font-bold mb-6">Players</h1>
-        {loading ? <div className="text-center py-12 text-gray-400">Loading...</div> : players.length === 0 ? (
+        <h1 className="text-2xl font-bold mb-6">🏆 Player Ratings</h1>
+        {players.length === 0 ? (
           <div className="text-center py-16 bg-gray-800 rounded-lg border border-gray-700">
-            <p className="text-gray-400 text-lg">No players yet</p>
+            <p className="text-gray-400 text-lg">No rated players yet</p>
           </div>
         ) : (
           <div className="bg-gray-800 rounded-lg overflow-hidden border border-gray-700">
             <table className="w-full">
               <thead><tr className="bg-gray-750 border-b border-gray-700">
-                <th className="px-4 py-3 text-left text-sm text-gray-400">#</th>
-                <th className="px-4 py-3 text-left text-sm text-gray-400">Name</th>
+                <th className="px-4 py-3 text-left text-sm text-gray-400 w-12">#</th>
+                <th className="px-4 py-3 text-left text-sm text-gray-400">Player</th>
                 <th className="px-4 py-3 text-left text-sm text-gray-400">Club</th>
                 <th className="px-4 py-3 text-right text-sm text-gray-400">Rating</th>
               </tr></thead>
               <tbody>
                 {players.map((p: any, i: number) => (
                   <tr key={p.id} className="border-b border-gray-700/50 hover:bg-gray-750">
-                    <td className="px-4 py-3 text-gray-500">{i + 1}</td>
+                    <td className="px-4 py-3">
+                      {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : <span className="text-gray-500">{i + 1}</span>}
+                    </td>
                     <td className="px-4 py-3 font-medium">{p.firstName} {p.lastName}</td>
                     <td className="px-4 py-3 text-gray-400">{p.club || "—"}</td>
                     <td className="px-4 py-3 text-right font-mono font-bold text-blue-400">{p.rating}</td>
