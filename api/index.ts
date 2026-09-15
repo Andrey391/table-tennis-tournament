@@ -29,13 +29,14 @@ app.get("/api/health", (_req, res) => {
 app.get("/api/setup", async (_req, res) => {
   try {
     const db = getPrisma();
-    await db.$executeRawUnsafe(`CREATE TYPE IF NOT EXISTS "Role" AS ENUM ('ADMIN', 'ORGANIZER', 'JUDGE', 'PLAYER', 'VIEWER')`);
-    await db.$executeRawUnsafe(`CREATE TYPE IF NOT EXISTS "TournamentType" AS ENUM ('SINGLE', 'DOUBLE', 'TEAM')`);
-    await db.$executeRawUnsafe(`CREATE TYPE IF NOT EXISTS "TournamentSystem" AS ENUM ('ROUND_ROBIN', 'OLYMPIC', 'DOUBLE_ELIMINATION', 'MIXED')`);
-    await db.$executeRawUnsafe(`CREATE TYPE IF NOT EXISTS "MatchFormat" AS ENUM ('BEST_OF_3', 'BEST_OF_5', 'BEST_OF_7')`);
-    await db.$executeRawUnsafe(`CREATE TYPE IF NOT EXISTS "GameState" AS ENUM ('NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED')`);
-    await db.$executeRawUnsafe(`CREATE TYPE IF NOT EXISTS "PlayerStatus" AS ENUM ('REGISTERED', 'WITHDRAWN', 'DISQUALIFIED')`);
-    await db.$executeRawUnsafe(`CREATE TYPE IF NOT EXISTS "MatchType" AS ENUM ('SINGLE', 'DOUBLE', 'TEAM')`);
+    const doBlock = (name: string, body: string) => `DO $$ BEGIN ${body}; EXCEPTION WHEN duplicate_object THEN null; END $$`;
+    await db.$executeRawUnsafe(doBlock("Role", `CREATE TYPE "Role" AS ENUM ('ADMIN', 'ORGANIZER', 'JUDGE', 'PLAYER', 'VIEWER')`));
+    await db.$executeRawUnsafe(doBlock("TournamentType", `CREATE TYPE "TournamentType" AS ENUM ('SINGLE', 'DOUBLE', 'TEAM')`));
+    await db.$executeRawUnsafe(doBlock("TournamentSystem", `CREATE TYPE "TournamentSystem" AS ENUM ('ROUND_ROBIN', 'OLYMPIC', 'DOUBLE_ELIMINATION', 'MIXED')`));
+    await db.$executeRawUnsafe(doBlock("MatchFormat", `CREATE TYPE "MatchFormat" AS ENUM ('BEST_OF_3', 'BEST_OF_5', 'BEST_OF_7')`));
+    await db.$executeRawUnsafe(doBlock("GameState", `CREATE TYPE "GameState" AS ENUM ('NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED')`));
+    await db.$executeRawUnsafe(doBlock("PlayerStatus", `CREATE TYPE "PlayerStatus" AS ENUM ('REGISTERED', 'WITHDRAWN', 'DISQUALIFIED')`));
+    await db.$executeRawUnsafe(doBlock("MatchType", `CREATE TYPE "MatchType" AS ENUM ('SINGLE', 'DOUBLE', 'TEAM')`));
     await db.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "User" ("id" TEXT NOT NULL, "email" TEXT NOT NULL, "password" TEXT NOT NULL, "firstName" TEXT NOT NULL, "lastName" TEXT NOT NULL, "role" "Role" NOT NULL DEFAULT 'PLAYER', "club" TEXT, "rating" INTEGER NOT NULL DEFAULT 1000, "dateOfBirth" TIMESTAMP(3), "phone" TEXT, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "User_pkey" PRIMARY KEY ("id"))`);
     await db.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "User_email_key" ON "User"("email")`);
     await db.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "Player" ("id" TEXT NOT NULL, "userId" TEXT, "firstName" TEXT NOT NULL, "lastName" TEXT NOT NULL, "club" TEXT, "rating" INTEGER NOT NULL DEFAULT 1000, "dateOfBirth" TIMESTAMP(3), "status" "PlayerStatus" NOT NULL DEFAULT 'REGISTERED', "teamId" TEXT, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "Player_pkey" PRIMARY KEY ("id"))`);
