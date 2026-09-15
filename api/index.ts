@@ -95,6 +95,16 @@ app.get("/api/auth/me", authMiddleware, async (req: any, res) => {
   } catch { res.status(401).json({ error: "Invalid token" }); }
 });
 
+app.get("/api/players", authMiddleware, async (_req, res) => {
+  try {
+    const players = await getPrisma().user.findMany({
+      select: { id: true, email: true, firstName: true, lastName: true, role: true, club: true, rating: true, createdAt: true },
+      orderBy: { rating: "desc" },
+    });
+    res.json(players);
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
 app.get("/api/tournaments", async (_req, res) => {
   const tournaments = await getPrisma().tournament.findMany({
     include: { organizer: { select: { firstName: true, lastName: true } }, _count: { select: { matches: true, players: true } } },

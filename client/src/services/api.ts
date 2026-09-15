@@ -14,6 +14,9 @@ export const api = {
     register: (d: any) => apiClient.post("/auth/register", d),
     me: () => apiClient.get("/auth/me"),
   },
+  players: {
+    getAll: () => apiClient.get("/players"),
+  },
   tournaments: {
     getAll: () => apiClient.get("/tournaments"),
     getById: (id: string) => apiClient.get(`/tournaments/${id}`),
