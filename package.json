@@ -1,20 +1,27 @@
 {
   "name": "table-tennis-tournament",
   "version": "1.0.0",
+  "private": true,
   "scripts": {
     "dev": "concurrently \"npm run dev -w server\" \"npm run dev -w client\"",
     "build": "npm run build -w client",
-    "start": "npm start -w server",
     "vercel-build": "npm run build -w client",
-    "db:push": "npx prisma db push --schema=./server/prisma/schema.prisma",
-    "db:seed": "npx tsx server/prisma/seed.ts"
+    "db:push": "npx prisma db push --schema=./server/prisma/schema.prisma"
   },
+  "workspaces": ["client", "server"],
   "devDependencies": {
-    "concurrently": "^8.2.2",
-    "prisma": "^6.19.3",
-    "tsx": "^4.19.0"
+    "concurrently": "^8.2.2"
   },
   "dependencies": {
-    "@prisma/client": "^6.19.3"
+    "@prisma/client": "^6.19.3",
+    "express": "^4.21.0",
+    "cors": "^2.8.5",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "dotenv": "^16.4.0",
+    "helmet": "^7.1.0",
+    "express-rate-limit": "^7.4.0",
+    "zod": "^3.24.0",
+    "prisma": "^6.19.3"
   }
 }
