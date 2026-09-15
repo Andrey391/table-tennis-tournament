@@ -1,17 +1,9 @@
 {
-  "version": 2,
-  "outputDirectory": "public",
-  "builds": [
-    {
-      "src": "api/index.ts",
-      "use": "@vercel/node"
-    }
-  ],
-  "routes": [
-    { "src": "/api/(.*)", "dest": "/api/index.ts" },
-    { "src": "/assets/(.*)", "dest": "/public/assets/$1" },
-    { "src": "/(.*\\.html)", "dest": "/public/$1" },
-    { "src": "/favicon\\.ico", "dest": "/public/favicon.ico" },
-    { "src": "/(.*)", "dest": "/public/index.html" }
+  "outputDirectory": "client/dist",
+  "installCommand": "npm install",
+  "buildCommand": "prisma generate --schema=server/prisma/schema.prisma && npm run build -w client",
+  "framework": null,
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api" }
   ]
 }
