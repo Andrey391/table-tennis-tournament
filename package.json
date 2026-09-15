@@ -1,0 +1,19 @@
+{
+  "name": "table-tennis-tournament",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w server\" \"npm run dev -w client\"",
+    "build": "npm run build -w client && npm run build -w server",
+    "start": "npm start -w server",
+    "db:generate": "npm run generate -w server",
+    "db:push": "npm run db-push -w server",
+    "db:seed": "npm run tsx -- prisma/seed.ts -w server"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "prisma": "^6.19.3"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.3"
+  }
+}
