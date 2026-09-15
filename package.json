@@ -3,15 +3,16 @@
   "version": "1.0.0",
   "scripts": {
     "dev": "concurrently \"npm run dev -w server\" \"npm run dev -w client\"",
-    "build": "npm run build -w client && npm run build -w server",
+    "build": "npm run build -w client",
     "start": "npm start -w server",
-    "db:generate": "npm run generate -w server",
-    "db:push": "npm run db-push -w server",
-    "db:seed": "npm run tsx -- prisma/seed.ts -w server"
+    "vercel-build": "npm run build -w client",
+    "db:push": "npx prisma db push --schema=./server/prisma/schema.prisma",
+    "db:seed": "npx tsx server/prisma/seed.ts"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
-    "prisma": "^6.19.3"
+    "prisma": "^6.19.3",
+    "tsx": "^4.19.0"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3"

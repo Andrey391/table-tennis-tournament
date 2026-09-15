@@ -14,7 +14,8 @@ const app = express();
 const server = http.createServer(app);
 
 app.use(helmet({ contentSecurityPolicy: false }));
-app.use(cors({ origin: process.env.CLIENT_URL || "http://localhost:5173", credentials: true }));
+const allowedOrigins = (process.env.CLIENT_URL || "http://localhost:5173").split(",").map(s => s.trim());
+app.use(cors({ origin: (origin, cb) => { if (!origin || allowedOrigins.includes(origin) || allowedOrigins.includes("*")) cb(null, true); else cb(new Error("Not allowed")); }, credentials: true }));
 app.use(express.json());
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 200 }));
 

@@ -1,6 +1,7 @@
 import axios from "axios";
+import { API_URL } from "./socket";
 
-const apiClient = axios.create({ baseURL: "/api", headers: { "Content-Type": "application/json" } });
+const apiClient = axios.create({ baseURL: `${API_URL}/api`, headers: { "Content-Type": "application/json" } });
 
 apiClient.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
