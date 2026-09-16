@@ -5,56 +5,44 @@ import { apiService } from "../services/api";
 export default function LiveScore() {
   const { tournamentId } = useParams<{ tournamentId: string }>();
   const [matches, setMatches] = useState<any[]>([]);
-  const [tournament, setTournament] = useState<any>(null);
 
-  const fetch = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     if (!tournamentId) return;
-    try {
-      const r = await apiService.live.get(tournamentId);
-      setMatches(r.data);
-    } catch (e) { console.error(e); }
+    try { const r = await apiService.live.get(tournamentId); setMatches(r.data); } catch (e) { console.error(e); }
   }, [tournamentId]);
 
-  useEffect(() => { fetch(); }, [fetch]);
-  useEffect(() => { const i = setInterval(fetch, 2000); return () => clearInterval(i); }, [fetch]);
+  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { const i = setInterval(fetchData, 2000); return () => clearInterval(i); }, [fetchData]);
 
   return (
-    <div className="min-h-screen bg-gray-900 p-6">
-      <div className="max-w-6xl mx-auto">
-        <h1 className="text-4xl font-bold text-center mb-2">🔴 Live Scoreboard</h1>
-        <p className="text-center text-gray-400 mb-8">Tournament: {tournamentId}</p>
+    <div className="min-h-screen bg-[#0a0a0f] p-3">
+      <div className="max-w-sm mx-auto">
+        <h1 className="text-xl font-bold text-center mb-1 tracking-tight">LIVE <span className="text-[#3b82f6]">SCORE</span></h1>
+        <p className="text-center text-[#555566] text-xs mb-6">Updates every 2 seconds</p>
 
         {matches.length === 0 ? (
           <div className="text-center py-16">
-            <p className="text-gray-500 text-xl">No live matches</p>
-            <p className="text-gray-600 text-sm mt-2">This page updates automatically</p>
+            <p className="text-[#555566] text-sm">No live matches</p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-6">
-            {matches.map((m: any) => {
-              const activeGame = m.games?.find((g: any) => g.state === "IN_PROGRESS");
-              return (
-                <div key={m.id} className="bg-gray-800 p-8 rounded-lg text-center border-2 border-yellow-500">
-                  <p className="text-sm text-gray-400 mb-2">Table {m.tableNumber || "?"} · {m.group?.name || ""}</p>
-                  <div className="flex justify-around items-center">
-                    <div className="text-center flex-1">
-                      <p className="text-3xl font-bold text-blue-400">{m.player1?.firstName || "TBD"}</p>
-                      <p className="text-5xl font-bold mt-2 text-blue-400">{m.gamesWon1}</p>
-                    </div>
-                    <div className="text-center px-4">
-                      <p className="text-4xl text-gray-500">vs</p>
-                      {activeGame && (
-                        <p className="text-2xl font-bold text-yellow-400 mt-2">{activeGame.player1Score} - {activeGame.player2Score}</p>
-                      )}
-                    </div>
-                    <div className="text-center flex-1">
-                      <p className="text-3xl font-bold text-red-400">{m.player2?.firstName || "TBD"}</p>
-                      <p className="text-5xl font-bold mt-2 text-red-400">{m.gamesWon2}</p>
-                    </div>
+          <div className="space-y-3">
+            {matches.map((m: any) => (
+              <div key={m.id} className="bg-[#12121a] p-5 rounded-lg text-center border border-yellow-500/30">
+                <p className="text-[11px] text-[#555566] uppercase tracking-wider mb-3">Table {m.tableNumber || "?"}</p>
+                <div className="flex justify-around items-center">
+                  <div className="text-center flex-1">
+                    <p className="text-sm font-medium text-[#3b82f6] truncate px-1">{m.player1?.firstName || "TBD"}</p>
+                    <p className="text-5xl font-bold mt-2 text-[#3b82f6]">{m.score1}</p>
+                  </div>
+                  <p className="text-xl text-[#333] px-2">:</p>
+                  <div className="text-center flex-1">
+                    <p className="text-sm font-medium text-[#ef4444] truncate px-1">{m.player2?.firstName || "TBD"}</p>
+                    <p className="text-5xl font-bold mt-2 text-[#ef4444]">{m.score2}</p>
                   </div>
                 </div>
-              );
-            })}
+                <p className="text-[11px] text-[#555566] mt-3">Race to {m.pointsToWin}</p>
+              </div>
+            ))}
           </div>
         )}
       </div>

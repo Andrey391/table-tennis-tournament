@@ -7,7 +7,6 @@ import Dashboard from "./pages/Dashboard";
 import TournamentPage from "./pages/TournamentPage";
 import CreateTournament from "./pages/CreateTournament";
 import MatchPage from "./pages/MatchPage";
-import BracketPage from "./pages/BracketPage";
 import PublicTournament from "./pages/PublicTournament";
 import LiveScore from "./pages/LiveScore";
 import PlayersPage from "./pages/PlayersPage";
@@ -34,7 +33,6 @@ function App() {
           <Route path="/tournament/new" element={<RequireAuth><CreateTournament /></RequireAuth>} />
           <Route path="/tournament/:id" element={<RequireAuth><TournamentPage /></RequireAuth>} />
           <Route path="/tournament/:id/match/:matchId" element={<RequireAuth><MatchPage /></RequireAuth>} />
-          <Route path="/tournament/:id/bracket" element={<RequireAuth><BracketPage /></RequireAuth>} />
           <Route path="/public/tournament/:id" element={<PublicTournament />} />
           <Route path="/live/:tournamentId" element={<LiveScore />} />
         </Routes>

@@ -25,15 +25,13 @@ export function initSocket(server: HTTPServer): Server {
       socket.leave(`match:${matchId}`);
     });
 
-    socket.on("score-update", async (data: { matchId: string; score1: number; score2: number; gamesWon1: number; gamesWon2: number }) => {
+    socket.on("score-update", async (data: { matchId: string; score1: number; score2: number }) => {
       try {
         const match = await prisma.match.update({
           where: { id: data.matchId },
           data: {
             score1: data.score1,
             score2: data.score2,
-            gamesWon1: data.gamesWon1,
-            gamesWon2: data.gamesWon2,
             status: "IN_PROGRESS",
             startedAt: new Date(),
           },

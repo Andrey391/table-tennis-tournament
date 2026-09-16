@@ -13,29 +13,28 @@ export default function PublicTournament() {
     apiService.public.standings(id).then(r => setStandings(r.data)).catch(console.error);
   }, [id]);
 
-  if (!data) return <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white">Loading...</div>;
+  if (!data) return <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center text-[#666680] text-sm">Loading...</div>;
 
   return (
-    <div className="min-h-screen bg-gray-900">
-      <div className="max-w-6xl mx-auto p-6">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold mb-2">{data.tournament.name}</h1>
-          <p className="text-gray-400">{data.tournament.type} · {data.tournament.system} · {data.tournament.format}</p>
-          <p className={`text-sm mt-2 ${data.tournament.status === "IN_PROGRESS" ? "text-yellow-400" : data.tournament.status === "COMPLETED" ? "text-green-400" : "text-gray-400"}`}>
-            {data.tournament.status}
-          </p>
+    <div className="min-h-screen bg-[#0a0a0f]">
+      <div className="max-w-sm mx-auto p-3">
+        <div className="text-center mb-6">
+          <h1 className="text-xl font-bold tracking-tight">{data.tournament.name}</h1>
+          <p className={`text-xs mt-1 uppercase tracking-wider font-medium ${
+            data.tournament.status === "ACTIVE" ? "text-yellow-400" : data.tournament.status === "COMPLETED" ? "text-green-400" : "text-[#555566]"
+          }`}>{data.tournament.status === "ACTIVE" ? "In progress" : data.tournament.status}</p>
         </div>
 
         {data.live.length > 0 && (
-          <div className="mb-8">
-            <h2 className="text-xl font-semibold mb-4 text-yellow-400">🔴 Live Now</h2>
-            <div className="grid grid-cols-2 gap-4">
+          <div className="mb-6">
+            <h2 className="text-xs font-medium text-yellow-400 uppercase tracking-wider mb-3">Live Now</h2>
+            <div className="space-y-3">
               {data.live.map((m: any) => (
-                <div key={m.id} className="bg-yellow-900/20 border-2 border-yellow-500 rounded-lg p-6 text-center">
-                  <p className="text-xs text-gray-500 mb-2">Table {m.tableNumber || "?"}</p>
-                  <p className="text-lg font-medium text-blue-400">{m.player1?.firstName || "TBD"}</p>
-                  <p className="text-3xl font-bold my-2">{m.gamesWon1} - {m.gamesWon2}</p>
-                  <p className="text-lg font-medium text-red-400">{m.player2?.firstName || "TBD"}</p>
+                <div key={m.id} className="bg-[#12121a] border border-yellow-500/20 rounded-lg p-4 text-center">
+                  <p className="text-[11px] text-[#555566] uppercase tracking-wider mb-2">Table {m.tableNumber || "?"}</p>
+                  <p className="text-sm font-medium text-[#3b82f6] truncate">{m.player1?.firstName || "TBD"}</p>
+                  <p className="text-3xl font-bold my-1 font-mono">{m.score1} - {m.score2}</p>
+                  <p className="text-sm font-medium text-[#ef4444] truncate">{m.player2?.firstName || "TBD"}</p>
                 </div>
               ))}
             </div>
@@ -43,14 +42,14 @@ export default function PublicTournament() {
         )}
 
         {data.recent.length > 0 && (
-          <div className="mb-8">
-            <h2 className="text-xl font-semibold mb-4">Recent Results</h2>
+          <div className="mb-6">
+            <h2 className="text-xs font-medium text-[#666680] uppercase tracking-wider mb-3">Recent Results</h2>
             <div className="space-y-2">
               {data.recent.map((m: any) => (
-                <div key={m.id} className="bg-gray-800 p-3 rounded-lg flex justify-between items-center border border-gray-700">
-                  <span className="flex-1 text-right">{m.player1?.firstName || "TBD"}</span>
-                  <span className="px-4 font-bold">{m.gamesWon1} - {m.gamesWon2}</span>
-                  <span className="flex-1">{m.player2?.firstName || "TBD"}</span>
+                <div key={m.id} className="bg-[#12121a] p-3 rounded-lg flex justify-between items-center border border-[#1e1e2e]">
+                  <span className="flex-1 min-w-0 text-right text-sm text-[#8888a0] truncate pr-2">{m.player1?.firstName || "TBD"}</span>
+                  <span className="px-3 font-mono font-bold text-sm shrink-0">{m.score1} - {m.score2}</span>
+                  <span className="flex-1 min-w-0 text-sm text-[#8888a0] truncate pl-2">{m.player2?.firstName || "TBD"}</span>
                 </div>
               ))}
             </div>
@@ -59,37 +58,28 @@ export default function PublicTournament() {
 
         {standings.length > 0 && (
           <div>
-            <h2 className="text-xl font-semibold mb-4">Standings</h2>
-            {standings.map((g: any) => (
-              <div key={g.id} className="bg-gray-800 rounded-lg border border-gray-700 mb-4">
-                <h3 className="px-4 py-3 font-semibold border-b border-gray-700">{g.name}</h3>
-                <table className="w-full">
-                  <thead><tr className="text-xs text-gray-500">
-                    <th className="px-4 py-2 text-left">#</th>
-                    <th className="px-4 py-2 text-left">Player</th>
-                    <th className="px-4 py-2 text-center">W</th>
-                    <th className="px-4 py-2 text-center">L</th>
-                    <th className="px-4 py-2 text-center">Pts</th>
-                  </tr></thead>
-                  <tbody>
-                    {g.standings?.map((s: any, i: number) => (
-                      <tr key={s.userId} className="border-t border-gray-700/50">
-                        <td className="px-4 py-2 text-gray-500">{i + 1}</td>
-                        <td className="px-4 py-2">{s.firstName} {s.lastName}</td>
-                        <td className="px-4 py-2 text-center text-green-400">{s.wins}</td>
-                        <td className="px-4 py-2 text-center text-red-400">{s.losses}</td>
-                        <td className="px-4 py-2 text-center font-bold">{s.matchPoints}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ))}
+            <h2 className="text-xs font-medium text-[#666680] uppercase tracking-wider mb-3">Standings</h2>
+            <div className="bg-[#12121a] rounded-lg border border-[#1e1e2e] divide-y divide-[#1e1e2e]/50">
+              {standings.map((s: any, i: number) => (
+                <div key={s.userId} className="flex items-center justify-between px-3 py-2 text-sm">
+                  <span className="flex items-center gap-2 min-w-0">
+                    <span className="text-[#555566] text-xs w-4 shrink-0">{i + 1}</span>
+                    <span className="truncate">{s.firstName} {s.lastName}</span>
+                  </span>
+                  <span className="flex items-center gap-3 shrink-0 text-xs">
+                    <span className="text-green-400">{s.wins}W</span>
+                    <span className="text-red-400">{s.losses}L</span>
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
         {data.live.length === 0 && data.recent.length === 0 && (
-          <div className="text-center py-12 bg-gray-800 rounded-lg"><p className="text-gray-400">No matches yet</p></div>
+          <div className="text-center py-16 bg-[#12121a] rounded-lg border border-[#1e1e2e]">
+            <p className="text-[#666680] text-sm">No matches yet</p>
+          </div>
         )}
       </div>
     </div>
