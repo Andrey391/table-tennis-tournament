@@ -39,6 +39,7 @@ export const apiService = {
     undo: (id: string) => api.post(`/matches/${id}/undo`),
     recordLet: (id: string) => api.post(`/matches/${id}/let`),
     end: (id: string) => api.post(`/matches/${id}/end`),
+    forfeit: (id: string, d: { loserSide: 1 | 2 }) => api.post(`/matches/${id}/forfeit`, d),
   },
   live: {
     get: (tournamentId: string) => api.get(`/live/${tournamentId}`),

@@ -44,6 +44,55 @@ async function loadOwnedMatch(res: any, matchId: string, userId: string) {
   return match;
 }
 
+// A tournament with no unresolved matches left is done — but the manager can always
+// start another round later, which flips it back to ACTIVE (see /pair).
+async function maybeCompleteTournament(tournamentId: string) {
+  const unresolved = await db().match.count({ where: { tournamentId, status: { in: ["NOT_STARTED", "IN_PROGRESS"] } } });
+  if (unresolved === 0) {
+    await db().tournament.updateMany({ where: { id: tournamentId, status: "ACTIVE" }, data: { status: "COMPLETED" } });
+  }
+}
+
+interface RoundCandidate { userId: string; rating: number; wins: number; matchesPlayed: number }
+const pairKey = (a: string, b: string) => [a, b].sort().join("|");
+
+// Round 1: seeded purely by rating. Later rounds: Swiss-style, ranked by wins so
+// far (rating breaks ties), with a best-effort pass to avoid repeat pairings.
+function generateRoundPairings(candidates: RoundCandidate[], isFirstRound: boolean, playedPairs: Set<string>) {
+  const sorted = [...candidates].sort((a, b) => {
+    if (!isFirstRound && a.wins !== b.wins) return b.wins - a.wins;
+    return b.rating - a.rating;
+  });
+
+  let byeUserId: string | null = null;
+  if (sorted.length % 2 === 1) {
+    let byeIdx = 0;
+    for (let i = 1; i < sorted.length; i++) {
+      if (sorted[i].matchesPlayed < sorted[byeIdx].matchesPlayed || (sorted[i].matchesPlayed === sorted[byeIdx].matchesPlayed && sorted[i].rating < sorted[byeIdx].rating)) byeIdx = i;
+    }
+    byeUserId = sorted[byeIdx].userId;
+    sorted.splice(byeIdx, 1);
+  }
+
+  const ids = sorted.map((c) => c.userId);
+  const pairs: { player1Id: string; player2Id: string }[] = [];
+  for (let i = 0; i + 1 < ids.length; i += 2) pairs.push({ player1Id: ids[i], player2Id: ids[i + 1] });
+
+  for (let i = 0; i < pairs.length - 1; i++) {
+    if (playedPairs.has(pairKey(pairs[i].player1Id, pairs[i].player2Id))) {
+      const next = pairs[i + 1];
+      const swappedA = { player1Id: pairs[i].player1Id, player2Id: next.player2Id };
+      const swappedB = { player1Id: next.player1Id, player2Id: pairs[i].player2Id };
+      if (!playedPairs.has(pairKey(swappedA.player1Id, swappedA.player2Id)) && !playedPairs.has(pairKey(swappedB.player1Id, swappedB.player2Id))) {
+        pairs[i] = swappedA;
+        pairs[i + 1] = swappedB;
+      }
+    }
+  }
+
+  return { pairs, byeUserId };
+}
+
 function isDeuce(score1: number, score2: number, pointsToWin: number) {
   return score1 >= pointsToWin - 1 && score2 >= pointsToWin - 1;
 }
@@ -75,12 +124,13 @@ app.get("/api/setup", async (_req, res) => {
       `CREATE TABLE IF NOT EXISTS "Tournament" ("id" TEXT NOT NULL, "name" TEXT NOT NULL, "tablesCount" INTEGER NOT NULL DEFAULT 4, "status" TEXT NOT NULL DEFAULT 'DRAFT', "startTime" TIMESTAMP(3), "endTime" TIMESTAMP(3), "organizerId" TEXT NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "Tournament_pkey" PRIMARY KEY ("id"))`,
       `CREATE TABLE IF NOT EXISTS "TournamentUser" ("id" TEXT NOT NULL, "tournamentId" TEXT NOT NULL, "userId" TEXT NOT NULL, "seed" INTEGER, "status" "PlayerStatus" NOT NULL DEFAULT 'REGISTERED', "joinedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "TournamentUser_pkey" PRIMARY KEY ("id"))`,
       `CREATE UNIQUE INDEX IF NOT EXISTS "TournamentUser_tournamentId_userId_key" ON "TournamentUser"("tournamentId", "userId")`,
-      `CREATE TABLE IF NOT EXISTS "Match" ("id" TEXT NOT NULL, "tournamentId" TEXT NOT NULL, "matchIndex" INTEGER, "tableNumber" INTEGER, "player1Id" TEXT, "player2Id" TEXT, "judgeId" TEXT, "pointsToWin" INTEGER NOT NULL DEFAULT 11, "score1" INTEGER NOT NULL DEFAULT 0, "score2" INTEGER NOT NULL DEFAULT 0, "serverSide" INTEGER NOT NULL DEFAULT 1, "lastScorer" INTEGER, "prevServerSide" INTEGER, "letCount" INTEGER NOT NULL DEFAULT 0, "status" "MatchStatus" NOT NULL DEFAULT 'NOT_STARTED', "startedAt" TIMESTAMP(3), "endedAt" TIMESTAMP(3), "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "Match_pkey" PRIMARY KEY ("id"))`,
+      `CREATE TABLE IF NOT EXISTS "Match" ("id" TEXT NOT NULL, "tournamentId" TEXT NOT NULL, "round" INTEGER NOT NULL DEFAULT 1, "matchIndex" INTEGER, "tableNumber" INTEGER, "player1Id" TEXT, "player2Id" TEXT, "judgeId" TEXT, "pointsToWin" INTEGER NOT NULL DEFAULT 11, "score1" INTEGER NOT NULL DEFAULT 0, "score2" INTEGER NOT NULL DEFAULT 0, "serverSide" INTEGER NOT NULL DEFAULT 1, "lastScorer" INTEGER, "prevServerSide" INTEGER, "letCount" INTEGER NOT NULL DEFAULT 0, "status" "MatchStatus" NOT NULL DEFAULT 'NOT_STARTED', "startedAt" TIMESTAMP(3), "endedAt" TIMESTAMP(3), "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "Match_pkey" PRIMARY KEY ("id"))`,
       `CREATE TABLE IF NOT EXISTS "AuditLog" ("id" TEXT NOT NULL, "userId" TEXT NOT NULL, "action" TEXT NOT NULL, "entity" TEXT NOT NULL, "entityId" TEXT, "oldValue" JSONB, "newValue" JSONB, "ip" TEXT, "timestamp" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "AuditLog_pkey" PRIMARY KEY ("id"))`,
       `CREATE TABLE IF NOT EXISTS "Session" ("id" TEXT NOT NULL, "userId" TEXT NOT NULL, "token" TEXT NOT NULL, "expiresAt" TIMESTAMP(3) NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "Session_pkey" PRIMARY KEY ("id"))`,
       `CREATE UNIQUE INDEX IF NOT EXISTS "Session_token_key" ON "Session"("token")`,
     ];
     for (const t of tables) await d.$executeRawUnsafe(t);
+    await d.$executeRawUnsafe(`ALTER TABLE "Match" ADD COLUMN IF NOT EXISTS "round" INTEGER NOT NULL DEFAULT 1`);
     res.json({ status: "ok", message: "Schema created" });
   } catch (e: any) {
     res.json({ status: "ok", message: e.message?.includes("already exists") ? "Already exists" : "Partial" });
@@ -154,7 +204,7 @@ app.get("/api/tournaments/:id", async (req, res) => {
     include: {
       organizer: { select: { id: true, firstName: true, lastName: true } },
       players: { include: { user: { select: playerSelect } }, orderBy: { seed: "asc" } },
-      matches: { include: matchInclude, orderBy: [{ matchIndex: "asc" }] },
+      matches: { include: matchInclude, orderBy: [{ round: "asc" }, { matchIndex: "asc" }] },
     },
   });
   if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
@@ -234,34 +284,67 @@ app.delete("/api/tournaments/:id/players/:userId", authMiddleware, async (req: a
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
-// Locks the roster and pairs approved players by rating: strongest with next-strongest, and so on.
+// Generates a new round of pairs: round 1 (DRAFT -> ACTIVE) seeds by rating; every
+// later round is Swiss-style, ranked by wins so far. Nobody is eliminated between
+// rounds. Can be called again after a tournament auto-completed to keep playing.
 app.post("/api/tournaments/:id/pair", authMiddleware, async (req: any, res) => {
   try {
     const tournament = await loadOwnedTournament(res, req.params.id, req.user.userId);
     if (!tournament) return;
-    if (tournament.status !== "DRAFT") { res.status(400).json({ error: "Tournament already paired" }); return; }
-
     const d = db();
-    const players = await d.tournamentUser.findMany({
-      where: { tournamentId: tournament.id, status: "REGISTERED" },
-      include: { user: { select: { id: true, rating: true } } },
-    });
+
+    if (tournament.status === "DRAFT") {
+      const rosterCount = await d.tournamentUser.count({ where: { tournamentId: tournament.id, status: "REGISTERED" } });
+      if (rosterCount < 2) { res.status(400).json({ error: "Need at least 2 approved players" }); return; }
+    } else {
+      const unresolved = await d.match.count({ where: { tournamentId: tournament.id, status: { in: ["NOT_STARTED", "IN_PROGRESS"] } } });
+      if (unresolved > 0) { res.status(400).json({ error: "Finish every match in the current round before starting a new one" }); return; }
+    }
+
+    const [players, allMatches] = await Promise.all([
+      d.tournamentUser.findMany({ where: { tournamentId: tournament.id, status: "REGISTERED" }, include: { user: { select: { id: true, rating: true } } } }),
+      d.match.findMany({ where: { tournamentId: tournament.id }, select: { round: true, player1Id: true, player2Id: true, score1: true, score2: true } }),
+    ]);
     if (players.length < 2) { res.status(400).json({ error: "Need at least 2 approved players" }); return; }
 
-    const sorted = [...players].sort((a: any, b: any) => (b.user?.rating || 0) - (a.user?.rating || 0));
-    await d.$transaction(sorted.map((p: any, idx: number) => d.tournamentUser.update({ where: { id: p.id }, data: { seed: idx + 1 } })));
+    const isFirstRound = allMatches.length === 0;
+    const currentRound = allMatches.reduce((max: number, m: any) => Math.max(max, m.round), 0);
+    const newRound = currentRound + 1;
 
-    const pairs: { player1Id: string; player2Id: string }[] = [];
-    for (let i = 0; i + 1 < sorted.length; i += 2) pairs.push({ player1Id: sorted[i].userId, player2Id: sorted[i + 1].userId });
-    const bye = sorted.length % 2 === 1 ? sorted[sorted.length - 1] : null;
+    const matchesPerPlayer = new Map<string, number>();
+    const winsPerPlayer = new Map<string, number>();
+    const playedPairs = new Set<string>();
+    for (const m of allMatches) {
+      if (!m.player1Id || !m.player2Id) continue;
+      matchesPerPlayer.set(m.player1Id, (matchesPerPlayer.get(m.player1Id) || 0) + 1);
+      matchesPerPlayer.set(m.player2Id, (matchesPerPlayer.get(m.player2Id) || 0) + 1);
+      playedPairs.add(pairKey(m.player1Id, m.player2Id));
+      if (m.score1 > m.score2) winsPerPlayer.set(m.player1Id, (winsPerPlayer.get(m.player1Id) || 0) + 1);
+      else if (m.score2 > m.score1) winsPerPlayer.set(m.player2Id, (winsPerPlayer.get(m.player2Id) || 0) + 1);
+    }
+
+    const candidates: RoundCandidate[] = players.map((p: any) => ({
+      userId: p.userId,
+      rating: p.user?.rating || 0,
+      wins: winsPerPlayer.get(p.userId) || 0,
+      matchesPlayed: matchesPerPlayer.get(p.userId) || 0,
+    }));
+
+    if (isFirstRound) {
+      const sorted = [...candidates].sort((a, b) => b.rating - a.rating);
+      await d.$transaction(sorted.map((c, idx) => d.tournamentUser.update({ where: { tournamentId_userId: { tournamentId: tournament.id, userId: c.userId } }, data: { seed: idx + 1 } })));
+    }
+
+    const { pairs, byeUserId } = generateRoundPairings(candidates, isFirstRound, playedPairs);
+    if (pairs.length === 0) { res.status(400).json({ error: "Need at least 2 approved players" }); return; }
+
     const tablesCount = tournament.tablesCount || 1;
-
     await d.$transaction([
-      ...pairs.map((p, idx) => d.match.create({ data: { tournamentId: tournament.id, player1Id: p.player1Id, player2Id: p.player2Id, matchIndex: idx, tableNumber: (idx % tablesCount) + 1 } })),
+      ...pairs.map((p, idx) => d.match.create({ data: { tournamentId: tournament.id, round: newRound, player1Id: p.player1Id, player2Id: p.player2Id, matchIndex: idx, tableNumber: (idx % tablesCount) + 1 } })),
       d.tournament.update({ where: { id: tournament.id }, data: { status: "ACTIVE" } }),
     ]);
 
-    res.json({ message: "Paired", matches: pairs.length, bye: bye?.userId || null });
+    res.json({ message: "Paired", round: newRound, matches: pairs.length, bye: byeUserId });
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
@@ -299,7 +382,7 @@ app.get("/api/tournaments/:id/standings", async (req, res) => {
 // ─── MATCHES ────────────────────────────────────────────────────────────────────
 
 app.get("/api/matches/tournament/:tournamentId", async (req, res) => {
-  const matches = await db().match.findMany({ where: { tournamentId: req.params.tournamentId }, include: matchInclude, orderBy: [{ matchIndex: "asc" }] });
+  const matches = await db().match.findMany({ where: { tournamentId: req.params.tournamentId }, include: matchInclude, orderBy: [{ round: "asc" }, { matchIndex: "asc" }] });
   res.json(matches);
 });
 
@@ -347,6 +430,7 @@ app.post("/api/matches/:id/score", authMiddleware, async (req: any, res) => {
       data: { score1, score2, serverSide: server, lastScorer: side, prevServerSide: match.serverSide, status: winner ? "COMPLETED" : "IN_PROGRESS", endedAt: winner ? new Date() : undefined },
       include: matchInclude,
     });
+    if (winner) await maybeCompleteTournament(match.tournamentId);
     res.json({ match: updated, deuce, winner });
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
@@ -381,6 +465,29 @@ app.post("/api/matches/:id/end", authMiddleware, async (req: any, res) => {
     const match = await loadOwnedMatch(res, req.params.id, req.user.userId);
     if (!match) return;
     const updated = await db().match.update({ where: { id: match.id }, data: { status: "COMPLETED", endedAt: new Date() }, include: matchInclude });
+    await maybeCompleteTournament(match.tournamentId);
+    res.json(updated);
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+// Marks a no-show: the other side wins by walkover. Works from any state up to
+// COMPLETED, so a match that never even started doesn't block the round forever.
+app.post("/api/matches/:id/forfeit", authMiddleware, async (req: any, res) => {
+  try {
+    const match = await loadOwnedMatch(res, req.params.id, req.user.userId);
+    if (!match) return;
+    if (match.status === "COMPLETED") { res.status(400).json({ error: "Match is already completed" }); return; }
+
+    const { loserSide } = req.body;
+    const score1 = loserSide === 1 ? 0 : match.pointsToWin;
+    const score2 = loserSide === 2 ? 0 : match.pointsToWin;
+
+    const updated = await db().match.update({
+      where: { id: match.id },
+      data: { score1, score2, status: "COMPLETED", startedAt: match.startedAt || new Date(), endedAt: new Date() },
+      include: matchInclude,
+    });
+    await maybeCompleteTournament(match.tournamentId);
     res.json(updated);
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
@@ -400,7 +507,7 @@ app.get("/api/public/tournament/:id", async (req, res) => {
     select: { id: true, name: true, status: true, tablesCount: true, startTime: true },
   });
   if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
-  const matches = await db().match.findMany({ where: { tournamentId: req.params.id }, include: matchInclude, orderBy: [{ matchIndex: "asc" }] });
+  const matches = await db().match.findMany({ where: { tournamentId: req.params.id }, include: matchInclude, orderBy: [{ round: "asc" }, { matchIndex: "asc" }] });
   const live = matches.filter((m: any) => m.status === "IN_PROGRESS");
   const recent = matches.filter((m: any) => m.status === "COMPLETED").slice(-10).reverse();
   res.json({ tournament, live, recent, totalMatches: matches.length });

@@ -28,6 +28,10 @@ export const ScorePointSchema = z.object({
   side: z.union([z.literal(1), z.literal(2)]),
 });
 
+export const ForfeitSchema = z.object({
+  loserSide: z.union([z.literal(1), z.literal(2)]),
+});
+
 export const LoginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),

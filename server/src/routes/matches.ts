@@ -1,7 +1,7 @@
 import { Router, Response } from "express";
 import { prisma } from "../config/db.js";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth.js";
-import { MatchSettingsSchema, ScorePointSchema } from "../shared/schemas.js";
+import { MatchSettingsSchema, ScorePointSchema, ForfeitSchema } from "../shared/schemas.js";
 import { isDeuce, getMatchWinner, nextServerSide } from "../shared/scoring.js";
 import AuditLog from "../models/AuditLog.js";
 
@@ -24,11 +24,20 @@ async function loadOwnedMatch(res: Response, matchId: string, userId: string) {
   return match;
 }
 
+// A tournament with no unresolved matches left is done — but the manager can always
+// start another round later, which flips it back to ACTIVE (see tournaments.ts /pair).
+async function maybeCompleteTournament(tournamentId: string) {
+  const unresolved = await prisma.match.count({ where: { tournamentId, status: { in: ["NOT_STARTED", "IN_PROGRESS"] } } });
+  if (unresolved === 0) {
+    await prisma.tournament.updateMany({ where: { id: tournamentId, status: "ACTIVE" }, data: { status: "COMPLETED" } });
+  }
+}
+
 matchRouter.get("/tournament/:tournamentId", async (req, res: Response) => {
   const matches = await prisma.match.findMany({
     where: { tournamentId: req.params.tournamentId },
     include: matchInclude,
-    orderBy: [{ matchIndex: "asc" }],
+    orderBy: [{ round: "asc" }, { matchIndex: "asc" }],
   });
   res.json(matches);
 });
@@ -101,6 +110,7 @@ matchRouter.post("/:id/score", authMiddleware, async (req: AuthenticatedRequest,
 
     if (winner) {
       await AuditLog.create({ userId: req.user!.userId, action: "MATCH_COMPLETE", entity: "Match", entityId: match.id, newValue: { score1, score2 } });
+      await maybeCompleteTournament(match.tournamentId);
     }
 
     res.json({ match: updated, deuce, winner });
@@ -146,6 +156,32 @@ matchRouter.post("/:id/end", authMiddleware, async (req: AuthenticatedRequest, r
     if (!match) return;
     const updated = await prisma.match.update({ where: { id: match.id }, data: { status: "COMPLETED", endedAt: new Date() }, include: matchInclude });
     await AuditLog.create({ userId: req.user!.userId, action: "MATCH_END", entity: "Match", entityId: match.id });
+    await maybeCompleteTournament(match.tournamentId);
+    res.json(updated);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Marks a no-show: the other side wins by walkover. Works from any state up to
+// COMPLETED, so a match that never even started doesn't block the round forever.
+matchRouter.post("/:id/forfeit", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const match = await loadOwnedMatch(res, req.params.id, req.user!.userId);
+    if (!match) return;
+    if (match.status === "COMPLETED") { res.status(400).json({ error: "Match is already completed" }); return; }
+
+    const { loserSide } = ForfeitSchema.parse(req.body);
+    const score1 = loserSide === 1 ? 0 : match.pointsToWin;
+    const score2 = loserSide === 2 ? 0 : match.pointsToWin;
+
+    const updated = await prisma.match.update({
+      where: { id: match.id },
+      data: { score1, score2, status: "COMPLETED", startedAt: match.startedAt || new Date(), endedAt: new Date() },
+      include: matchInclude,
+    });
+    await AuditLog.create({ userId: req.user!.userId, action: "MATCH_FORFEIT", entity: "Match", entityId: match.id, newValue: { loserSide } });
+    await maybeCompleteTournament(match.tournamentId);
     res.json(updated);
   } catch (err: any) {
     res.status(400).json({ error: err.message });

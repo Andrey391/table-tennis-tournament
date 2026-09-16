@@ -90,6 +90,7 @@ model Match {
   id           String      @id @default(uuid())
   tournamentId String
   tournament   Tournament  @relation(fields: [tournamentId], references: [id])
+  round        Int         @default(1)
   matchIndex   Int?
   tableNumber  Int?
   player1Id    String?
@@ -112,6 +113,7 @@ model Match {
   updatedAt    DateTime    @updatedAt
 
   @@index([tournamentId])
+  @@index([tournamentId, round])
   @@index([status])
 }
 

@@ -16,6 +16,11 @@
 -- Run by hand against the target database, e.g.:
 --   psql "$DATABASE_URL" -f server/prisma/migration.sql
 -- or paste into the Supabase SQL editor.
+--
+-- Safe to re-run: Tournament/TournamentUser/Match are dropped and
+-- recreated every time, so if you already applied an earlier version of
+-- this file, re-running the latest version picks up new columns (e.g.
+-- Match.round) at the cost of wiping tournament/roster/match data again.
 
 BEGIN;
 
@@ -105,6 +110,7 @@ ALTER TABLE "TournamentUser" ADD CONSTRAINT "TournamentUser_userId_fkey" FOREIGN
 CREATE TABLE "Match" (
     "id" TEXT NOT NULL,
     "tournamentId" TEXT NOT NULL,
+    "round" INTEGER NOT NULL DEFAULT 1,
     "matchIndex" INTEGER,
     "tableNumber" INTEGER,
     "player1Id" TEXT,
@@ -127,6 +133,7 @@ CREATE TABLE "Match" (
 );
 
 CREATE INDEX "Match_tournamentId_idx" ON "Match"("tournamentId");
+CREATE INDEX "Match_tournamentId_round_idx" ON "Match"("tournamentId", "round");
 CREATE INDEX "Match_status_idx" ON "Match"("status");
 
 ALTER TABLE "Match" ADD CONSTRAINT "Match_tournamentId_fkey" FOREIGN KEY ("tournamentId") REFERENCES "Tournament"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
