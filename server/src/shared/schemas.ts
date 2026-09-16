@@ -1,33 +1,65 @@
 import { z } from "zod";
 
+// Booking start times are "HH:MM" — the overlap check parses them as minutes.
+const TimeOfDay = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Expected HH:MM");
+
 export const CreateTournamentSchema = z.object({
   name: z.string().min(1).max(200),
+  description: z.string().max(2000).optional(),
   tablesCount: z.number().int().min(1).max(50).default(4),
+  maxPlayers: z.number().int().min(2).max(500).optional(),
+  clubId: z.string().optional(),
   startTime: z.string().datetime().optional(),
+  endTime: z.string().datetime().optional(),
   minRating: z.number().int().min(0).max(5000).optional(),
   maxRating: z.number().int().min(0).max(5000).optional(),
 });
 
 export const UpdateTournamentSchema = z.object({
   name: z.string().min(1).max(200).optional(),
+  description: z.string().max(2000).nullable().optional(),
   tablesCount: z.number().int().min(1).max(50).optional(),
-  status: z.enum(["DRAFT", "ACTIVE", "COMPLETED"]).optional(),
-  startTime: z.string().datetime().optional(),
-  endTime: z.string().datetime().optional(),
+  maxPlayers: z.number().int().min(2).max(500).nullable().optional(),
+  clubId: z.string().nullable().optional(),
+  status: z.enum(["DRAFT", "ACTIVE", "COMPLETED", "CANCELLED"]).optional(),
+  startTime: z.string().datetime().nullable().optional(),
+  endTime: z.string().datetime().nullable().optional(),
   minRating: z.number().int().min(0).max(5000).nullable().optional(),
   maxRating: z.number().int().min(0).max(5000).nullable().optional(),
 });
 
+export const CreateClubSchema = z.object({
+  name: z.string().min(1).max(200),
+  city: z.string().min(1).max(120),
+  address: z.string().max(300).optional(),
+  phone: z.string().max(40).optional(),
+});
+
+export const UpdateClubSchema = CreateClubSchema.partial();
+
+export const CreateClubTableSchema = z.object({
+  number: z.number().int().min(1).max(200),
+  indoor: z.boolean().default(true),
+});
+
 export const CreateBookingSchema = z.object({
-  club: z.string().min(1).max(200),
+  clubId: z.string().min(1),
+  tableId: z.string().optional(),
   date: z.string().datetime(),
-  startTime: z.string().min(1).max(20),
+  startTime: TimeOfDay,
   durationHours: z.number().min(0.5).max(8).default(1),
-  tableNumber: z.number().int().min(1).optional(),
 });
 
 export const SubscribeSchema = z.object({
-  club: z.string().min(1).max(200),
+  clubId: z.string().min(1),
+});
+
+export const UpdateProfileSchema = z.object({
+  firstName: z.string().min(1).max(100).optional(),
+  lastName: z.string().min(1).max(100).optional(),
+  club: z.string().max(100).nullable().optional(),
+  city: z.string().max(120).nullable().optional(),
+  phone: z.string().max(40).nullable().optional(),
 });
 
 export const ChatMessageSchema = z.object({
@@ -63,6 +95,7 @@ export const RegisterSchema = z.object({
   firstName: z.string().min(1).max(100),
   lastName: z.string().min(1).max(100),
   club: z.string().max(100).optional(),
+  city: z.string().max(120).optional(),
   rating: z.number().int().min(0).max(5000).optional(),
   role: z.enum(["ADMIN", "ORGANIZER", "JUDGE", "PLAYER", "VIEWER"]).optional(),
 });

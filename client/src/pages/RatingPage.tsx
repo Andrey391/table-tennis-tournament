@@ -2,18 +2,20 @@ import { useEffect, useState } from "react";
 import { apiService } from "../services/api";
 import Layout from "../components/Layout";
 import Avatar from "../components/Avatar";
+import { useT } from "../i18n";
 
 export default function RatingPage() {
+  const { t } = useT();
   const [players, setPlayers] = useState<any[]>([]);
 
   useEffect(() => { apiService.rating.getAll().then(r => setPlayers(r.data)).catch(console.error); }, []);
 
   return (
     <Layout>
-      <h1 className="text-2xl font-bold tracking-tight mb-3">Rating</h1>
+      <h1 className="text-2xl font-bold tracking-tight mb-3">{t("rating.title")}</h1>
       {players.length === 0 ? (
         <div className="text-center py-16 bg-[#101f36] rounded-lg border border-[#1c3350]">
-          <p className="text-[#6b84a0] text-sm">No rated players yet</p>
+          <p className="text-[#6b84a0] text-sm">{t("rating.empty")}</p>
         </div>
       ) : (
         <div className="bg-[#101f36] rounded-lg border border-[#1c3350] divide-y divide-[#1c3350]/50">
@@ -28,7 +30,7 @@ export default function RatingPage() {
                 <Avatar firstName={p.firstName} lastName={p.lastName} rating={p.rating} size="sm" />
                 <div className="min-w-0">
                   <p className="text-sm font-medium truncate">{p.firstName} {p.lastName}</p>
-                  <p className="text-xs text-[#6b84a0] truncate">{p.club || "No club"}</p>
+                  <p className="text-xs text-[#6b84a0] truncate">{p.club || t("rating.noClub")}</p>
                 </div>
               </div>
             </div>

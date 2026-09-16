@@ -3,9 +3,11 @@ import { useAuth } from "../context/AuthContext";
 import { apiService } from "../services/api";
 import Avatar from "../components/Avatar";
 import Layout from "../components/Layout";
+import { useT, type Lang } from "../i18n";
 
 export default function ProfilePage() {
   const { user } = useAuth();
+  const { t, lang, setLang } = useT();
   const [stats, setStats] = useState<{ tournaments: number; matches: number; wins: number; losses: number } | null>(null);
 
   useEffect(() => { apiService.profile.stats().then(r => setStats(r.data)).catch(console.error); }, []);
@@ -26,22 +28,22 @@ export default function ProfilePage() {
       <div className="grid grid-cols-3 gap-2 mb-6">
         <div className="bg-[#101f36] rounded-lg border border-[#1c3350] p-3 text-center">
           <p className="text-xl font-bold">{stats?.tournaments ?? "—"}</p>
-          <p className="text-[11px] text-[#6b84a0] uppercase tracking-wider mt-0.5">Tournaments</p>
+          <p className="text-[11px] text-[#6b84a0] uppercase tracking-wider mt-0.5">{t("profile.tournaments")}</p>
         </div>
         <div className="bg-[#101f36] rounded-lg border border-[#1c3350] p-3 text-center">
           <p className="text-xl font-bold">{stats?.matches ?? "—"}</p>
-          <p className="text-[11px] text-[#6b84a0] uppercase tracking-wider mt-0.5">Matches</p>
+          <p className="text-[11px] text-[#6b84a0] uppercase tracking-wider mt-0.5">{t("profile.matches")}</p>
         </div>
         <div className="bg-[#101f36] rounded-lg border border-[#1c3350] p-3 text-center">
           <p className="text-xl font-bold text-[#ccff00]">{user?.rating}</p>
-          <p className="text-[11px] text-[#6b84a0] uppercase tracking-wider mt-0.5">Rating</p>
+          <p className="text-[11px] text-[#6b84a0] uppercase tracking-wider mt-0.5">{t("profile.rating")}</p>
         </div>
       </div>
 
       <div className="bg-[#101f36] rounded-lg border border-[#1c3350] p-4">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-xs font-medium text-[#6b84a0] uppercase tracking-wider">Match stats</h2>
-          <span className="text-xs text-[#4d6480]">{stats?.matches ?? 0} played</span>
+          <h2 className="text-xs font-medium text-[#6b84a0] uppercase tracking-wider">{t("profile.matchStats")}</h2>
+          <span className="text-xs text-[#4d6480]">{stats?.matches ?? 0} {t("profile.played")}</span>
         </div>
         <div className="flex items-center gap-4">
           <div className="relative w-16 h-16 shrink-0">
@@ -55,12 +57,27 @@ export default function ProfilePage() {
           <div className="flex gap-6">
             <div>
               <p className="text-lg font-bold text-green-400">{stats?.wins ?? 0}</p>
-              <p className="text-[11px] text-[#6b84a0] uppercase tracking-wider">Wins</p>
+              <p className="text-[11px] text-[#6b84a0] uppercase tracking-wider">{t("profile.wins")}</p>
             </div>
             <div>
               <p className="text-lg font-bold text-red-400">{stats?.losses ?? 0}</p>
-              <p className="text-[11px] text-[#6b84a0] uppercase tracking-wider">Losses</p>
+              <p className="text-[11px] text-[#6b84a0] uppercase tracking-wider">{t("profile.losses")}</p>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-[#101f36] rounded-lg border border-[#1c3350] p-4 mt-4">
+        <h2 className="text-xs font-medium text-[#6b84a0] uppercase tracking-wider mb-3">{t("profile.settings")}</h2>
+        <div className="flex items-center justify-between">
+          <span className="text-sm">{t("common.language")}</span>
+          <div className="flex gap-1.5">
+            {(["ru", "en"] as Lang[]).map(l => (
+              <button key={l} onClick={() => setLang(l)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase border ${
+                  lang === l ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00]" : "bg-[#0a1628] text-[#93a8c2] border-[#1c3350]"
+                }`}>{l}</button>
+            ))}
           </div>
         </div>
       </div>

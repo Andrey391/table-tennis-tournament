@@ -198,4 +198,121 @@ DO $$ BEGIN
   ALTER TABLE "ChatMessage" ADD CONSTRAINT "ChatMessage_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 EXCEPTION WHEN duplicate_object THEN null; END $$;
 
+-- ---------------------------------------------------------------------------
+-- Clubs, cities and event scheduling.
+--
+-- Additive and idempotent: no drops of Tournament/TournamentUser/Match here,
+-- so applying this section on top of an already-migrated database keeps all
+-- tournament data. It does move Booking.club / Subscription.club (free text)
+-- and Booking.tableNumber onto real Club / ClubTable rows, backfilling a club
+-- per distinct name found in those columns, then drops the old text columns.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS "Club" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "city" TEXT NOT NULL,
+    "address" TEXT,
+    "phone" TEXT,
+    "createdById" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "Club_pkey" PRIMARY KEY ("id")
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "Club_name_city_key" ON "Club"("name", "city");
+CREATE INDEX IF NOT EXISTS "Club_city_idx" ON "Club"("city");
+ALTER TABLE "Club" ADD COLUMN IF NOT EXISTS "createdById" TEXT;
+DO $$ BEGIN
+  ALTER TABLE "Club" ADD CONSTRAINT "Club_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+CREATE TABLE IF NOT EXISTS "ClubTable" (
+    "id" TEXT NOT NULL,
+    "clubId" TEXT NOT NULL,
+    "number" INTEGER NOT NULL,
+    "indoor" BOOLEAN NOT NULL DEFAULT true,
+
+    CONSTRAINT "ClubTable_pkey" PRIMARY KEY ("id")
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "ClubTable_clubId_number_key" ON "ClubTable"("clubId", "number");
+CREATE INDEX IF NOT EXISTS "ClubTable_clubId_idx" ON "ClubTable"("clubId");
+DO $$ BEGIN
+  ALTER TABLE "ClubTable" ADD CONSTRAINT "ClubTable_clubId_fkey" FOREIGN KEY ("clubId") REFERENCES "Club"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+-- Players get a home city, used by the "near you" event feed.
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "city" TEXT;
+CREATE INDEX IF NOT EXISTS "User_city_idx" ON "User"("city");
+
+-- Tournaments become schedulable events with a venue and a capacity.
+ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "description" TEXT;
+ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "maxPlayers" INTEGER;
+ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "clubId" TEXT;
+CREATE INDEX IF NOT EXISTS "Tournament_clubId_idx" ON "Tournament"("clubId");
+DO $$ BEGIN
+  ALTER TABLE "Tournament" ADD CONSTRAINT "Tournament_clubId_fkey" FOREIGN KEY ("clubId") REFERENCES "Club"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+-- Bookings and subscriptions point at a Club row instead of a free-text name.
+ALTER TABLE "Booking" ADD COLUMN IF NOT EXISTS "clubId" TEXT;
+ALTER TABLE "Booking" ADD COLUMN IF NOT EXISTS "tableId" TEXT;
+ALTER TABLE "Subscription" ADD COLUMN IF NOT EXISTS "clubId" TEXT;
+
+-- Backfill: one Club per distinct name that existing rows referred to. The city
+-- is unknown at this point, so it gets a placeholder an admin can correct later.
+INSERT INTO "Club" ("id", "name", "city", "updatedAt")
+SELECT gen_random_uuid()::text, src."name", 'Не указан', CURRENT_TIMESTAMP
+FROM (
+  SELECT DISTINCT "club" AS "name" FROM "Booking" WHERE "club" IS NOT NULL AND "club" <> ''
+  UNION
+  SELECT DISTINCT "club" AS "name" FROM "Subscription" WHERE "club" IS NOT NULL AND "club" <> ''
+) src
+ON CONFLICT ("name", "city") DO NOTHING;
+
+UPDATE "Booking" b SET "clubId" = c."id"
+FROM "Club" c WHERE b."clubId" IS NULL AND c."name" = b."club";
+
+UPDATE "Subscription" s SET "clubId" = c."id"
+FROM "Club" c WHERE s."clubId" IS NULL AND c."name" = s."club";
+
+-- Each table number a booking mentioned becomes a real table at that club.
+INSERT INTO "ClubTable" ("id", "clubId", "number")
+SELECT gen_random_uuid()::text, b."clubId", b."tableNumber"
+FROM (SELECT DISTINCT "clubId", "tableNumber" FROM "Booking" WHERE "clubId" IS NOT NULL AND "tableNumber" IS NOT NULL) b
+ON CONFLICT ("clubId", "number") DO NOTHING;
+
+UPDATE "Booking" b SET "tableId" = t."id"
+FROM "ClubTable" t
+WHERE b."tableId" IS NULL AND t."clubId" = b."clubId" AND t."number" = b."tableNumber";
+
+-- Rows whose club name was blank can't be mapped to a venue; drop them rather
+-- than leave a NOT NULL violation behind.
+DELETE FROM "Booking" WHERE "clubId" IS NULL;
+DELETE FROM "Subscription" WHERE "clubId" IS NULL;
+
+ALTER TABLE "Booking" ALTER COLUMN "clubId" SET NOT NULL;
+ALTER TABLE "Subscription" ALTER COLUMN "clubId" SET NOT NULL;
+
+ALTER TABLE "Booking" DROP COLUMN IF EXISTS "club";
+ALTER TABLE "Booking" DROP COLUMN IF EXISTS "tableNumber";
+ALTER TABLE "Subscription" DROP COLUMN IF EXISTS "club";
+
+DROP INDEX IF EXISTS "Booking_club_date_idx";
+DROP INDEX IF EXISTS "Subscription_userId_club_key";
+CREATE INDEX IF NOT EXISTS "Booking_clubId_date_idx" ON "Booking"("clubId", "date");
+CREATE INDEX IF NOT EXISTS "Booking_tableId_date_idx" ON "Booking"("tableId", "date");
+CREATE UNIQUE INDEX IF NOT EXISTS "Subscription_userId_clubId_key" ON "Subscription"("userId", "clubId");
+
+DO $$ BEGIN
+  ALTER TABLE "Booking" ADD CONSTRAINT "Booking_clubId_fkey" FOREIGN KEY ("clubId") REFERENCES "Club"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN
+  ALTER TABLE "Booking" ADD CONSTRAINT "Booking_tableId_fkey" FOREIGN KEY ("tableId") REFERENCES "ClubTable"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+DO $$ BEGIN
+  ALTER TABLE "Subscription" ADD CONSTRAINT "Subscription_clubId_fkey" FOREIGN KEY ("clubId") REFERENCES "Club"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+
 COMMIT;

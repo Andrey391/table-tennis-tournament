@@ -19,7 +19,8 @@ export const apiService = {
     update: (id: string, d: any) => api.put(`/players/${id}`, d),
   },
   tournaments: {
-    getAll: () => api.get("/tournaments"),
+    getAll: (params?: { city?: string; clubId?: string; status?: string; from?: string; to?: string; q?: string }) => api.get("/tournaments", { params }),
+    getMine: () => api.get("/tournaments/mine"),
     getById: (id: string) => api.get(`/tournaments/${id}`),
     create: (d: any) => api.post("/tournaments", d),
     update: (id: string, d: any) => api.put(`/tournaments/${id}`, d),
@@ -53,15 +54,25 @@ export const apiService = {
   rating: {
     getAll: () => api.get("/rating"),
   },
+  clubs: {
+    getAll: (params?: { city?: string; q?: string }) => api.get("/clubs", { params }),
+    cities: () => api.get("/clubs/cities"),
+    getById: (id: string) => api.get(`/clubs/${id}`),
+    availability: (id: string, date: string) => api.get(`/clubs/${id}/availability`, { params: { date } }),
+    create: (d: { name: string; city: string; address?: string; phone?: string }) => api.post("/clubs", d),
+    update: (id: string, d: any) => api.put(`/clubs/${id}`, d),
+    addTable: (id: string, d: { number: number; indoor?: boolean }) => api.post(`/clubs/${id}/tables`, d),
+    removeTable: (id: string, tableId: string) => api.delete(`/clubs/${id}/tables/${tableId}`),
+  },
   bookings: {
     getMine: () => api.get("/bookings/mine"),
-    create: (d: { club: string; date: string; startTime: string; durationHours: number; tableNumber?: number }) => api.post("/bookings", d),
+    create: (d: { clubId: string; tableId?: string; date: string; startTime: string; durationHours: number }) => api.post("/bookings", d),
     remove: (id: string) => api.delete(`/bookings/${id}`),
   },
   subscriptions: {
     getMine: () => api.get("/subscriptions/mine"),
-    subscribe: (club: string) => api.post("/subscriptions", { club }),
-    unsubscribe: (club: string) => api.delete(`/subscriptions/${encodeURIComponent(club)}`),
+    subscribe: (clubId: string) => api.post("/subscriptions", { clubId }),
+    unsubscribe: (clubId: string) => api.delete(`/subscriptions/${clubId}`),
   },
   profile: {
     stats: () => api.get("/profile/stats"),

@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { PollingProvider } from "./context/SocketContext";
+import { LangProvider } from "./i18n";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
@@ -48,5 +49,5 @@ function App() {
 }
 
 export default function Root() {
-  return <AuthProvider><App /></AuthProvider>;
+  return <LangProvider><AuthProvider><App /></AuthProvider></LangProvider>;
 }

@@ -2,11 +2,13 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useEffect, useState, useCallback } from "react";
 import { apiService } from "../services/api";
 import { useAuth } from "../context/AuthContext";
+import { useT } from "../i18n";
 
 export default function MatchPage() {
   const { id, matchId } = useParams<{ id: string; matchId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { t } = useT();
   const [match, setMatch] = useState<any>(null);
   const [deuce, setDeuce] = useState(false);
   const [error, setError] = useState("");
@@ -26,12 +28,12 @@ export default function MatchPage() {
 
   const setPointsToWin = async (pointsToWin: number) => {
     try { const r = await apiService.matches.updateSettings(matchId!, { pointsToWin }); setMatch(r.data); }
-    catch (e: any) { setError(e.response?.data?.error || "Failed"); }
+    catch (e: any) { setError(e.response?.data?.error || t("common.failed")); }
   };
 
   const startMatch = async () => {
     try { const r = await apiService.matches.start(matchId!); setMatch(r.data); }
-    catch (e: any) { setError(e.response?.data?.error || "Failed"); }
+    catch (e: any) { setError(e.response?.data?.error || t("common.failed")); }
   };
 
   const score = async (side: 1 | 2) => {
@@ -40,19 +42,19 @@ export default function MatchPage() {
     try {
       const r = await apiService.matches.score(matchId!, { side });
       setMatch(r.data.match); setDeuce(r.data.deuce);
-    } catch (e: any) { setError(e.response?.data?.error || "Failed"); }
+    } catch (e: any) { setError(e.response?.data?.error || t("common.failed")); }
     finally { setBusy(false); }
   };
 
-  const undo = async () => { try { const r = await apiService.matches.undo(matchId!); setMatch(r.data.match); } catch (e: any) { setError(e.response?.data?.error || "Failed"); } };
-  const recordLet = async () => { try { const r = await apiService.matches.recordLet(matchId!); setMatch(r.data.match); } catch (e: any) { setError(e.response?.data?.error || "Failed"); } };
-  const endMatch = async () => { try { await apiService.matches.end(matchId!); navigate(`/tournament/${id}`); } catch (e: any) { setError(e.response?.data?.error || "Failed"); } };
+  const undo = async () => { try { const r = await apiService.matches.undo(matchId!); setMatch(r.data.match); } catch (e: any) { setError(e.response?.data?.error || t("common.failed")); } };
+  const recordLet = async () => { try { const r = await apiService.matches.recordLet(matchId!); setMatch(r.data.match); } catch (e: any) { setError(e.response?.data?.error || t("common.failed")); } };
+  const endMatch = async () => { try { await apiService.matches.end(matchId!); navigate(`/tournament/${id}`); } catch (e: any) { setError(e.response?.data?.error || t("common.failed")); } };
   const forfeit = async (loserSide: 1 | 2) => {
     try { const r = await apiService.matches.forfeit(matchId!, { loserSide }); setMatch(r.data); }
-    catch (e: any) { setError(e.response?.data?.error || "Failed"); }
+    catch (e: any) { setError(e.response?.data?.error || t("common.failed")); }
   };
 
-  if (!match) return <div className="min-h-screen bg-[#0a1628] flex items-center justify-center text-[#6b84a0] text-sm">Loading...</div>;
+  if (!match) return <div className="min-h-screen bg-[#0a1628] flex items-center justify-center text-[#6b84a0] text-sm">{t("common.loading")}</div>;
 
   const isDeuceNow = deuce || (match.score1 >= match.pointsToWin - 1 && match.score2 >= match.pointsToWin - 1);
   const canManage = !!user && match.tournament?.organizerId === user.id;
@@ -60,13 +62,13 @@ export default function MatchPage() {
   return (
     <div className="min-h-screen bg-[#0a1628] p-3 pb-8">
       <div className="max-w-sm mx-auto">
-        <button onClick={() => navigate(`/tournament/${id}`)} className="text-[#6b84a0] mb-3 text-sm">&larr; Back</button>
+        <button onClick={() => navigate(`/tournament/${id}`)} className="text-[#6b84a0] mb-3 text-sm">&larr; {t("common.back")}</button>
 
         {error && <div className="bg-red-500/10 text-red-400 p-3 rounded text-sm border border-red-500/20 mb-3">{error}</div>}
 
         <div className="bg-[#101f36] rounded-lg p-4 mb-3 border border-[#1c3350] text-center">
           <p className="text-[11px] text-[#4d6480] uppercase tracking-wider mb-1">
-            {match.tableNumber ? `Table ${match.tableNumber}` : "No table"} &middot; Race to {match.pointsToWin}
+            {match.tableNumber ? `${t("tournament.table")} ${match.tableNumber}` : t("match.noTable")} &middot; {t("match.raceTo", { n: match.pointsToWin })}
           </p>
           {match.status === "NOT_STARTED" && canManage && (
             <div className="flex justify-center gap-2 mt-2">
@@ -75,7 +77,7 @@ export default function MatchPage() {
                   className={`px-4 py-1.5 rounded text-sm font-medium border ${
                     match.pointsToWin === pts ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00]" : "bg-transparent text-[#93a8c2] border-[#333]"
                   }`}>
-                  {pts} pts
+                  {t("match.pts", { n: pts })}
                 </button>
               ))}
             </div>
@@ -84,17 +86,19 @@ export default function MatchPage() {
 
         <div className="bg-[#101f36] rounded-lg p-4 mb-3 border border-[#1c3350]">
           <div className="text-center text-[11px] text-[#4d6480] uppercase tracking-wider mb-3">
-            {match.status === "IN_PROGRESS" ? (isDeuceNow ? "DEUCE" : `Serving: ${match.serverSide === 1 ? (match.player1?.firstName || "P1") : (match.player2?.firstName || "P2")}`) : match.status.replace("_", " ")}
-            {match.letCount > 0 && ` · Lets: ${match.letCount}`}
+            {match.status === "IN_PROGRESS"
+              ? (isDeuceNow ? t("match.deuce") : `${t("match.server")}: ${match.serverSide === 1 ? (match.player1?.firstName || "P1") : (match.player2?.firstName || "P2")}`)
+              : t(`match.${match.status === "NOT_STARTED" ? "notStarted" : match.status === "COMPLETED" ? "completed" : "inProgress"}`)}
+            {match.letCount > 0 && ` · ${t("match.lets")}: ${match.letCount}`}
           </div>
           <div className="flex justify-around items-center">
             <div className="text-center flex-1">
-              <p className="text-base font-semibold text-[#3b82f6] truncate px-1">{match.player1?.firstName || "TBD"}</p>
+              <p className="text-base font-semibold text-[#3b82f6] truncate px-1">{match.player1?.firstName || t("common.none")}</p>
               <p className="text-7xl font-bold mt-1 tabular-nums leading-none text-[#3b82f6]">{match.score1}</p>
             </div>
             <p className="text-2xl text-[#333] px-1">:</p>
             <div className="text-center flex-1">
-              <p className="text-base font-semibold text-[#ef4444] truncate px-1">{match.player2?.firstName || "TBD"}</p>
+              <p className="text-base font-semibold text-[#ef4444] truncate px-1">{match.player2?.firstName || t("common.none")}</p>
               <p className="text-7xl font-bold mt-1 tabular-nums leading-none text-[#ef4444]">{match.score2}</p>
             </div>
           </div>
@@ -102,18 +106,18 @@ export default function MatchPage() {
 
         {match.status === "COMPLETED" ? (
           <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4 text-center">
-            <p className="text-green-400 font-medium text-sm">Match completed</p>
-            <p className="text-green-300/70 text-xs mt-1">Winner: {match.score1 > match.score2 ? match.player1?.firstName : match.player2?.firstName}</p>
+            <p className="text-green-400 font-medium text-sm">{t("match.matchCompleted")}</p>
+            <p className="text-green-300/70 text-xs mt-1">{t("match.winner")}: {match.score1 > match.score2 ? match.player1?.firstName : match.player2?.firstName}</p>
           </div>
         ) : !canManage ? (
           <p className="text-center py-3 text-sm text-[#6b84a0] bg-[#101f36] rounded-lg border border-[#1c3350]">
-            Only the tournament manager can update this match
+            {t("match.onlyManager")}
           </p>
         ) : (
           <div className="space-y-2">
             {match.status === "NOT_STARTED" ? (
               <button onClick={startMatch} className="w-full bg-[#ccff00] text-[#0a1628] py-4 rounded-lg text-base font-bold active:scale-[0.98] transition-transform">
-                Start Match
+                {t("match.start")}
               </button>
             ) : (
               <>
@@ -126,18 +130,18 @@ export default function MatchPage() {
                   </button>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
-                  <button onClick={undo} className="bg-[#1c3350] text-[#93a8c2] py-2.5 rounded-lg text-sm border border-[#333]">Undo</button>
-                  <button onClick={recordLet} className="bg-yellow-500/10 text-yellow-400 py-2.5 rounded-lg text-sm border border-yellow-500/20">Let</button>
-                  <button onClick={endMatch} className="bg-[#1c3350] text-[#93a8c2] py-2.5 rounded-lg text-sm border border-[#333]">End</button>
+                  <button onClick={undo} className="bg-[#1c3350] text-[#93a8c2] py-2.5 rounded-lg text-sm border border-[#1c3350]">{t("match.undo")}</button>
+                  <button onClick={recordLet} className="bg-yellow-500/10 text-yellow-400 py-2.5 rounded-lg text-sm border border-yellow-500/20">{t("match.let")}</button>
+                  <button onClick={endMatch} className="bg-[#1c3350] text-[#93a8c2] py-2.5 rounded-lg text-sm border border-[#1c3350]">{t("match.end")}</button>
                 </div>
               </>
             )}
             <div className="grid grid-cols-2 gap-2 pt-1">
               <button onClick={() => forfeit(1)} className="text-red-400 py-2 rounded-lg text-xs border border-red-500/20 bg-red-500/5">
-                {match.player1?.firstName || "P1"} no-show
+                {match.player1?.firstName || "P1"} {t("match.noShow")}
               </button>
               <button onClick={() => forfeit(2)} className="text-red-400 py-2 rounded-lg text-xs border border-red-500/20 bg-red-500/5">
-                {match.player2?.firstName || "P2"} no-show
+                {match.player2?.firstName || "P2"} {t("match.noShow")}
               </button>
             </div>
           </div>

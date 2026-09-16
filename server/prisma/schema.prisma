@@ -37,6 +37,7 @@ model User {
   lastName         String
   role             Role      @default(PLAYER)
   club             String?
+  city             String?
   rating           Int       @default(300)
   dateOfBirth      DateTime?
   phone            String?
@@ -51,20 +52,59 @@ model User {
   bookings         Booking[]
   subscriptions    Subscription[]
   chatMessages     ChatMessage[]
+  createdClubs     Club[]    @relation("clubCreator")
 
   @@index([club])
+  @@index([city])
   @@index([rating])
+}
+
+// A venue with tables. Clubs are what bookings, subscriptions and tournaments point at —
+// the old free-text `club` string on User is now only a display-level "home club" note.
+model Club {
+  id            String   @id @default(uuid())
+  name          String
+  city          String
+  address       String?
+  phone         String?
+  createdById   String?
+  createdBy     User?    @relation("clubCreator", fields: [createdById], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  tables        ClubTable[]
+  bookings      Booking[]
+  subscriptions Subscription[]
+  tournaments   Tournament[]
+
+  @@unique([name, city])
+  @@index([city])
+}
+
+model ClubTable {
+  id       String    @id @default(uuid())
+  clubId   String
+  club     Club      @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  number   Int
+  indoor   Boolean   @default(true)
+  bookings Booking[]
+
+  @@unique([clubId, number])
+  @@index([clubId])
 }
 
 model Tournament {
   id          String    @id @default(uuid())
   name        String
+  description String?
   tablesCount Int       @default(4)
+  maxPlayers  Int?
   status      String    @default("DRAFT")
   startTime   DateTime?
   endTime     DateTime?
   minRating   Int?
   maxRating   Int?
+  clubId      String?
+  club        Club?     @relation(fields: [clubId], references: [id])
   organizerId String
   organizer   User      @relation("tournamentOrganizer", fields: [organizerId], references: [id])
   players     TournamentUser[]
@@ -75,22 +115,26 @@ model Tournament {
 
   @@index([status])
   @@index([startTime])
+  @@index([clubId])
 }
 
-// A table reservation. No payment processing — price/status are purely informational.
+// A table reservation. No payment processing — this is just a record of who booked what/when.
 model Booking {
-  id            String   @id @default(uuid())
+  id            String     @id @default(uuid())
   userId        String
-  user          User     @relation(fields: [userId], references: [id])
-  club          String
+  user          User       @relation(fields: [userId], references: [id])
+  clubId        String
+  club          Club       @relation(fields: [clubId], references: [id])
+  tableId       String?
+  table         ClubTable? @relation(fields: [tableId], references: [id])
   date          DateTime
   startTime     String
-  durationHours Float    @default(1)
-  tableNumber   Int?
-  createdAt     DateTime @default(now())
+  durationHours Float      @default(1)
+  createdAt     DateTime   @default(now())
 
   @@index([userId])
-  @@index([club, date])
+  @@index([clubId, date])
+  @@index([tableId, date])
 }
 
 // Following a club, shown under "My subscriptions" — a plain follow list, not a paid plan.
@@ -98,10 +142,11 @@ model Subscription {
   id        String   @id @default(uuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id])
-  club      String
+  clubId    String
+  club      Club     @relation(fields: [clubId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
 
-  @@unique([userId, club])
+  @@unique([userId, clubId])
   @@index([userId])
 }
 

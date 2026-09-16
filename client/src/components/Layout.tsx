@@ -1,18 +1,20 @@
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { useT } from "../i18n";
 import Logo from "./Logo";
 import Avatar from "./Avatar";
 
 const NAV = [
-  { to: "/", label: "Home", d: "M3 10.5 12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" },
-  { to: "/bookings", label: "Play", d: "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2M12 14v4M10 16h4" },
-  { to: "/rating", label: "Rating", d: "m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z" },
-  { to: "/results", label: "Results", d: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" },
-  { to: "/profile", label: "Profile", d: "M20 21a8 8 0 1 0-16 0M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8" },
+  { to: "/", label: "nav.home", d: "M3 10.5 12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" },
+  { to: "/bookings", label: "nav.play", d: "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2M12 14v4M10 16h4" },
+  { to: "/rating", label: "nav.rating", d: "m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z" },
+  { to: "/results", label: "nav.results", d: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" },
+  { to: "/profile", label: "nav.profile", d: "M20 21a8 8 0 1 0-16 0M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8" },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
+  const { t } = useT();
   const location = useLocation();
 
   return (
@@ -23,7 +25,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <Link to="/profile" className="flex items-center gap-2">
             <Avatar firstName={user?.firstName} lastName={user?.lastName} rating={user?.rating} size="sm" />
           </Link>
-          <button onClick={logout} aria-label="Logout"
+          <button onClick={logout} aria-label={t("nav.logout")}
             className="w-8 h-8 flex items-center justify-center text-[#93a8c2] hover:text-white border border-[#1c3350] rounded-full text-sm">
             &#x21B0;
           </button>
@@ -46,7 +48,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
                 <path d={n.d} />
               </svg>
-              {n.label}
+              {t(n.label)}
             </Link>
           );
         })}

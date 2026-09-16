@@ -1,0 +1,115 @@
+import { Router, Response } from "express";
+import { prisma } from "../config/db.js";
+import { AuthenticatedRequest, authMiddleware } from "../middleware/auth.js";
+import { CreateClubSchema, UpdateClubSchema, CreateClubTableSchema } from "../shared/schemas.js";
+import { bookingsOverlap, startOfUtcDay } from "../shared/booking.js";
+
+export const clubRouter = Router();
+
+// Same ownership rule as tournaments: whoever created the club manages it.
+async function loadOwnedClub(res: Response, clubId: string, userId: string) {
+  const club = await prisma.club.findUnique({ where: { id: clubId } });
+  if (!club) { res.status(404).json({ error: "Not found" }); return null; }
+  if (club.createdById && club.createdById !== userId) { res.status(403).json({ error: "Only the club's manager can do this" }); return null; }
+  return club;
+}
+
+clubRouter.get("/", async (req, res: Response) => {
+  const city = typeof req.query.city === "string" && req.query.city ? req.query.city : undefined;
+  const q = typeof req.query.q === "string" && req.query.q ? req.query.q : undefined;
+  const clubs = await prisma.club.findMany({
+    where: {
+      ...(city ? { city } : {}),
+      ...(q ? { name: { contains: q, mode: "insensitive" as const } } : {}),
+    },
+    include: { _count: { select: { tables: true, subscriptions: true, tournaments: true } } },
+    orderBy: [{ city: "asc" }, { name: "asc" }],
+  });
+  res.json(clubs);
+});
+
+// Powers the "your city" picker on the home screen — must stay above "/:id".
+clubRouter.get("/cities", async (_req, res: Response) => {
+  const rows = await prisma.club.groupBy({ by: ["city"], _count: { _all: true }, orderBy: { city: "asc" } });
+  res.json(rows.map(r => ({ city: r.city, clubs: r._count._all })));
+});
+
+clubRouter.get("/:id", async (req, res: Response) => {
+  const club = await prisma.club.findUnique({
+    where: { id: req.params.id },
+    include: { tables: { orderBy: { number: "asc" } }, _count: { select: { subscriptions: true } } },
+  });
+  if (!club) { res.status(404).json({ error: "Not found" }); return; }
+  res.json(club);
+});
+
+// Which tables are free on a given day, and what's already taken — the booking screen
+// uses this to grey out slots instead of letting the user submit a clashing booking.
+clubRouter.get("/:id/availability", async (req, res: Response) => {
+  const date = typeof req.query.date === "string" ? req.query.date : undefined;
+  if (!date) { res.status(400).json({ error: "date is required" }); return; }
+  const day = startOfUtcDay(date);
+  const [tables, bookings] = await Promise.all([
+    prisma.clubTable.findMany({ where: { clubId: req.params.id }, orderBy: { number: "asc" } }),
+    prisma.booking.findMany({ where: { clubId: req.params.id, date: day }, select: { tableId: true, startTime: true, durationHours: true } }),
+  ]);
+  res.json(tables.map(t => ({
+    ...t,
+    busy: bookings.filter(b => b.tableId === t.id).map(b => ({ startTime: b.startTime, durationHours: b.durationHours })),
+  })));
+});
+
+clubRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const data = CreateClubSchema.parse(req.body);
+    const club = await prisma.club.create({ data: { ...data, createdById: req.user!.userId } });
+    res.status(201).json(club);
+  } catch (err: any) {
+    if (err.code === "P2002") { res.status(400).json({ error: "A club with this name already exists in this city" }); return; }
+    res.status(400).json({ error: err.message });
+  }
+});
+
+clubRouter.put("/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const club = await loadOwnedClub(res, req.params.id, req.user!.userId);
+    if (!club) return;
+    const data = UpdateClubSchema.parse(req.body);
+    const updated = await prisma.club.update({ where: { id: club.id }, data });
+    res.json(updated);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+clubRouter.post("/:id/tables", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const club = await loadOwnedClub(res, req.params.id, req.user!.userId);
+    if (!club) return;
+    const data = CreateClubTableSchema.parse(req.body);
+    const table = await prisma.clubTable.create({ data: { ...data, clubId: club.id } });
+    res.status(201).json(table);
+  } catch (err: any) {
+    if (err.code === "P2002") { res.status(400).json({ error: "This table number already exists at the club" }); return; }
+    res.status(400).json({ error: err.message });
+  }
+});
+
+clubRouter.delete("/:id/tables/:tableId", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const club = await loadOwnedClub(res, req.params.id, req.user!.userId);
+    if (!club) return;
+    const table = await prisma.clubTable.findUnique({ where: { id: req.params.tableId } });
+    if (!table || table.clubId !== club.id) { res.status(404).json({ error: "Not found" }); return; }
+    await prisma.clubTable.delete({ where: { id: table.id } });
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Exported so the booking route can reuse the same clash rule.
+export async function findBookingConflict(tableId: string, date: Date, startTime: string, durationHours: number, ignoreBookingId?: string) {
+  const sameDay = await prisma.booking.findMany({ where: { tableId, date, ...(ignoreBookingId ? { NOT: { id: ignoreBookingId } } : {}) } });
+  return sameDay.find(b => bookingsOverlap(startTime, durationHours, b.startTime, b.durationHours)) || null;
+}
