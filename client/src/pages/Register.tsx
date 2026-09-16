@@ -12,7 +12,7 @@ export default function Register() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    try { setError(""); await register({ ...form, role: "PLAYER" }); navigate("/"); }
+    try { setError(""); await register(form); navigate("/"); }
     catch (err: any) { setError(err.response?.data?.error || "Registration failed"); }
     finally { setLoading(false); }
   };

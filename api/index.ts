@@ -82,9 +82,12 @@ app.get("/api/setup", async (_req, res) => {
 app.post("/api/auth/register", async (req, res) => {
   try {
     const bcrypt = await import("bcryptjs");
-    const { email, password, firstName, lastName, club, role } = req.body;
+    const { email, password, firstName, lastName, club } = req.body;
     const hashed = await bcrypt.hash(password, 10);
-    const user = await db().user.create({ data: { email, password: hashed, firstName, lastName, club, role: role || "PLAYER" } });
+    // This endpoint is unauthenticated self-signup, so the role is never taken from
+    // the request body (that would let anyone register as ADMIN). Everyone who signs
+    // up can organize their own tournaments.
+    const user = await db().user.create({ data: { email, password: hashed, firstName, lastName, club, role: "ORGANIZER" } });
     const token = jwt.sign({ userId: user.id, role: user.role }, process.env.JWT_SECRET || "secret", { expiresIn: "24h" });
     res.status(201).json({ token, user: { id: user.id, email: user.email, role: user.role, firstName: user.firstName, lastName: user.lastName } });
   } catch (e: any) { res.status(400).json({ error: e.message }); }
