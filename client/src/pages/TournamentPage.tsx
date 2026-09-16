@@ -1,10 +1,12 @@
 import { useParams, Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { apiService } from "../services/api";
+import { useAuth } from "../context/AuthContext";
 import Layout from "../components/Layout";
 
 export default function TournamentPage() {
   const { id } = useParams<{ id: string }>();
+  const { user } = useAuth();
   const [tournament, setTournament] = useState<any>(null);
   const [standings, setStandings] = useState<any[]>([]);
   const [allPlayers, setAllPlayers] = useState<any[]>([]);
@@ -26,6 +28,10 @@ export default function TournamentPage() {
   if (!tournament) return <Layout><div className="text-center py-20 text-[#666680] text-sm">Loading...</div></Layout>;
 
   const isDraft = tournament.status === "DRAFT";
+  const isManager = !!user && tournament.organizerId === user.id;
+  const myEntry = tournament.players.find((p: any) => p.userId === user?.id);
+  const approved = tournament.players.filter((p: any) => p.status === "REGISTERED");
+  const pending = tournament.players.filter((p: any) => p.status === "PENDING");
   const rosterIds = new Set(tournament.players.map((p: any) => p.userId));
   const candidates = allPlayers.filter(p => !rosterIds.has(p.id) && `${p.firstName} ${p.lastName}`.toLowerCase().includes(search.toLowerCase()));
 
@@ -38,6 +44,20 @@ export default function TournamentPage() {
       load();
     } catch (e: any) { setError(e.response?.data?.error || "Failed to add players"); }
     finally { setBusy(false); }
+  };
+
+  const join = async () => {
+    if (!id) return;
+    setBusy(true); setError("");
+    try { await apiService.tournaments.join(id); load(); }
+    catch (e: any) { setError(e.response?.data?.error || "Failed to join"); }
+    finally { setBusy(false); }
+  };
+
+  const approvePlayer = async (userId: string) => {
+    if (!id) return;
+    try { await apiService.tournaments.approvePlayer(id, userId); load(); }
+    catch (e: any) { setError(e.response?.data?.error || "Failed to approve"); }
   };
 
   const removePlayer = async (userId: string) => {
@@ -68,13 +88,14 @@ export default function TournamentPage() {
     <Layout>
       <div className="mb-4">
         <h1 className="text-lg font-bold truncate">{tournament.name}</h1>
-        <div className="flex items-center gap-2 mt-1">
+        <div className="flex items-center gap-2 mt-1 flex-wrap">
           <span className={`px-2 py-0.5 rounded text-[11px] font-medium ${
             tournament.status === "ACTIVE" ? "bg-yellow-500/10 text-yellow-400 border border-yellow-500/20" :
             tournament.status === "COMPLETED" ? "bg-green-500/10 text-green-400 border border-green-500/20" :
             "bg-[#1e1e2e] text-[#8888a0] border border-[#333]"
           }`}>{isDraft ? "Adding players" : tournament.status === "ACTIVE" ? "In progress" : "Completed"}</span>
           <span className="text-xs text-[#555566]">{tournament.tablesCount} tables</span>
+          <span className="text-xs text-[#555566]">Managed by {tournament.organizer?.firstName} {tournament.organizer?.lastName}</span>
         </div>
       </div>
 
@@ -89,13 +110,30 @@ export default function TournamentPage() {
 
       <section className="mb-6">
         <div className="flex justify-between items-center mb-2">
-          <h2 className="text-xs font-medium text-[#666680] uppercase tracking-wider">Participants ({tournament.players.length})</h2>
-          {isDraft && (
+          <h2 className="text-xs font-medium text-[#666680] uppercase tracking-wider">Participants ({approved.length})</h2>
+          {isManager && isDraft && (
             <button onClick={() => setShowAdd(s => !s)} className="text-xs text-[#3b82f6] font-medium">{showAdd ? "Close" : "+ Add"}</button>
           )}
         </div>
 
-        {isDraft && showAdd && (
+        {isManager && pending.length > 0 && (
+          <div className="mb-3">
+            <h3 className="text-[11px] font-medium text-yellow-400 uppercase tracking-wider mb-2">Pending requests ({pending.length})</h3>
+            <div className="space-y-1">
+              {pending.map((p: any) => (
+                <div key={p.id} className="flex justify-between items-center bg-[#12121a] p-2.5 rounded border border-yellow-500/20">
+                  <span className="text-sm truncate">{p.user?.firstName} {p.user?.lastName}</span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button onClick={() => approvePlayer(p.userId)} className="text-xs text-green-400 font-medium px-2 py-1 bg-green-500/10 rounded border border-green-500/20">Approve</button>
+                    <button onClick={() => removePlayer(p.userId)} className="text-xs text-red-400 font-medium px-2 py-1 bg-red-500/10 rounded border border-red-500/20">Reject</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {isManager && showAdd && isDraft && (
           <div className="bg-[#12121a] rounded-lg border border-[#1e1e2e] p-3 mb-3 space-y-2">
             <input type="text" placeholder="Search players..." value={search} onChange={e => setSearch(e.target.value)}
               className="w-full px-3 py-2.5 bg-[#0a0a0f] rounded border border-[#1e1e2e] text-sm focus:outline-none" />
@@ -120,9 +158,9 @@ export default function TournamentPage() {
         )}
 
         <div className="space-y-1">
-          {tournament.players.length === 0 ? (
+          {approved.length === 0 ? (
             <p className="text-center py-8 text-sm text-[#666680] bg-[#12121a] rounded-lg border border-[#1e1e2e]">No participants yet</p>
-          ) : tournament.players.map((p: any) => (
+          ) : approved.map((p: any) => (
             <div key={p.id} className="flex justify-between items-center bg-[#12121a] p-2.5 rounded border border-[#1e1e2e]">
               <div className="min-w-0 flex items-center gap-2">
                 {p.seed && <span className="text-[10px] bg-[#1e1e2e] text-[#8888a0] px-1.5 py-0.5 rounded shrink-0">#{p.seed}</span>}
@@ -130,7 +168,7 @@ export default function TournamentPage() {
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <span className="text-xs font-mono text-[#3b82f6]">{p.user?.rating || 1000}</span>
-                {isDraft && (
+                {isManager && isDraft && (
                   <button onClick={() => removePlayer(p.userId)} aria-label="Remove" className="text-[#555566] text-sm px-1">&times;</button>
                 )}
               </div>
@@ -138,8 +176,21 @@ export default function TournamentPage() {
           ))}
         </div>
 
-        {isDraft && (
-          <button onClick={pair} disabled={tournament.players.length < 2 || busy}
+        {isDraft && !isManager && (
+          myEntry ? (
+            <p className="text-center py-3 mt-3 text-sm text-yellow-400 bg-yellow-500/10 rounded-lg border border-yellow-500/20">
+              {myEntry.status === "PENDING" ? "Your request is pending approval" : "You're in — waiting for the manager to pair players"}
+            </p>
+          ) : (
+            <button onClick={join} disabled={busy}
+              className="w-full mt-3 bg-[#3b82f6] text-white py-3 rounded-lg text-sm font-medium disabled:opacity-40">
+              {busy ? "Requesting..." : "Ask to join"}
+            </button>
+          )
+        )}
+
+        {isManager && isDraft && (
+          <button onClick={pair} disabled={approved.length < 2 || busy}
             className="w-full mt-3 bg-[#3b82f6] text-white py-3 rounded-lg text-sm font-medium disabled:opacity-40">
             {busy ? "Pairing..." : "Lock roster & split into pairs"}
           </button>

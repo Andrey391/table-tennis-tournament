@@ -20,19 +20,29 @@ function authMiddleware(req: any, res: any, next: any) {
   catch { res.status(401).json({ error: "Invalid token" }); }
 }
 
-function requireRole(...roles: string[]) {
-  return (req: any, res: any, next: any) => {
-    if (!req.user || !roles.includes(req.user.role)) { res.status(403).json({ error: "Forbidden" }); return; }
-    next();
-  };
-}
-
 const playerSelect = { id: true, firstName: true, lastName: true, club: true, rating: true };
 const matchInclude = {
   player1: { select: playerSelect },
   player2: { select: playerSelect },
   judge: { select: { id: true, firstName: true, lastName: true } },
+  tournament: { select: { organizerId: true } },
 };
+
+// Loads the tournament and confirms the caller is the one managing it (its creator).
+async function loadOwnedTournament(res: any, tournamentId: string, userId: string) {
+  const tournament = await db().tournament.findUnique({ where: { id: tournamentId } });
+  if (!tournament) { res.status(404).json({ error: "Not found" }); return null; }
+  if (tournament.organizerId !== userId) { res.status(403).json({ error: "Only the tournament manager can do this" }); return null; }
+  return tournament;
+}
+
+// Loads the match and confirms the caller manages its tournament.
+async function loadOwnedMatch(res: any, matchId: string, userId: string) {
+  const match = await db().match.findUnique({ where: { id: matchId }, include: { tournament: { select: { organizerId: true } } } });
+  if (!match) { res.status(404).json({ error: "Not found" }); return null; }
+  if (match.tournament.organizerId !== userId) { res.status(403).json({ error: "Only the tournament manager can record this match" }); return null; }
+  return match;
+}
 
 function isDeuce(score1: number, score2: number, pointsToWin: number) {
   return score1 >= pointsToWin - 1 && score2 >= pointsToWin - 1;
@@ -56,7 +66,7 @@ app.get("/api/setup", async (_req, res) => {
   const doBlock = (body: string) => `DO $$ BEGIN ${body}; EXCEPTION WHEN duplicate_object THEN null; END $$`;
   try {
     await d.$executeRawUnsafe(doBlock(`CREATE TYPE "Role" AS ENUM ('ADMIN', 'ORGANIZER', 'JUDGE', 'PLAYER', 'VIEWER')`));
-    await d.$executeRawUnsafe(doBlock(`CREATE TYPE "PlayerStatus" AS ENUM ('REGISTERED', 'WITHDRAWN', 'DISQUALIFIED')`));
+    await d.$executeRawUnsafe(doBlock(`CREATE TYPE "PlayerStatus" AS ENUM ('PENDING', 'REGISTERED', 'WITHDRAWN', 'DISQUALIFIED')`));
     await d.$executeRawUnsafe(doBlock(`CREATE TYPE "MatchStatus" AS ENUM ('NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED')`));
 
     const tables = [
@@ -82,9 +92,12 @@ app.get("/api/setup", async (_req, res) => {
 app.post("/api/auth/register", async (req, res) => {
   try {
     const bcrypt = await import("bcryptjs");
-    const { email, password, firstName, lastName, club, role } = req.body;
+    const { email, password, firstName, lastName, club } = req.body;
     const hashed = await bcrypt.hash(password, 10);
-    const user = await db().user.create({ data: { email, password: hashed, firstName, lastName, club, role: role || "PLAYER" } });
+    // This endpoint is unauthenticated self-signup, so the role is never taken from
+    // the request body (that would let anyone register as ADMIN). Everyone who signs
+    // up can organize their own tournaments.
+    const user = await db().user.create({ data: { email, password: hashed, firstName, lastName, club, role: "ORGANIZER" } });
     const token = jwt.sign({ userId: user.id, role: user.role }, process.env.JWT_SECRET || "secret", { expiresIn: "24h" });
     res.status(201).json({ token, user: { id: user.id, email: user.email, role: user.role, firstName: user.firstName, lastName: user.lastName } });
   } catch (e: any) { res.status(400).json({ error: e.message }); }
@@ -139,7 +152,7 @@ app.get("/api/tournaments/:id", async (req, res) => {
   const tournament = await db().tournament.findUnique({
     where: { id: req.params.id },
     include: {
-      organizer: { select: { firstName: true, lastName: true } },
+      organizer: { select: { id: true, firstName: true, lastName: true } },
       players: { include: { user: { select: playerSelect } }, orderBy: { seed: "asc" } },
       matches: { include: matchInclude, orderBy: [{ matchIndex: "asc" }] },
     },
@@ -148,7 +161,7 @@ app.get("/api/tournaments/:id", async (req, res) => {
   res.json(tournament);
 });
 
-app.post("/api/tournaments", authMiddleware, requireRole("ADMIN", "ORGANIZER"), async (req: any, res) => {
+app.post("/api/tournaments", authMiddleware, async (req: any, res) => {
   try {
     const { name, tablesCount, startTime } = req.body;
     const tournament = await db().tournament.create({ data: { name, tablesCount: tablesCount || 4, startTime, organizerId: req.user.userId } });
@@ -156,50 +169,86 @@ app.post("/api/tournaments", authMiddleware, requireRole("ADMIN", "ORGANIZER"), 
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
-app.put("/api/tournaments/:id", authMiddleware, requireRole("ADMIN", "ORGANIZER"), async (req: any, res) => {
+app.put("/api/tournaments/:id", authMiddleware, async (req: any, res) => {
   try {
+    const tournament = await loadOwnedTournament(res, req.params.id, req.user.userId);
+    if (!tournament) return;
     const { name, status, startTime, endTime, tablesCount } = req.body;
-    const tournament = await db().tournament.update({ where: { id: req.params.id }, data: { name, status, startTime, endTime, tablesCount } });
-    res.json(tournament);
+    const updated = await db().tournament.update({ where: { id: tournament.id }, data: { name, status, startTime, endTime, tablesCount } });
+    res.json(updated);
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
-app.post("/api/tournaments/:id/players", authMiddleware, requireRole("ADMIN", "ORGANIZER"), async (req, res) => {
+// Manager directly adds already-known players to the roster, pre-approved.
+app.post("/api/tournaments/:id/players", authMiddleware, async (req: any, res) => {
   try {
+    const tournament = await loadOwnedTournament(res, req.params.id, req.user.userId);
+    if (!tournament) return;
+    if (tournament.status !== "DRAFT") { res.status(400).json({ error: "Roster is locked, cannot add players" }); return; }
+
     const { userIds } = req.body;
     const d = db();
-    const tournament = await d.tournament.findUnique({ where: { id: req.params.id } });
-    if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
-    if (tournament.status !== "DRAFT") { res.status(400).json({ error: "Roster is locked, cannot add players" }); return; }
     const existing = await d.tournamentUser.findMany({ where: { tournamentId: req.params.id }, select: { userId: true } });
     const existingIds = new Set(existing.map((e: any) => e.userId));
     const newUsers = userIds.filter((id: string) => !existingIds.has(id));
-    const created = await d.$transaction(newUsers.map((userId: string) => d.tournamentUser.create({ data: { tournamentId: req.params.id, userId } })));
+    const created = await d.$transaction(newUsers.map((userId: string) => d.tournamentUser.create({ data: { tournamentId: req.params.id, userId, status: "REGISTERED" } })));
     res.status(201).json(created);
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
-app.delete("/api/tournaments/:id/players/:userId", authMiddleware, requireRole("ADMIN", "ORGANIZER"), async (req, res) => {
+// Any signed-in user can request to join — the manager has to approve before pairing.
+app.post("/api/tournaments/:id/join", authMiddleware, async (req: any, res) => {
   try {
-    const d = db();
-    const tournament = await d.tournament.findUnique({ where: { id: req.params.id } });
+    const tournament = await db().tournament.findUnique({ where: { id: req.params.id } });
     if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
+    if (tournament.status !== "DRAFT") { res.status(400).json({ error: "This tournament is no longer accepting participants" }); return; }
+    const entry = await db().tournamentUser.create({ data: { tournamentId: req.params.id, userId: req.user.userId, status: "PENDING" } });
+    res.status(201).json(entry);
+  } catch (e: any) {
+    if (e.code === "P2002") { res.status(400).json({ error: "Already requested to join" }); return; }
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// Manager approves a pending join request.
+app.post("/api/tournaments/:id/players/:userId/approve", authMiddleware, async (req: any, res) => {
+  try {
+    const tournament = await loadOwnedTournament(res, req.params.id, req.user.userId);
+    if (!tournament) return;
+    const updated = await db().tournamentUser.update({
+      where: { tournamentId_userId: { tournamentId: req.params.id, userId: req.params.userId } },
+      data: { status: "REGISTERED" },
+    });
+    res.json(updated);
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+// Manager rejects a pending request or removes an already-approved participant.
+app.delete("/api/tournaments/:id/players/:userId", authMiddleware, async (req: any, res) => {
+  try {
+    const tournament = await loadOwnedTournament(res, req.params.id, req.user.userId);
+    if (!tournament) return;
     if (tournament.status !== "DRAFT") { res.status(400).json({ error: "Roster is locked, cannot remove players" }); return; }
-    await d.tournamentUser.delete({ where: { tournamentId_userId: { tournamentId: req.params.id, userId: req.params.userId } } });
+    await db().tournamentUser.delete({ where: { tournamentId_userId: { tournamentId: req.params.id, userId: req.params.userId } } });
     res.json({ ok: true });
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
-// Locks the roster and pairs players by rating: strongest with next-strongest, and so on.
-app.post("/api/tournaments/:id/pair", authMiddleware, requireRole("ADMIN", "ORGANIZER"), async (req, res) => {
+// Locks the roster and pairs approved players by rating: strongest with next-strongest, and so on.
+app.post("/api/tournaments/:id/pair", authMiddleware, async (req: any, res) => {
   try {
-    const d = db();
-    const tournament = await d.tournament.findUnique({ where: { id: req.params.id }, include: { players: { include: { user: { select: { id: true, rating: true } } } } } });
-    if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
+    const tournament = await loadOwnedTournament(res, req.params.id, req.user.userId);
+    if (!tournament) return;
     if (tournament.status !== "DRAFT") { res.status(400).json({ error: "Tournament already paired" }); return; }
-    if (tournament.players.length < 2) { res.status(400).json({ error: "Need at least 2 players" }); return; }
 
-    const sorted = [...tournament.players].sort((a: any, b: any) => (b.user?.rating || 0) - (a.user?.rating || 0));
+    const d = db();
+    const players = await d.tournamentUser.findMany({
+      where: { tournamentId: tournament.id, status: "REGISTERED" },
+      include: { user: { select: { id: true, rating: true } } },
+    });
+    if (players.length < 2) { res.status(400).json({ error: "Need at least 2 approved players" }); return; }
+
+    const sorted = [...players].sort((a: any, b: any) => (b.user?.rating || 0) - (a.user?.rating || 0));
     await d.$transaction(sorted.map((p: any, idx: number) => d.tournamentUser.update({ where: { id: p.id }, data: { seed: idx + 1 } })));
 
     const pairs: { player1Id: string; player2Id: string }[] = [];
@@ -222,7 +271,7 @@ app.get("/api/tournaments/:id/standings", async (req, res) => {
     const tournament = await d.tournament.findUnique({
       where: { id: req.params.id },
       include: {
-        players: { include: { user: { select: playerSelect } } },
+        players: { where: { status: "REGISTERED" }, include: { user: { select: playerSelect } } },
         matches: { where: { status: "COMPLETED" }, select: { player1Id: true, player2Id: true, score1: true, score2: true } },
       },
     });
@@ -260,40 +309,40 @@ app.get("/api/matches/:id", async (req, res) => {
   res.json(match);
 });
 
-app.put("/api/matches/:id", authMiddleware, requireRole("ADMIN", "ORGANIZER", "JUDGE"), async (req: any, res) => {
+app.put("/api/matches/:id", authMiddleware, async (req: any, res) => {
   try {
-    const d = db();
-    const match = await d.match.findUnique({ where: { id: req.params.id } });
-    if (!match) { res.status(404).json({ error: "Not found" }); return; }
+    const match = await loadOwnedMatch(res, req.params.id, req.user.userId);
+    if (!match) return;
     if (match.status !== "NOT_STARTED") { res.status(400).json({ error: "Can only change settings before the match starts" }); return; }
     const { pointsToWin, tableNumber, judgeId } = req.body;
-    const updated = await d.match.update({ where: { id: match.id }, data: { pointsToWin, tableNumber, judgeId }, include: matchInclude });
+    const updated = await db().match.update({ where: { id: match.id }, data: { pointsToWin, tableNumber, judgeId }, include: matchInclude });
     res.json(updated);
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
 app.post("/api/matches/:id/start", authMiddleware, async (req: any, res) => {
   try {
-    const match = await db().match.update({ where: { id: req.params.id }, data: { status: "IN_PROGRESS", startedAt: new Date(), judgeId: req.user.userId }, include: matchInclude });
-    res.json(match);
+    const match = await loadOwnedMatch(res, req.params.id, req.user.userId);
+    if (!match) return;
+    const updated = await db().match.update({ where: { id: match.id }, data: { status: "IN_PROGRESS", startedAt: new Date(), judgeId: req.user.userId }, include: matchInclude });
+    res.json(updated);
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
-app.post("/api/matches/:id/score", authMiddleware, async (req, res) => {
+app.post("/api/matches/:id/score", authMiddleware, async (req: any, res) => {
   try {
-    const { side } = req.body;
-    const d = db();
-    const match = await d.match.findUnique({ where: { id: req.params.id } });
-    if (!match) { res.status(404).json({ error: "Not found" }); return; }
+    const match = await loadOwnedMatch(res, req.params.id, req.user.userId);
+    if (!match) return;
     if (match.status !== "IN_PROGRESS") { res.status(400).json({ error: "Match is not in progress" }); return; }
 
+    const { side } = req.body;
     const score1 = side === 1 ? match.score1 + 1 : match.score1;
     const score2 = side === 2 ? match.score2 + 1 : match.score2;
     const deuce = isDeuce(score1, score2, match.pointsToWin);
     const server = nextServerSide(score1 + score2, match.serverSide, deuce);
     const winner = getMatchWinner(score1, score2, match.pointsToWin);
 
-    const updated = await d.match.update({
+    const updated = await db().match.update({
       where: { id: match.id },
       data: { score1, score2, serverSide: server, lastScorer: side, prevServerSide: match.serverSide, status: winner ? "COMPLETED" : "IN_PROGRESS", endedAt: winner ? new Date() : undefined },
       include: matchInclude,
@@ -302,15 +351,14 @@ app.post("/api/matches/:id/score", authMiddleware, async (req, res) => {
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
-app.post("/api/matches/:id/undo", authMiddleware, async (req, res) => {
+app.post("/api/matches/:id/undo", authMiddleware, async (req: any, res) => {
   try {
-    const d = db();
-    const match = await d.match.findUnique({ where: { id: req.params.id } });
-    if (!match) { res.status(404).json({ error: "Not found" }); return; }
+    const match = await loadOwnedMatch(res, req.params.id, req.user.userId);
+    if (!match) return;
     if (!match.lastScorer) { res.status(400).json({ error: "Nothing to undo" }); return; }
     const score1 = match.lastScorer === 1 ? Math.max(match.score1 - 1, 0) : match.score1;
     const score2 = match.lastScorer === 2 ? Math.max(match.score2 - 1, 0) : match.score2;
-    const updated = await d.match.update({
+    const updated = await db().match.update({
       where: { id: match.id },
       data: { score1, score2, serverSide: match.prevServerSide || 1, lastScorer: null, prevServerSide: null, status: "IN_PROGRESS", endedAt: null },
       include: matchInclude,
@@ -319,17 +367,21 @@ app.post("/api/matches/:id/undo", authMiddleware, async (req, res) => {
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
-app.post("/api/matches/:id/let", authMiddleware, async (req, res) => {
+app.post("/api/matches/:id/let", authMiddleware, async (req: any, res) => {
   try {
-    const match = await db().match.update({ where: { id: req.params.id }, data: { letCount: { increment: 1 } }, include: matchInclude });
-    res.json({ match });
+    const match = await loadOwnedMatch(res, req.params.id, req.user.userId);
+    if (!match) return;
+    const updated = await db().match.update({ where: { id: match.id }, data: { letCount: { increment: 1 } }, include: matchInclude });
+    res.json({ match: updated });
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
-app.post("/api/matches/:id/end", authMiddleware, async (req, res) => {
+app.post("/api/matches/:id/end", authMiddleware, async (req: any, res) => {
   try {
-    const match = await db().match.update({ where: { id: req.params.id }, data: { status: "COMPLETED", endedAt: new Date() }, include: matchInclude });
-    res.json(match);
+    const match = await loadOwnedMatch(res, req.params.id, req.user.userId);
+    if (!match) return;
+    const updated = await db().match.update({ where: { id: match.id }, data: { status: "COMPLETED", endedAt: new Date() }, include: matchInclude });
+    res.json(updated);
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
@@ -360,7 +412,7 @@ app.get("/api/public/tournament/:id/standings", async (req, res) => {
     const tournament = await d.tournament.findUnique({
       where: { id: req.params.id },
       include: {
-        players: { include: { user: { select: playerSelect } } },
+        players: { where: { status: "REGISTERED" }, include: { user: { select: playerSelect } } },
         matches: { where: { status: "COMPLETED" }, select: { player1Id: true, player2Id: true, score1: true, score2: true } },
       },
     });

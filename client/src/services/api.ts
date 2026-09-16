@@ -25,6 +25,8 @@ export const apiService = {
     update: (id: string, d: any) => api.put(`/tournaments/${id}`, d),
     addPlayers: (id: string, d: { userIds: string[] }) => api.post(`/tournaments/${id}/players`, d),
     removePlayer: (id: string, userId: string) => api.delete(`/tournaments/${id}/players/${userId}`),
+    join: (id: string) => api.post(`/tournaments/${id}/join`),
+    approvePlayer: (id: string, userId: string) => api.post(`/tournaments/${id}/players/${userId}/approve`),
     pair: (id: string) => api.post(`/tournaments/${id}/pair`),
     standings: (id: string) => api.get(`/tournaments/${id}/standings`),
   },

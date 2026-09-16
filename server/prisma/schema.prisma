@@ -16,6 +16,7 @@ enum Role {
 }
 
 enum PlayerStatus {
+  PENDING
   REGISTERED
   WITHDRAWN
   DISQUALIFIED
