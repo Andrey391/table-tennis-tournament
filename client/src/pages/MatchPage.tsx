@@ -73,7 +73,7 @@ export default function MatchPage() {
               {[11, 21].map(pts => (
                 <button key={pts} onClick={() => setPointsToWin(pts)}
                   className={`px-4 py-1.5 rounded text-sm font-medium border ${
-                    match.pointsToWin === pts ? "bg-[#3b82f6] text-white border-[#3b82f6]" : "bg-transparent text-[#8888a0] border-[#333]"
+                    match.pointsToWin === pts ? "bg-[#ccff00] text-[#0a0a0f] border-[#ccff00]" : "bg-transparent text-[#8888a0] border-[#333]"
                   }`}>
                   {pts} pts
                 </button>
@@ -89,13 +89,13 @@ export default function MatchPage() {
           </div>
           <div className="flex justify-around items-center">
             <div className="text-center flex-1">
-              <p className="text-sm font-medium truncate px-1">{match.player1?.firstName || "TBD"}</p>
-              <p className="text-6xl font-bold mt-1 text-[#3b82f6]">{match.score1}</p>
+              <p className="text-base font-semibold text-[#3b82f6] truncate px-1">{match.player1?.firstName || "TBD"}</p>
+              <p className="text-7xl font-bold mt-1 tabular-nums leading-none text-[#3b82f6]">{match.score1}</p>
             </div>
             <p className="text-2xl text-[#333] px-1">:</p>
             <div className="text-center flex-1">
-              <p className="text-sm font-medium truncate px-1">{match.player2?.firstName || "TBD"}</p>
-              <p className="text-6xl font-bold mt-1 text-[#ef4444]">{match.score2}</p>
+              <p className="text-base font-semibold text-[#ef4444] truncate px-1">{match.player2?.firstName || "TBD"}</p>
+              <p className="text-7xl font-bold mt-1 tabular-nums leading-none text-[#ef4444]">{match.score2}</p>
             </div>
           </div>
         </div>
@@ -112,7 +112,7 @@ export default function MatchPage() {
         ) : (
           <div className="space-y-2">
             {match.status === "NOT_STARTED" ? (
-              <button onClick={startMatch} className="w-full bg-[#3b82f6] text-white py-4 rounded-lg text-sm font-medium active:scale-[0.98] transition-transform">
+              <button onClick={startMatch} className="w-full bg-[#ccff00] text-[#0a0a0f] py-4 rounded-lg text-base font-bold active:scale-[0.98] transition-transform">
                 Start Match
               </button>
             ) : (

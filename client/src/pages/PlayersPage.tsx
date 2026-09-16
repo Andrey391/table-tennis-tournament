@@ -13,7 +13,7 @@ export default function PlayersPage() {
 
   return (
     <Layout>
-      <h1 className="text-lg font-bold mb-3">Players</h1>
+      <h1 className="text-2xl font-bold tracking-tight mb-3">Players</h1>
       <input type="text" placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)}
         className="w-full px-3 py-2.5 bg-[#12121a] rounded border border-[#1e1e2e] text-sm focus:outline-none mb-3" />
       {loading ? (

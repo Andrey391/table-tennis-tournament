@@ -9,7 +9,7 @@ export default function RatingPage() {
 
   return (
     <Layout>
-      <h1 className="text-lg font-bold mb-3">Rating</h1>
+      <h1 className="text-2xl font-bold tracking-tight mb-3">Rating</h1>
       {players.length === 0 ? (
         <div className="text-center py-16 bg-[#12121a] rounded-lg border border-[#1e1e2e]">
           <p className="text-[#666680] text-sm">No rated players yet</p>

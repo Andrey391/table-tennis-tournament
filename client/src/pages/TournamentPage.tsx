@@ -89,7 +89,7 @@ export default function TournamentPage() {
   return (
     <Layout>
       <div className="mb-4">
-        <h1 className="text-lg font-bold truncate">{tournament.name}</h1>
+        <h1 className="text-2xl font-bold tracking-tight truncate">{tournament.name}</h1>
         <div className="flex items-center gap-2 mt-1 flex-wrap">
           <span className={`px-2 py-0.5 rounded text-[11px] font-medium ${
             tournament.status === "ACTIVE" ? "bg-yellow-500/10 text-yellow-400 border border-yellow-500/20" :
@@ -118,7 +118,7 @@ export default function TournamentPage() {
         <div className="flex justify-between items-center mb-2">
           <h2 className="text-xs font-medium text-[#666680] uppercase tracking-wider">Participants ({approved.length})</h2>
           {isManager && isDraft && (
-            <button onClick={() => setShowAdd(s => !s)} className="text-xs text-[#3b82f6] font-medium">{showAdd ? "Close" : "+ Add"}</button>
+            <button onClick={() => setShowAdd(s => !s)} className="text-xs text-[#ccff00] font-medium">{showAdd ? "Close" : "+ Add"}</button>
           )}
         </div>
 
@@ -157,7 +157,7 @@ export default function TournamentPage() {
               ))}
             </div>
             <button onClick={addSelected} disabled={selected.size === 0 || busy}
-              className="w-full bg-[#3b82f6] text-white py-2.5 rounded text-sm font-medium disabled:opacity-40">
+              className="w-full bg-[#ccff00] text-[#0a0a0f] py-2.5 rounded text-sm font-bold disabled:opacity-40">
               Add {selected.size > 0 ? `(${selected.size})` : ""}
             </button>
           </div>
@@ -189,7 +189,7 @@ export default function TournamentPage() {
             </p>
           ) : (
             <button onClick={join} disabled={busy}
-              className="w-full mt-3 bg-[#3b82f6] text-white py-3 rounded-lg text-sm font-medium disabled:opacity-40">
+              className="w-full mt-3 bg-[#ccff00] text-[#0a0a0f] py-3.5 rounded-lg text-base font-bold disabled:opacity-40 active:scale-[0.98] transition-transform">
               {busy ? "Requesting..." : "Ask to join"}
             </button>
           )
@@ -197,7 +197,7 @@ export default function TournamentPage() {
 
         {isManager && isDraft && (
           <button onClick={pair} disabled={approved.length < 2 || busy}
-            className="w-full mt-3 bg-[#3b82f6] text-white py-3 rounded-lg text-sm font-medium disabled:opacity-40">
+            className="w-full mt-3 bg-[#ccff00] text-[#0a0a0f] py-3.5 rounded-lg text-base font-bold disabled:opacity-40 active:scale-[0.98] transition-transform">
             {busy ? "Pairing..." : "Lock roster & split into pairs"}
           </button>
         )}
@@ -207,7 +207,7 @@ export default function TournamentPage() {
         <section className="space-y-4">
           {isManager && (
             <button onClick={pair} disabled={!canStartNextRound || busy}
-              className="w-full bg-[#3b82f6] text-white py-3 rounded-lg text-sm font-medium disabled:opacity-40">
+              className="w-full bg-[#ccff00] text-[#0a0a0f] py-3.5 rounded-lg text-base font-bold disabled:opacity-40 active:scale-[0.98] transition-transform">
               {busy ? "Pairing..." : canStartNextRound ? `Start round ${currentRound + 1}` : `Finish round ${currentRound} first`}
             </button>
           )}

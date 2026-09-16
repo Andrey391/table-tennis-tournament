@@ -16,7 +16,7 @@ export default function ResultsPage() {
 
   return (
     <Layout>
-      <h1 className="text-lg font-bold mb-3">Results</h1>
+      <h1 className="text-2xl font-bold tracking-tight mb-3">Results</h1>
       <select value={selected || ""} onChange={e => setSelected(e.target.value || null)}
         className="w-full px-3 py-2.5 bg-[#12121a] rounded border border-[#1e1e2e] text-sm focus:outline-none mb-4">
         <option value="">Select tournament</option>
