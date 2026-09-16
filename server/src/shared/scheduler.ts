@@ -27,12 +27,15 @@ export function generateRoundPairings(
 
   let byeUserId: string | null = null;
   if (sorted.length % 2 === 1) {
-    // Bye goes to whoever has played the fewest matches so far (least rating as tiebreak),
-    // so the same person doesn't sit out twice while someone else never has.
+    // Bye goes to whoever has played the MOST matches so far (i.e. sat out
+    // the fewest times) — picking the fewest-matches player here would just
+    // give the bye to whoever already has one, over and over, since sitting
+    // out keeps their match count the lowest forever. Rating tiebreaks
+    // (lowest first) among players tied on matches played.
     let byeIdx = 0;
     for (let i = 1; i < sorted.length; i++) {
       if (
-        sorted[i].matchesPlayed < sorted[byeIdx].matchesPlayed ||
+        sorted[i].matchesPlayed > sorted[byeIdx].matchesPlayed ||
         (sorted[i].matchesPlayed === sorted[byeIdx].matchesPlayed && sorted[i].rating < sorted[byeIdx].rating)
       ) {
         byeIdx = i;

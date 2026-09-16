@@ -12,6 +12,9 @@ import LiveScore from "./pages/LiveScore";
 import PlayersPage from "./pages/PlayersPage";
 import ResultsPage from "./pages/ResultsPage";
 import RatingPage from "./pages/RatingPage";
+import BookingsPage from "./pages/BookingsPage";
+import ProfilePage from "./pages/ProfilePage";
+import TournamentChatPage from "./pages/TournamentChatPage";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { token } = useAuth();
@@ -30,9 +33,12 @@ function App() {
           <Route path="/players" element={<RequireAuth><PlayersPage /></RequireAuth>} />
           <Route path="/results" element={<RequireAuth><ResultsPage /></RequireAuth>} />
           <Route path="/rating" element={<RequireAuth><RatingPage /></RequireAuth>} />
+          <Route path="/bookings" element={<RequireAuth><BookingsPage /></RequireAuth>} />
+          <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
           <Route path="/tournament/new" element={<RequireAuth><CreateTournament /></RequireAuth>} />
           <Route path="/tournament/:id" element={<RequireAuth><TournamentPage /></RequireAuth>} />
           <Route path="/tournament/:id/match/:matchId" element={<RequireAuth><MatchPage /></RequireAuth>} />
+          <Route path="/tournament/:id/chat" element={<RequireAuth><TournamentChatPage /></RequireAuth>} />
           <Route path="/public/tournament/:id" element={<PublicTournament />} />
           <Route path="/live/:tournamentId" element={<LiveScore />} />
         </Routes>

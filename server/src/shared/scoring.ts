@@ -15,3 +15,13 @@ export function nextServerSide(totalPoints: number, currentServer: number, deuce
   const shouldSwitch = deuceMode ? totalPoints % 2 !== 0 : Math.floor(totalPoints / 2) % 2 !== 0;
   return shouldSwitch ? (currentServer === 1 ? 2 : 1) : currentServer;
 }
+
+const ELO_K = 32;
+
+// Standard Elo update: expected score from the rating gap, actual score is 1/0
+// for win/loss, delta is symmetric (winner's gain equals loser's loss).
+export function computeEloDelta(winnerRating: number, loserRating: number, k: number = ELO_K): { winnerDelta: number; loserDelta: number } {
+  const expectedWinner = 1 / (1 + Math.pow(10, (loserRating - winnerRating) / 400));
+  const winnerDelta = Math.round(k * (1 - expectedWinner));
+  return { winnerDelta, loserDelta: -winnerDelta };
+}

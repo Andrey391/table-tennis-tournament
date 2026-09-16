@@ -66,9 +66,12 @@ function generateRoundPairings(candidates: RoundCandidate[], isFirstRound: boole
 
   let byeUserId: string | null = null;
   if (sorted.length % 2 === 1) {
+    // Bye goes to whoever has played the MOST matches so far (sat out the fewest
+    // times) — picking the fewest-matches player would give them the bye forever,
+    // since sitting out keeps their count lowest. Rating tiebreaks (lowest first).
     let byeIdx = 0;
     for (let i = 1; i < sorted.length; i++) {
-      if (sorted[i].matchesPlayed < sorted[byeIdx].matchesPlayed || (sorted[i].matchesPlayed === sorted[byeIdx].matchesPlayed && sorted[i].rating < sorted[byeIdx].rating)) byeIdx = i;
+      if (sorted[i].matchesPlayed > sorted[byeIdx].matchesPlayed || (sorted[i].matchesPlayed === sorted[byeIdx].matchesPlayed && sorted[i].rating < sorted[byeIdx].rating)) byeIdx = i;
     }
     byeUserId = sorted[byeIdx].userId;
     sorted.splice(byeIdx, 1);
@@ -106,6 +109,30 @@ function nextServerSide(totalPoints: number, currentServer: number, deuceMode: b
   return shouldSwitch ? (currentServer === 1 ? 2 : 1) : currentServer;
 }
 
+const ELO_K = 32;
+function computeEloDelta(winnerRating: number, loserRating: number, k: number = ELO_K) {
+  const expectedWinner = 1 / (1 + Math.pow(10, (loserRating - winnerRating) / 400));
+  const winnerDelta = Math.round(k * (1 - expectedWinner));
+  return { winnerDelta, loserDelta: -winnerDelta };
+}
+
+// Updates both players' global rating using the match result (Elo). Called whenever
+// a match resolves to COMPLETED with a clear winner.
+async function applyEloUpdate(winnerId: string | null, loserId: string | null) {
+  if (!winnerId || !loserId) return;
+  const d = db();
+  const [winner, loser] = await Promise.all([
+    d.user.findUnique({ where: { id: winnerId }, select: { rating: true } }),
+    d.user.findUnique({ where: { id: loserId }, select: { rating: true } }),
+  ]);
+  if (!winner || !loser) return;
+  const { winnerDelta, loserDelta } = computeEloDelta(winner.rating, loser.rating);
+  await d.$transaction([
+    d.user.update({ where: { id: winnerId }, data: { rating: winner.rating + winnerDelta } }),
+    d.user.update({ where: { id: loserId }, data: { rating: Math.max(0, loser.rating + loserDelta) } }),
+  ]);
+}
+
 // ─── SCHEMA SETUP ───────────────────────────────────────────────────────────────
 
 app.get("/api/health", (_req, res) => { res.json({ status: "ok", time: new Date().toISOString() }); });
@@ -119,18 +146,25 @@ app.get("/api/setup", async (_req, res) => {
     await d.$executeRawUnsafe(doBlock(`CREATE TYPE "MatchStatus" AS ENUM ('NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED')`));
 
     const tables = [
-      `CREATE TABLE IF NOT EXISTS "User" ("id" TEXT NOT NULL, "email" TEXT NOT NULL, "password" TEXT NOT NULL, "firstName" TEXT NOT NULL, "lastName" TEXT NOT NULL, "role" "Role" NOT NULL DEFAULT 'PLAYER', "club" TEXT, "rating" INTEGER NOT NULL DEFAULT 1000, "dateOfBirth" TIMESTAMP(3), "phone" TEXT, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "User_pkey" PRIMARY KEY ("id"))`,
+      `CREATE TABLE IF NOT EXISTS "User" ("id" TEXT NOT NULL, "email" TEXT NOT NULL, "password" TEXT NOT NULL, "firstName" TEXT NOT NULL, "lastName" TEXT NOT NULL, "role" "Role" NOT NULL DEFAULT 'PLAYER', "club" TEXT, "rating" INTEGER NOT NULL DEFAULT 300, "dateOfBirth" TIMESTAMP(3), "phone" TEXT, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "User_pkey" PRIMARY KEY ("id"))`,
       `CREATE UNIQUE INDEX IF NOT EXISTS "User_email_key" ON "User"("email")`,
-      `CREATE TABLE IF NOT EXISTS "Tournament" ("id" TEXT NOT NULL, "name" TEXT NOT NULL, "tablesCount" INTEGER NOT NULL DEFAULT 4, "status" TEXT NOT NULL DEFAULT 'DRAFT', "startTime" TIMESTAMP(3), "endTime" TIMESTAMP(3), "organizerId" TEXT NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "Tournament_pkey" PRIMARY KEY ("id"))`,
+      `CREATE TABLE IF NOT EXISTS "Tournament" ("id" TEXT NOT NULL, "name" TEXT NOT NULL, "tablesCount" INTEGER NOT NULL DEFAULT 4, "status" TEXT NOT NULL DEFAULT 'DRAFT', "startTime" TIMESTAMP(3), "endTime" TIMESTAMP(3), "minRating" INTEGER, "maxRating" INTEGER, "organizerId" TEXT NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "Tournament_pkey" PRIMARY KEY ("id"))`,
       `CREATE TABLE IF NOT EXISTS "TournamentUser" ("id" TEXT NOT NULL, "tournamentId" TEXT NOT NULL, "userId" TEXT NOT NULL, "seed" INTEGER, "status" "PlayerStatus" NOT NULL DEFAULT 'REGISTERED', "joinedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "TournamentUser_pkey" PRIMARY KEY ("id"))`,
       `CREATE UNIQUE INDEX IF NOT EXISTS "TournamentUser_tournamentId_userId_key" ON "TournamentUser"("tournamentId", "userId")`,
       `CREATE TABLE IF NOT EXISTS "Match" ("id" TEXT NOT NULL, "tournamentId" TEXT NOT NULL, "round" INTEGER NOT NULL DEFAULT 1, "matchIndex" INTEGER, "tableNumber" INTEGER, "player1Id" TEXT, "player2Id" TEXT, "judgeId" TEXT, "pointsToWin" INTEGER NOT NULL DEFAULT 11, "score1" INTEGER NOT NULL DEFAULT 0, "score2" INTEGER NOT NULL DEFAULT 0, "serverSide" INTEGER NOT NULL DEFAULT 1, "lastScorer" INTEGER, "prevServerSide" INTEGER, "letCount" INTEGER NOT NULL DEFAULT 0, "status" "MatchStatus" NOT NULL DEFAULT 'NOT_STARTED', "startedAt" TIMESTAMP(3), "endedAt" TIMESTAMP(3), "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "Match_pkey" PRIMARY KEY ("id"))`,
       `CREATE TABLE IF NOT EXISTS "AuditLog" ("id" TEXT NOT NULL, "userId" TEXT NOT NULL, "action" TEXT NOT NULL, "entity" TEXT NOT NULL, "entityId" TEXT, "oldValue" JSONB, "newValue" JSONB, "ip" TEXT, "timestamp" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "AuditLog_pkey" PRIMARY KEY ("id"))`,
       `CREATE TABLE IF NOT EXISTS "Session" ("id" TEXT NOT NULL, "userId" TEXT NOT NULL, "token" TEXT NOT NULL, "expiresAt" TIMESTAMP(3) NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "Session_pkey" PRIMARY KEY ("id"))`,
       `CREATE UNIQUE INDEX IF NOT EXISTS "Session_token_key" ON "Session"("token")`,
+      `CREATE TABLE IF NOT EXISTS "Booking" ("id" TEXT NOT NULL, "userId" TEXT NOT NULL, "club" TEXT NOT NULL, "date" TIMESTAMP(3) NOT NULL, "startTime" TEXT NOT NULL, "durationHours" DOUBLE PRECISION NOT NULL DEFAULT 1, "tableNumber" INTEGER, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "Booking_pkey" PRIMARY KEY ("id"))`,
+      `CREATE TABLE IF NOT EXISTS "Subscription" ("id" TEXT NOT NULL, "userId" TEXT NOT NULL, "club" TEXT NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "Subscription_pkey" PRIMARY KEY ("id"))`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "Subscription_userId_club_key" ON "Subscription"("userId", "club")`,
+      `CREATE TABLE IF NOT EXISTS "ChatMessage" ("id" TEXT NOT NULL, "tournamentId" TEXT NOT NULL, "userId" TEXT NOT NULL, "text" TEXT NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "ChatMessage_pkey" PRIMARY KEY ("id"))`,
     ];
     for (const t of tables) await d.$executeRawUnsafe(t);
     await d.$executeRawUnsafe(`ALTER TABLE "Match" ADD COLUMN IF NOT EXISTS "round" INTEGER NOT NULL DEFAULT 1`);
+    await d.$executeRawUnsafe(`ALTER TABLE "User" ALTER COLUMN "rating" SET DEFAULT 300`);
+    await d.$executeRawUnsafe(`ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "minRating" INTEGER`);
+    await d.$executeRawUnsafe(`ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "maxRating" INTEGER`);
     res.json({ status: "ok", message: "Schema created" });
   } catch (e: any) {
     res.json({ status: "ok", message: e.message?.includes("already exists") ? "Already exists" : "Partial" });
@@ -173,6 +207,22 @@ app.get("/api/auth/me", authMiddleware, async (req: any, res) => {
   } catch { res.status(401).json({ error: "Invalid token" }); }
 });
 
+app.get("/api/profile/stats", authMiddleware, async (req: any, res) => {
+  const d = db();
+  const userId = req.user.userId;
+  const [tournamentsCount, matches] = await Promise.all([
+    d.tournamentUser.count({ where: { userId, status: "REGISTERED" } }),
+    d.match.findMany({ where: { OR: [{ player1Id: userId }, { player2Id: userId }], status: "COMPLETED" }, select: { player1Id: true, score1: true, score2: true } }),
+  ]);
+  let wins = 0;
+  for (const m of matches) {
+    const isPlayer1 = m.player1Id === userId;
+    const won = isPlayer1 ? m.score1 > m.score2 : m.score2 > m.score1;
+    if (won) wins++;
+  }
+  res.json({ tournaments: tournamentsCount, matches: matches.length, wins, losses: matches.length - wins });
+});
+
 // ─── PLAYERS ────────────────────────────────────────────────────────────────────
 
 app.get("/api/players", authMiddleware, async (_req, res) => {
@@ -213,8 +263,8 @@ app.get("/api/tournaments/:id", async (req, res) => {
 
 app.post("/api/tournaments", authMiddleware, async (req: any, res) => {
   try {
-    const { name, tablesCount, startTime } = req.body;
-    const tournament = await db().tournament.create({ data: { name, tablesCount: tablesCount || 4, startTime, organizerId: req.user.userId } });
+    const { name, tablesCount, startTime, minRating, maxRating } = req.body;
+    const tournament = await db().tournament.create({ data: { name, tablesCount: tablesCount || 4, startTime, minRating, maxRating, organizerId: req.user.userId } });
     res.status(201).json(tournament);
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
@@ -223,8 +273,8 @@ app.put("/api/tournaments/:id", authMiddleware, async (req: any, res) => {
   try {
     const tournament = await loadOwnedTournament(res, req.params.id, req.user.userId);
     if (!tournament) return;
-    const { name, status, startTime, endTime, tablesCount } = req.body;
-    const updated = await db().tournament.update({ where: { id: tournament.id }, data: { name, status, startTime, endTime, tablesCount } });
+    const { name, status, startTime, endTime, tablesCount, minRating, maxRating } = req.body;
+    const updated = await db().tournament.update({ where: { id: tournament.id }, data: { name, status, startTime, endTime, tablesCount, minRating, maxRating } });
     res.json(updated);
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
@@ -246,13 +296,25 @@ app.post("/api/tournaments/:id/players", authMiddleware, async (req: any, res) =
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
-// Any signed-in user can request to join — the manager has to approve before pairing.
+// Any signed-in user can request to join (if their rating fits the range) — the
+// manager still has to approve before pairing.
 app.post("/api/tournaments/:id/join", authMiddleware, async (req: any, res) => {
   try {
-    const tournament = await db().tournament.findUnique({ where: { id: req.params.id } });
+    const d = db();
+    const tournament = await d.tournament.findUnique({ where: { id: req.params.id } });
     if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
     if (tournament.status !== "DRAFT") { res.status(400).json({ error: "This tournament is no longer accepting participants" }); return; }
-    const entry = await db().tournamentUser.create({ data: { tournamentId: req.params.id, userId: req.user.userId, status: "PENDING" } });
+
+    if (tournament.minRating != null || tournament.maxRating != null) {
+      const user = await d.user.findUnique({ where: { id: req.user.userId }, select: { rating: true } });
+      const rating = user?.rating ?? 0;
+      if ((tournament.minRating != null && rating < tournament.minRating) || (tournament.maxRating != null && rating > tournament.maxRating)) {
+        res.status(403).json({ error: `This tournament is for players rated ${tournament.minRating ?? 0}-${tournament.maxRating ?? "∞"}. Your rating: ${rating}` });
+        return;
+      }
+    }
+
+    const entry = await d.tournamentUser.create({ data: { tournamentId: req.params.id, userId: req.user.userId, status: "PENDING" } });
     res.status(201).json(entry);
   } catch (e: any) {
     if (e.code === "P2002") { res.status(400).json({ error: "Already requested to join" }); return; }
@@ -379,6 +441,91 @@ app.get("/api/tournaments/:id/standings", async (req, res) => {
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
+// Basic per-tournament message board (polled, not real-time). Manager + approved participants only.
+async function assertCanUseChat(res: any, tournamentId: string, userId: string) {
+  const d = db();
+  const tournament = await d.tournament.findUnique({ where: { id: tournamentId } });
+  if (!tournament) { res.status(404).json({ error: "Not found" }); return null; }
+  if (tournament.organizerId === userId) return tournament;
+  const membership = await d.tournamentUser.findUnique({ where: { tournamentId_userId: { tournamentId, userId } } });
+  if (!membership || membership.status !== "REGISTERED") { res.status(403).json({ error: "Only participants can use this tournament's chat" }); return null; }
+  return tournament;
+}
+
+app.get("/api/tournaments/:id/chat", authMiddleware, async (req: any, res) => {
+  const tournament = await assertCanUseChat(res, req.params.id, req.user.userId);
+  if (!tournament) return;
+  const messages = await db().chatMessage.findMany({
+    where: { tournamentId: req.params.id },
+    include: { user: { select: { id: true, firstName: true, lastName: true } } },
+    orderBy: { createdAt: "asc" },
+  });
+  res.json(messages);
+});
+
+app.post("/api/tournaments/:id/chat", authMiddleware, async (req: any, res) => {
+  try {
+    const tournament = await assertCanUseChat(res, req.params.id, req.user.userId);
+    if (!tournament) return;
+    const { text } = req.body;
+    const message = await db().chatMessage.create({
+      data: { tournamentId: req.params.id, userId: req.user.userId, text },
+      include: { user: { select: { id: true, firstName: true, lastName: true } } },
+    });
+    res.status(201).json(message);
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+// ─── BOOKINGS ───────────────────────────────────────────────────────────────────
+
+app.post("/api/bookings", authMiddleware, async (req: any, res) => {
+  try {
+    const { club, date, startTime, durationHours, tableNumber } = req.body;
+    const booking = await db().booking.create({ data: { userId: req.user.userId, club, date, startTime, durationHours: durationHours || 1, tableNumber } });
+    res.status(201).json(booking);
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.get("/api/bookings/mine", authMiddleware, async (req: any, res) => {
+  const bookings = await db().booking.findMany({ where: { userId: req.user.userId }, orderBy: { date: "asc" } });
+  res.json(bookings);
+});
+
+app.delete("/api/bookings/:id", authMiddleware, async (req: any, res) => {
+  try {
+    const booking = await db().booking.findUnique({ where: { id: req.params.id } });
+    if (!booking) { res.status(404).json({ error: "Not found" }); return; }
+    if (booking.userId !== req.user.userId) { res.status(403).json({ error: "Not your booking" }); return; }
+    await db().booking.delete({ where: { id: req.params.id } });
+    res.json({ ok: true });
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+// ─── SUBSCRIPTIONS ──────────────────────────────────────────────────────────────
+
+app.get("/api/subscriptions/mine", authMiddleware, async (req: any, res) => {
+  const subscriptions = await db().subscription.findMany({ where: { userId: req.user.userId }, orderBy: { createdAt: "desc" } });
+  res.json(subscriptions);
+});
+
+app.post("/api/subscriptions", authMiddleware, async (req: any, res) => {
+  try {
+    const { club } = req.body;
+    const subscription = await db().subscription.create({ data: { userId: req.user.userId, club } });
+    res.status(201).json(subscription);
+  } catch (e: any) {
+    if (e.code === "P2002") { res.status(400).json({ error: "Already subscribed" }); return; }
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.delete("/api/subscriptions/:club", authMiddleware, async (req: any, res) => {
+  try {
+    await db().subscription.delete({ where: { userId_club: { userId: req.user.userId, club: req.params.club } } });
+    res.json({ ok: true });
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
 // ─── MATCHES ────────────────────────────────────────────────────────────────────
 
 app.get("/api/matches/tournament/:tournamentId", async (req, res) => {
@@ -430,7 +577,10 @@ app.post("/api/matches/:id/score", authMiddleware, async (req: any, res) => {
       data: { score1, score2, serverSide: server, lastScorer: side, prevServerSide: match.serverSide, status: winner ? "COMPLETED" : "IN_PROGRESS", endedAt: winner ? new Date() : undefined },
       include: matchInclude,
     });
-    if (winner) await maybeCompleteTournament(match.tournamentId);
+    if (winner) {
+      await applyEloUpdate(winner === 1 ? match.player1Id : match.player2Id, winner === 1 ? match.player2Id : match.player1Id);
+      await maybeCompleteTournament(match.tournamentId);
+    }
     res.json({ match: updated, deuce, winner });
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
@@ -465,6 +615,9 @@ app.post("/api/matches/:id/end", authMiddleware, async (req: any, res) => {
     const match = await loadOwnedMatch(res, req.params.id, req.user.userId);
     if (!match) return;
     const updated = await db().match.update({ where: { id: match.id }, data: { status: "COMPLETED", endedAt: new Date() }, include: matchInclude });
+    if (match.score1 !== match.score2) {
+      await applyEloUpdate(match.score1 > match.score2 ? match.player1Id : match.player2Id, match.score1 > match.score2 ? match.player2Id : match.player1Id);
+    }
     await maybeCompleteTournament(match.tournamentId);
     res.json(updated);
   } catch (e: any) { res.status(400).json({ error: e.message }); }
@@ -487,6 +640,7 @@ app.post("/api/matches/:id/forfeit", authMiddleware, async (req: any, res) => {
       data: { score1, score2, status: "COMPLETED", startedAt: match.startedAt || new Date(), endedAt: new Date() },
       include: matchInclude,
     });
+    await applyEloUpdate(loserSide === 1 ? match.player2Id : match.player1Id, loserSide === 1 ? match.player1Id : match.player2Id);
     await maybeCompleteTournament(match.tournamentId);
     res.json(updated);
   } catch (e: any) { res.status(400).json({ error: e.message }); }

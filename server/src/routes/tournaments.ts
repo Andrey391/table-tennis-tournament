@@ -1,7 +1,7 @@
 import { Router, Response } from "express";
 import { prisma } from "../config/db.js";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth.js";
-import { CreateTournamentSchema, UpdateTournamentSchema, AddPlayersSchema } from "../shared/schemas.js";
+import { CreateTournamentSchema, UpdateTournamentSchema, AddPlayersSchema, ChatMessageSchema } from "../shared/schemas.js";
 import { generateRoundPairings } from "../shared/scheduler.js";
 import AuditLog from "../models/AuditLog.js";
 
@@ -101,12 +101,22 @@ tournamentRouter.post("/:id/players", authMiddleware, async (req: AuthenticatedR
   }
 });
 
-// Any signed-in user can request to join — the manager has to approve before pairing.
+// Any signed-in user can request to join (if their rating fits the tournament's
+// range) — the manager still has to approve before pairing.
 tournamentRouter.post("/:id/join", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const tournament = await prisma.tournament.findUnique({ where: { id: req.params.id } });
     if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
     if (tournament.status !== "DRAFT") { res.status(400).json({ error: "This tournament is no longer accepting participants" }); return; }
+
+    if (tournament.minRating != null || tournament.maxRating != null) {
+      const user = await prisma.user.findUnique({ where: { id: req.user!.userId }, select: { rating: true } });
+      const rating = user?.rating ?? 0;
+      if ((tournament.minRating != null && rating < tournament.minRating) || (tournament.maxRating != null && rating > tournament.maxRating)) {
+        res.status(403).json({ error: `This tournament is for players rated ${tournament.minRating ?? 0}-${tournament.maxRating ?? "∞"}. Your rating: ${rating}` });
+        return;
+      }
+    }
 
     const entry = await prisma.tournamentUser.create({
       data: { tournamentId: req.params.id, userId: req.user!.userId, status: "PENDING" },
@@ -219,6 +229,43 @@ tournamentRouter.post("/:id/pair", authMiddleware, async (req: AuthenticatedRequ
 
     await AuditLog.create({ userId: req.user!.userId, action: "TOURNAMENT_PAIR", entity: "Tournament", entityId: tournament.id, newValue: { round: newRound, pairs: pairs.length, bye: byeUserId } });
     res.json({ message: "Paired", round: newRound, matches: pairs.length, bye: byeUserId });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Basic per-tournament message board (polled by the client, not real-time). Only the
+// manager and approved participants can read or post.
+async function assertCanUseChat(res: Response, tournamentId: string, userId: string) {
+  const tournament = await prisma.tournament.findUnique({ where: { id: tournamentId } });
+  if (!tournament) { res.status(404).json({ error: "Not found" }); return null; }
+  if (tournament.organizerId === userId) return tournament;
+  const membership = await prisma.tournamentUser.findUnique({ where: { tournamentId_userId: { tournamentId, userId } } });
+  if (!membership || membership.status !== "REGISTERED") { res.status(403).json({ error: "Only participants can use this tournament's chat" }); return null; }
+  return tournament;
+}
+
+tournamentRouter.get("/:id/chat", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const tournament = await assertCanUseChat(res, req.params.id, req.user!.userId);
+  if (!tournament) return;
+  const messages = await prisma.chatMessage.findMany({
+    where: { tournamentId: req.params.id },
+    include: { user: { select: { id: true, firstName: true, lastName: true } } },
+    orderBy: { createdAt: "asc" },
+  });
+  res.json(messages);
+});
+
+tournamentRouter.post("/:id/chat", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const tournament = await assertCanUseChat(res, req.params.id, req.user!.userId);
+    if (!tournament) return;
+    const { text } = ChatMessageSchema.parse(req.body);
+    const message = await prisma.chatMessage.create({
+      data: { tournamentId: req.params.id, userId: req.user!.userId, text },
+      include: { user: { select: { id: true, firstName: true, lastName: true } } },
+    });
+    res.status(201).json(message);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }

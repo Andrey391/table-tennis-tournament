@@ -9,6 +9,9 @@ import { initSocket } from "./socket.js";
 import { authRouter } from "./routes/auth.js";
 import { tournamentRouter } from "./routes/tournaments.js";
 import { matchRouter } from "./routes/matches.js";
+import { bookingRouter } from "./routes/bookings.js";
+import { subscriptionRouter } from "./routes/subscriptions.js";
+import { profileRouter } from "./routes/profile.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -22,6 +25,9 @@ app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 200 }));
 app.use("/api/auth", authRouter);
 app.use("/api/tournaments", tournamentRouter);
 app.use("/api/matches", matchRouter);
+app.use("/api/bookings", bookingRouter);
+app.use("/api/subscriptions", subscriptionRouter);
+app.use("/api/profile", profileRouter);
 
 app.get("/api/health", (_req, res) => res.json({ status: "ok", timestamp: new Date().toISOString() }));
 
