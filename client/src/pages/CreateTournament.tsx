@@ -2,12 +2,17 @@ import React from "react";
 import { useNavigate } from "react-router-dom";
 import { apiService } from "../services/api";
 import Layout from "../components/Layout";
+import { useT } from "../i18n";
 
 export default function CreateTournament() {
   const navigate = useNavigate();
-  const [form, setForm] = React.useState({ name: "", tablesCount: 4, minRating: "", maxRating: "" });
+  const { t } = useT();
+  const [clubs, setClubs] = React.useState<any[]>([]);
+  const [form, setForm] = React.useState({ name: "", description: "", clubId: "", startTime: "", endTime: "", tablesCount: 4, maxPlayers: "", minRating: "", maxRating: "" });
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
+
+  React.useEffect(() => { apiService.clubs.getAll().then(r => setClubs(r.data)).catch(console.error); }, []);
 
   const set = (key: string, val: any) => setForm({ ...form, [key]: val });
 
@@ -16,45 +21,77 @@ export default function CreateTournament() {
     setLoading(true);
     const payload = {
       name: form.name,
+      description: form.description || undefined,
+      clubId: form.clubId || undefined,
+      startTime: form.startTime ? new Date(form.startTime).toISOString() : undefined,
+      endTime: form.endTime ? new Date(form.endTime).toISOString() : undefined,
       tablesCount: form.tablesCount,
+      maxPlayers: form.maxPlayers ? +form.maxPlayers : undefined,
       minRating: form.minRating ? +form.minRating : undefined,
       maxRating: form.maxRating ? +form.maxRating : undefined,
     };
     try { const r = await apiService.tournaments.create(payload); navigate(`/tournament/${r.data.id}`); }
-    catch (err: any) { setError(err.response?.data?.error || "Failed"); }
+    catch (err: any) { setError(err.response?.data?.error || t("common.failed")); }
     finally { setLoading(false); }
   };
 
+  const field = "w-full px-3 py-3 bg-[#0a1628] rounded border border-[#1c3350] focus:border-[#ccff00] focus:outline-none";
+  const label = "block text-xs font-medium text-[#6b84a0] mb-1.5 uppercase tracking-wider";
+
   return (
     <Layout>
-      <h1 className="text-2xl font-bold tracking-tight mb-4">New Tournament</h1>
+      <h1 className="text-2xl font-bold tracking-tight mb-4">{t("create.title")}</h1>
       <form onSubmit={handleSubmit} className="space-y-4 bg-[#101f36] p-4 rounded-lg border border-[#1c3350]">
         {error && <div className="bg-red-500/10 text-red-400 p-3 rounded text-sm border border-red-500/20">{error}</div>}
         <div>
-          <label className="block text-xs font-medium text-[#6b84a0] mb-1.5 uppercase tracking-wider">Name</label>
-          <input type="text" placeholder="e.g. Friday Night Club" value={form.name} onChange={e => set("name", e.target.value)}
-            className="w-full px-3 py-3 bg-[#0a1628] rounded border border-[#1c3350] focus:border-[#ccff00] focus:outline-none" required />
+          <label className={label}>{t("create.name")}</label>
+          <input type="text" placeholder={t("create.namePlaceholder")} value={form.name} onChange={e => set("name", e.target.value)} className={field} required />
         </div>
         <div>
-          <label className="block text-xs font-medium text-[#6b84a0] mb-1.5 uppercase tracking-wider">Tables available</label>
-          <input type="number" min={1} value={form.tablesCount} onChange={e => set("tablesCount", +e.target.value)}
-            className="w-full px-3 py-3 bg-[#0a1628] rounded border border-[#1c3350] focus:border-[#ccff00] focus:outline-none" />
+          <label className={label}>{t("create.description")} <span className="normal-case text-[#4d6480]">({t("common.optional")})</span></label>
+          <textarea rows={3} placeholder={t("create.descriptionPlaceholder")} value={form.description} onChange={e => set("description", e.target.value)} className={field} />
         </div>
         <div>
-          <label className="block text-xs font-medium text-[#6b84a0] mb-1.5 uppercase tracking-wider">Rating range (optional)</label>
-          <div className="grid grid-cols-2 gap-3">
-            <input type="number" placeholder="Min" value={form.minRating} onChange={e => set("minRating", e.target.value)}
-              className="w-full px-3 py-3 bg-[#0a1628] rounded border border-[#1c3350] focus:border-[#ccff00] focus:outline-none" />
-            <input type="number" placeholder="Max" value={form.maxRating} onChange={e => set("maxRating", e.target.value)}
-              className="w-full px-3 py-3 bg-[#0a1628] rounded border border-[#1c3350] focus:border-[#ccff00] focus:outline-none" />
+          <label className={label}>{t("create.club")}</label>
+          <select value={form.clubId} onChange={e => set("clubId", e.target.value)} className={field}>
+            <option value="">{t("create.noClub")}</option>
+            {clubs.map(c => <option key={c.id} value={c.id}>{c.name} &middot; {c.city}</option>)}
+          </select>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={label}>{t("create.start")}</label>
+            <input type="datetime-local" value={form.startTime} onChange={e => set("startTime", e.target.value)} className={field} />
           </div>
-          <p className="text-xs text-[#4d6480] mt-1.5">Leave blank for no rating restriction. Players outside this range can't join.</p>
+          <div>
+            <label className={label}>{t("create.end")}</label>
+            <input type="datetime-local" value={form.endTime} onChange={e => set("endTime", e.target.value)} className={field} />
+          </div>
         </div>
-        <p className="text-xs text-[#4d6480]">After creating, add participants and pair them up. Each match's point target (11 or 21) is set individually before it starts.</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={label}>{t("create.tables")}</label>
+            <input type="number" min={1} value={form.tablesCount} onChange={e => set("tablesCount", +e.target.value)} className={field} />
+          </div>
+          <div>
+            <label className={label}>{t("create.maxPlayers")}</label>
+            <input type="number" min={2} placeholder="—" value={form.maxPlayers} onChange={e => set("maxPlayers", e.target.value)} className={field} />
+          </div>
+        </div>
+        <p className="text-xs text-[#4d6480] -mt-2">{t("create.maxPlayersHint")}</p>
+        <div>
+          <label className={label}>{t("create.ratingRange")} <span className="normal-case text-[#4d6480]">({t("common.optional")})</span></label>
+          <div className="grid grid-cols-2 gap-3">
+            <input type="number" placeholder={t("create.min")} value={form.minRating} onChange={e => set("minRating", e.target.value)} className={field} />
+            <input type="number" placeholder={t("create.max")} value={form.maxRating} onChange={e => set("maxRating", e.target.value)} className={field} />
+          </div>
+          <p className="text-xs text-[#4d6480] mt-1.5">{t("create.ratingHint")}</p>
+        </div>
+        <p className="text-xs text-[#4d6480]">{t("create.hint")}</p>
         <div className="flex gap-3 pt-1">
-          <button type="button" onClick={() => navigate("/")} className="flex-1 bg-[#1c3350] text-[#93a8c2] py-3 rounded text-sm font-medium">Cancel</button>
+          <button type="button" onClick={() => navigate("/")} className="flex-1 bg-[#1c3350] text-[#93a8c2] py-3 rounded text-sm font-medium">{t("common.cancel")}</button>
           <button type="submit" disabled={loading} className="flex-1 bg-[#ccff00] text-[#0a1628] py-3 rounded-lg text-sm font-bold disabled:opacity-50">
-            {loading ? "Creating..." : "Create"}
+            {loading ? t("common.creating") : t("common.create")}
           </button>
         </div>
       </form>

@@ -36,6 +36,45 @@ async function loadOwnedTournament(res: any, tournamentId: string, userId: strin
   return tournament;
 }
 
+const clubSelect = { id: true, name: true, city: true, address: true, phone: true };
+// "9/9 players" counts approved participants only — pending requests don't fill the tournament.
+const feedInclude = {
+  organizer: { select: { id: true, firstName: true, lastName: true } },
+  club: { select: clubSelect },
+  _count: { select: { matches: true, players: { where: { status: "REGISTERED" as const } } } },
+};
+const bookingInclude = { club: { select: clubSelect }, table: { select: { id: true, number: true, indoor: true } } };
+
+// Booking times are "HH:MM" plus a duration in hours, so overlap checks work in
+// minutes-since-midnight within a single calendar day.
+function timeToMinutes(hhmm: string) {
+  const [h, m] = String(hhmm).split(":").map(Number);
+  return h * 60 + m;
+}
+function bookingsOverlap(startA: string, hoursA: number, startB: string, hoursB: number) {
+  const a1 = timeToMinutes(startA), a2 = a1 + Math.round(hoursA * 60);
+  const b1 = timeToMinutes(startB), b2 = b1 + Math.round(hoursB * 60);
+  return a1 < b2 && b1 < a2;
+}
+// Bookings are keyed by calendar day; normalise to UTC midnight so "same day"
+// doesn't depend on the submitter's timezone.
+function startOfUtcDay(date: any) {
+  const d = new Date(date);
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+}
+async function findBookingConflict(tableId: string, date: Date, startTime: string, durationHours: number) {
+  const sameDay = await db().booking.findMany({ where: { tableId, date } });
+  return sameDay.find((b: any) => bookingsOverlap(startTime, durationHours, b.startTime, b.durationHours)) || null;
+}
+
+// Same ownership rule as tournaments: whoever created the club manages it.
+async function loadOwnedClub(res: any, clubId: string, userId: string) {
+  const club = await db().club.findUnique({ where: { id: clubId } });
+  if (!club) { res.status(404).json({ error: "Not found" }); return null; }
+  if (club.createdById && club.createdById !== userId) { res.status(403).json({ error: "Only the club's manager can do this" }); return null; }
+  return club;
+}
+
 // Loads the match and confirms the caller manages its tournament.
 async function loadOwnedMatch(res: any, matchId: string, userId: string) {
   const match = await db().match.findUnique({ where: { id: matchId }, include: { tournament: { select: { organizerId: true } } } });
@@ -159,12 +198,27 @@ app.get("/api/setup", async (_req, res) => {
       `CREATE TABLE IF NOT EXISTS "Subscription" ("id" TEXT NOT NULL, "userId" TEXT NOT NULL, "club" TEXT NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "Subscription_pkey" PRIMARY KEY ("id"))`,
       `CREATE UNIQUE INDEX IF NOT EXISTS "Subscription_userId_club_key" ON "Subscription"("userId", "club")`,
       `CREATE TABLE IF NOT EXISTS "ChatMessage" ("id" TEXT NOT NULL, "tournamentId" TEXT NOT NULL, "userId" TEXT NOT NULL, "text" TEXT NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "ChatMessage_pkey" PRIMARY KEY ("id"))`,
+      `CREATE TABLE IF NOT EXISTS "Club" ("id" TEXT NOT NULL, "name" TEXT NOT NULL, "city" TEXT NOT NULL, "address" TEXT, "phone" TEXT, "createdById" TEXT, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "Club_pkey" PRIMARY KEY ("id"))`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "Club_name_city_key" ON "Club"("name", "city")`,
+      `CREATE INDEX IF NOT EXISTS "Club_city_idx" ON "Club"("city")`,
+      `CREATE TABLE IF NOT EXISTS "ClubTable" ("id" TEXT NOT NULL, "clubId" TEXT NOT NULL, "number" INTEGER NOT NULL, "indoor" BOOLEAN NOT NULL DEFAULT true, CONSTRAINT "ClubTable_pkey" PRIMARY KEY ("id"))`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "ClubTable_clubId_number_key" ON "ClubTable"("clubId", "number")`,
     ];
     for (const t of tables) await d.$executeRawUnsafe(t);
     await d.$executeRawUnsafe(`ALTER TABLE "Match" ADD COLUMN IF NOT EXISTS "round" INTEGER NOT NULL DEFAULT 1`);
     await d.$executeRawUnsafe(`ALTER TABLE "User" ALTER COLUMN "rating" SET DEFAULT 300`);
     await d.$executeRawUnsafe(`ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "minRating" INTEGER`);
     await d.$executeRawUnsafe(`ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "maxRating" INTEGER`);
+    await d.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "city" TEXT`);
+    await d.$executeRawUnsafe(`ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "description" TEXT`);
+    await d.$executeRawUnsafe(`ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "maxPlayers" INTEGER`);
+    await d.$executeRawUnsafe(`ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "clubId" TEXT`);
+    // Moving Booking/Subscription off their old free-text "club" column needs the
+    // backfill in server/prisma/migration.sql; this only adds the new columns.
+    await d.$executeRawUnsafe(`ALTER TABLE "Booking" ADD COLUMN IF NOT EXISTS "clubId" TEXT`);
+    await d.$executeRawUnsafe(`ALTER TABLE "Booking" ADD COLUMN IF NOT EXISTS "tableId" TEXT`);
+    await d.$executeRawUnsafe(`ALTER TABLE "Subscription" ADD COLUMN IF NOT EXISTS "clubId" TEXT`);
+    await d.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "Subscription_userId_clubId_key" ON "Subscription"("userId", "clubId")`);
     res.json({ status: "ok", message: "Schema created" });
   } catch (e: any) {
     res.json({ status: "ok", message: e.message?.includes("already exists") ? "Already exists" : "Partial" });
@@ -230,22 +284,50 @@ app.get("/api/players", authMiddleware, async (_req, res) => {
   res.json(players);
 });
 
+// A player edits their own profile. Rating is never client-settable — it only moves
+// through Elo after a match — and admins are the only ones who can edit someone else.
 app.put("/api/players/:id", authMiddleware, async (req: any, res) => {
   try {
-    const { firstName, lastName, club, rating, phone, dateOfBirth } = req.body;
-    const user = await db().user.update({ where: { id: req.params.id }, data: { firstName, lastName, club, rating, phone, dateOfBirth } });
+    if (req.params.id !== req.user.userId && req.user.role !== "ADMIN") {
+      res.status(403).json({ error: "You can only edit your own profile" });
+      return;
+    }
+    const { firstName, lastName, club, city, phone } = req.body;
+    const user = await db().user.update({ where: { id: req.params.id }, data: { firstName, lastName, club, city, phone } });
     res.json(user);
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
 // ─── TOURNAMENTS ────────────────────────────────────────────────────────────────
 
-app.get("/api/tournaments", async (_req, res) => {
+// Event feed. Every filter is optional; with none of them this is the plain
+// "all tournaments" list the dashboard used to show.
+app.get("/api/tournaments", async (req, res) => {
+  const { city, clubId, status, from, to, q } = req.query as Record<string, string | undefined>;
   const tournaments = await db().tournament.findMany({
-    include: { organizer: { select: { firstName: true, lastName: true } }, _count: { select: { matches: true, players: true } } },
-    orderBy: { createdAt: "desc" },
+    where: {
+      ...(clubId ? { clubId } : {}),
+      ...(city ? { club: { city } } : {}),
+      ...(status ? { status: { in: status.split(",") } } : {}),
+      ...(from || to ? { startTime: { ...(from ? { gte: new Date(from) } : {}), ...(to ? { lte: new Date(to) } : {}) } } : {}),
+      ...(q ? { name: { contains: q, mode: "insensitive" as const } } : {}),
+    },
+    include: feedInclude,
+    orderBy: [{ startTime: "asc" }, { createdAt: "desc" }],
   });
   res.json(tournaments);
+});
+
+// "My tournaments": everything the caller organises or takes part in, with the
+// membership row attached so the client can split pending requests from entries.
+app.get("/api/tournaments/mine", authMiddleware, async (req: any, res) => {
+  const userId = req.user.userId;
+  const tournaments = await db().tournament.findMany({
+    where: { OR: [{ organizerId: userId }, { players: { some: { userId } } }] },
+    include: { ...feedInclude, players: { where: { userId }, select: { status: true } } },
+    orderBy: [{ startTime: "asc" }, { createdAt: "desc" }],
+  });
+  res.json(tournaments.map(({ players, ...t }: any) => ({ ...t, myStatus: players[0]?.status ?? null, isOrganizer: t.organizerId === userId })));
 });
 
 app.get("/api/tournaments/:id", async (req, res) => {
@@ -253,6 +335,7 @@ app.get("/api/tournaments/:id", async (req, res) => {
     where: { id: req.params.id },
     include: {
       organizer: { select: { id: true, firstName: true, lastName: true } },
+      club: { select: clubSelect },
       players: { include: { user: { select: playerSelect } }, orderBy: { seed: "asc" } },
       matches: { include: matchInclude, orderBy: [{ round: "asc" }, { matchIndex: "asc" }] },
     },
@@ -263,8 +346,8 @@ app.get("/api/tournaments/:id", async (req, res) => {
 
 app.post("/api/tournaments", authMiddleware, async (req: any, res) => {
   try {
-    const { name, tablesCount, startTime, minRating, maxRating } = req.body;
-    const tournament = await db().tournament.create({ data: { name, tablesCount: tablesCount || 4, startTime, minRating, maxRating, organizerId: req.user.userId } });
+    const { name, description, tablesCount, maxPlayers, clubId, startTime, endTime, minRating, maxRating } = req.body;
+    const tournament = await db().tournament.create({ data: { name, description, tablesCount: tablesCount || 4, maxPlayers, clubId, startTime, endTime, minRating, maxRating, organizerId: req.user.userId } });
     res.status(201).json(tournament);
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
@@ -273,8 +356,8 @@ app.put("/api/tournaments/:id", authMiddleware, async (req: any, res) => {
   try {
     const tournament = await loadOwnedTournament(res, req.params.id, req.user.userId);
     if (!tournament) return;
-    const { name, status, startTime, endTime, tablesCount, minRating, maxRating } = req.body;
-    const updated = await db().tournament.update({ where: { id: tournament.id }, data: { name, status, startTime, endTime, tablesCount, minRating, maxRating } });
+    const { name, description, status, startTime, endTime, tablesCount, maxPlayers, clubId, minRating, maxRating } = req.body;
+    const updated = await db().tournament.update({ where: { id: tournament.id }, data: { name, description, status, startTime, endTime, tablesCount, maxPlayers, clubId, minRating, maxRating } });
     res.json(updated);
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
@@ -288,9 +371,16 @@ app.post("/api/tournaments/:id/players", authMiddleware, async (req: any, res) =
 
     const { userIds } = req.body;
     const d = db();
-    const existing = await d.tournamentUser.findMany({ where: { tournamentId: req.params.id }, select: { userId: true } });
+    const existing = await d.tournamentUser.findMany({ where: { tournamentId: req.params.id }, select: { userId: true, status: true } });
     const existingIds = new Set(existing.map((e: any) => e.userId));
     const newUsers = userIds.filter((id: string) => !existingIds.has(id));
+    if (tournament.maxPlayers != null) {
+      const taken = existing.filter((e: any) => e.status === "REGISTERED").length;
+      if (taken + newUsers.length > tournament.maxPlayers) {
+        res.status(400).json({ error: `Only ${tournament.maxPlayers - taken} of ${tournament.maxPlayers} places left` });
+        return;
+      }
+    }
     const created = await d.$transaction(newUsers.map((userId: string) => d.tournamentUser.create({ data: { tournamentId: req.params.id, userId, status: "REGISTERED" } })));
     res.status(201).json(created);
   } catch (e: any) { res.status(400).json({ error: e.message }); }
@@ -304,6 +394,11 @@ app.post("/api/tournaments/:id/join", authMiddleware, async (req: any, res) => {
     const tournament = await d.tournament.findUnique({ where: { id: req.params.id } });
     if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
     if (tournament.status !== "DRAFT") { res.status(400).json({ error: "This tournament is no longer accepting participants" }); return; }
+
+    if (tournament.maxPlayers != null) {
+      const taken = await d.tournamentUser.count({ where: { tournamentId: tournament.id, status: "REGISTERED" } });
+      if (taken >= tournament.maxPlayers) { res.status(400).json({ error: "This tournament is full" }); return; }
+    }
 
     if (tournament.minRating != null || tournament.maxRating != null) {
       const user = await d.user.findUnique({ where: { id: req.user.userId }, select: { rating: true } });
@@ -327,6 +422,10 @@ app.post("/api/tournaments/:id/players/:userId/approve", authMiddleware, async (
   try {
     const tournament = await loadOwnedTournament(res, req.params.id, req.user.userId);
     if (!tournament) return;
+    if (tournament.maxPlayers != null) {
+      const taken = await db().tournamentUser.count({ where: { tournamentId: tournament.id, status: "REGISTERED" } });
+      if (taken >= tournament.maxPlayers) { res.status(400).json({ error: "This tournament is full" }); return; }
+    }
     const updated = await db().tournamentUser.update({
       where: { tournamentId_userId: { tournamentId: req.params.id, userId: req.params.userId } },
       data: { status: "REGISTERED" },
@@ -480,14 +579,36 @@ app.post("/api/tournaments/:id/chat", authMiddleware, async (req: any, res) => {
 
 app.post("/api/bookings", authMiddleware, async (req: any, res) => {
   try {
-    const { club, date, startTime, durationHours, tableNumber } = req.body;
-    const booking = await db().booking.create({ data: { userId: req.user.userId, club, date, startTime, durationHours: durationHours || 1, tableNumber } });
+    const d = db();
+    const { clubId, tableId, date, startTime, durationHours } = req.body;
+    if (!clubId || !date || !/^([01]\d|2[0-3]):[0-5]\d$/.test(String(startTime))) { res.status(400).json({ error: "clubId, date and a HH:MM startTime are required" }); return; }
+    const hours = durationHours || 1;
+    const club = await d.club.findUnique({ where: { id: clubId } });
+    if (!club) { res.status(404).json({ error: "Club not found" }); return; }
+    if (tableId) {
+      const table = await d.clubTable.findUnique({ where: { id: tableId } });
+      if (!table || table.clubId !== club.id) { res.status(400).json({ error: "This table does not belong to the club" }); return; }
+    }
+
+    const day = startOfUtcDay(date);
+
+    // Two people cannot hold the same table at overlapping times. Bookings without a
+    // specific table are just a note that someone is coming, so they cannot clash.
+    if (tableId) {
+      const conflict = await findBookingConflict(tableId, day, startTime, hours);
+      if (conflict) { res.status(409).json({ error: `Table is already booked from ${conflict.startTime} for ${conflict.durationHours}h` }); return; }
+    }
+
+    const booking = await d.booking.create({
+      data: { userId: req.user.userId, clubId, tableId: tableId || null, date: day, startTime, durationHours: hours },
+      include: bookingInclude,
+    });
     res.status(201).json(booking);
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
 app.get("/api/bookings/mine", authMiddleware, async (req: any, res) => {
-  const bookings = await db().booking.findMany({ where: { userId: req.user.userId }, orderBy: { date: "asc" } });
+  const bookings = await db().booking.findMany({ where: { userId: req.user.userId }, include: bookingInclude, orderBy: [{ date: "asc" }, { startTime: "asc" }] });
   res.json(bookings);
 });
 
@@ -504,14 +625,17 @@ app.delete("/api/bookings/:id", authMiddleware, async (req: any, res) => {
 // ─── SUBSCRIPTIONS ──────────────────────────────────────────────────────────────
 
 app.get("/api/subscriptions/mine", authMiddleware, async (req: any, res) => {
-  const subscriptions = await db().subscription.findMany({ where: { userId: req.user.userId }, orderBy: { createdAt: "desc" } });
+  const subscriptions = await db().subscription.findMany({ where: { userId: req.user.userId }, include: { club: { select: clubSelect } }, orderBy: { createdAt: "desc" } });
   res.json(subscriptions);
 });
 
 app.post("/api/subscriptions", authMiddleware, async (req: any, res) => {
   try {
-    const { club } = req.body;
-    const subscription = await db().subscription.create({ data: { userId: req.user.userId, club } });
+    const d = db();
+    const { clubId } = req.body;
+    const club = await d.club.findUnique({ where: { id: clubId } });
+    if (!club) { res.status(404).json({ error: "Club not found" }); return; }
+    const subscription = await d.subscription.create({ data: { userId: req.user.userId, clubId }, include: { club: { select: clubSelect } } });
     res.status(201).json(subscription);
   } catch (e: any) {
     if (e.code === "P2002") { res.status(400).json({ error: "Already subscribed" }); return; }
@@ -519,9 +643,101 @@ app.post("/api/subscriptions", authMiddleware, async (req: any, res) => {
   }
 });
 
-app.delete("/api/subscriptions/:club", authMiddleware, async (req: any, res) => {
+app.delete("/api/subscriptions/:clubId", authMiddleware, async (req: any, res) => {
   try {
-    await db().subscription.delete({ where: { userId_club: { userId: req.user.userId, club: req.params.club } } });
+    await db().subscription.delete({ where: { userId_clubId: { userId: req.user.userId, clubId: req.params.clubId } } });
+    res.json({ ok: true });
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+// --- CLUBS ---------------------------------------------------------------------
+
+app.get("/api/clubs", async (req, res) => {
+  const city = typeof req.query.city === "string" && req.query.city ? req.query.city : undefined;
+  const q = typeof req.query.q === "string" && req.query.q ? req.query.q : undefined;
+  const clubs = await db().club.findMany({
+    where: { ...(city ? { city } : {}), ...(q ? { name: { contains: q, mode: "insensitive" as const } } : {}) },
+    include: { _count: { select: { tables: true, subscriptions: true, tournaments: true } } },
+    orderBy: [{ city: "asc" }, { name: "asc" }],
+  });
+  res.json(clubs);
+});
+
+// Powers the "your city" picker on the home screen - must stay above "/api/clubs/:id".
+app.get("/api/clubs/cities", async (_req, res) => {
+  const rows = await db().club.groupBy({ by: ["city"], _count: { _all: true }, orderBy: { city: "asc" } });
+  res.json(rows.map((r: any) => ({ city: r.city, clubs: r._count._all })));
+});
+
+app.get("/api/clubs/:id", async (req, res) => {
+  const club = await db().club.findUnique({
+    where: { id: req.params.id },
+    include: { tables: { orderBy: { number: "asc" } }, _count: { select: { subscriptions: true } } },
+  });
+  if (!club) { res.status(404).json({ error: "Not found" }); return; }
+  res.json(club);
+});
+
+// Which tables are free on a given day, and what is already taken - the booking screen
+// uses this to grey out slots instead of letting the user submit a clashing booking.
+app.get("/api/clubs/:id/availability", async (req, res) => {
+  const date = typeof req.query.date === "string" ? req.query.date : undefined;
+  if (!date) { res.status(400).json({ error: "date is required" }); return; }
+  const d = db();
+  const day = startOfUtcDay(date);
+  const [tables, bookings] = await Promise.all([
+    d.clubTable.findMany({ where: { clubId: req.params.id }, orderBy: { number: "asc" } }),
+    d.booking.findMany({ where: { clubId: req.params.id, date: day }, select: { tableId: true, startTime: true, durationHours: true } }),
+  ]);
+  res.json(tables.map((t: any) => ({
+    ...t,
+    busy: bookings.filter((b: any) => b.tableId === t.id).map((b: any) => ({ startTime: b.startTime, durationHours: b.durationHours })),
+  })));
+});
+
+app.post("/api/clubs", authMiddleware, async (req: any, res) => {
+  try {
+    const { name, city, address, phone } = req.body;
+    if (!name || !city) { res.status(400).json({ error: "name and city are required" }); return; }
+    const club = await db().club.create({ data: { name, city, address, phone, createdById: req.user.userId } });
+    res.status(201).json(club);
+  } catch (e: any) {
+    if (e.code === "P2002") { res.status(400).json({ error: "A club with this name already exists in this city" }); return; }
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.put("/api/clubs/:id", authMiddleware, async (req: any, res) => {
+  try {
+    const club = await loadOwnedClub(res, req.params.id, req.user.userId);
+    if (!club) return;
+    const { name, city, address, phone } = req.body;
+    const updated = await db().club.update({ where: { id: club.id }, data: { name, city, address, phone } });
+    res.json(updated);
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.post("/api/clubs/:id/tables", authMiddleware, async (req: any, res) => {
+  try {
+    const club = await loadOwnedClub(res, req.params.id, req.user.userId);
+    if (!club) return;
+    const { number, indoor } = req.body;
+    const table = await db().clubTable.create({ data: { clubId: club.id, number, indoor: indoor !== false } });
+    res.status(201).json(table);
+  } catch (e: any) {
+    if (e.code === "P2002") { res.status(400).json({ error: "This table number already exists at the club" }); return; }
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.delete("/api/clubs/:id/tables/:tableId", authMiddleware, async (req: any, res) => {
+  try {
+    const club = await loadOwnedClub(res, req.params.id, req.user.userId);
+    if (!club) return;
+    const d = db();
+    const table = await d.clubTable.findUnique({ where: { id: req.params.tableId } });
+    if (!table || table.clubId !== club.id) { res.status(404).json({ error: "Not found" }); return; }
+    await d.clubTable.delete({ where: { id: table.id } });
     res.json({ ok: true });
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
@@ -658,7 +874,7 @@ app.get("/api/live/:tournamentId", async (req, res) => {
 app.get("/api/public/tournament/:id", async (req, res) => {
   const tournament = await db().tournament.findUnique({
     where: { id: req.params.id },
-    select: { id: true, name: true, status: true, tablesCount: true, startTime: true },
+    select: { id: true, name: true, status: true, tablesCount: true, startTime: true, endTime: true, club: { select: clubSelect } },
   });
   if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
   const matches = await db().match.findMany({ where: { tournamentId: req.params.id }, include: matchInclude, orderBy: [{ round: "asc" }, { matchIndex: "asc" }] });

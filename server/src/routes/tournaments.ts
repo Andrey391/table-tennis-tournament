@@ -47,12 +47,42 @@ tournamentRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, res
   }
 });
 
-tournamentRouter.get("/", async (_req, res: Response) => {
+const clubSelect = { id: true, name: true, city: true, address: true, phone: true };
+// "9/9 players" counts approved participants only — pending requests don't fill the tournament.
+const feedInclude = {
+  organizer: { select: { id: true, firstName: true, lastName: true } },
+  club: { select: clubSelect },
+  _count: { select: { matches: true, players: { where: { status: "REGISTERED" as const } } } },
+};
+
+// Event feed. Every filter is optional; with none of them this is the plain
+// "all tournaments" list the dashboard used to show.
+tournamentRouter.get("/", async (req, res: Response) => {
+  const { city, clubId, status, from, to, q } = req.query as Record<string, string | undefined>;
   const tournaments = await prisma.tournament.findMany({
-    include: { organizer: { select: { firstName: true, lastName: true } }, _count: { select: { matches: true, players: true } } },
-    orderBy: { createdAt: "desc" },
+    where: {
+      ...(clubId ? { clubId } : {}),
+      ...(city ? { club: { city } } : {}),
+      ...(status ? { status: { in: status.split(",") } } : {}),
+      ...(from || to ? { startTime: { ...(from ? { gte: new Date(from) } : {}), ...(to ? { lte: new Date(to) } : {}) } } : {}),
+      ...(q ? { name: { contains: q, mode: "insensitive" as const } } : {}),
+    },
+    include: feedInclude,
+    orderBy: [{ startTime: "asc" }, { createdAt: "desc" }],
   });
   res.json(tournaments);
+});
+
+// "My tournaments": everything the caller organises or takes part in, with the
+// membership row attached so the client can split pending requests from entries.
+tournamentRouter.get("/mine", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const tournaments = await prisma.tournament.findMany({
+    where: { OR: [{ organizerId: userId }, { players: { some: { userId } } }] },
+    include: { ...feedInclude, players: { where: { userId }, select: { status: true } } },
+    orderBy: [{ startTime: "asc" }, { createdAt: "desc" }],
+  });
+  res.json(tournaments.map(({ players, ...t }) => ({ ...t, myStatus: players[0]?.status ?? null, isOrganizer: t.organizerId === userId })));
 });
 
 tournamentRouter.get("/:id", async (req, res: Response) => {
@@ -60,6 +90,7 @@ tournamentRouter.get("/:id", async (req, res: Response) => {
     where: { id: req.params.id },
     include: {
       organizer: { select: { id: true, firstName: true, lastName: true } },
+      club: { select: clubSelect },
       players: { include: { user: { select: playerSelect } }, orderBy: { seed: "asc" } },
       matches: { include: { player1: { select: playerSelect }, player2: { select: playerSelect }, judge: { select: { firstName: true, lastName: true } } }, orderBy: [{ round: "asc" }, { matchIndex: "asc" }] },
     },
@@ -89,9 +120,16 @@ tournamentRouter.post("/:id/players", authMiddleware, async (req: AuthenticatedR
     if (tournament.status !== "DRAFT") { res.status(400).json({ error: "Roster is locked, cannot add players" }); return; }
 
     const { userIds } = AddPlayersSchema.parse(req.body);
-    const existing = await prisma.tournamentUser.findMany({ where: { tournamentId: req.params.id }, select: { userId: true } });
+    const existing = await prisma.tournamentUser.findMany({ where: { tournamentId: req.params.id }, select: { userId: true, status: true } });
     const existingIds = new Set(existing.map((e) => e.userId));
     const newUsers = userIds.filter((id) => !existingIds.has(id));
+    if (tournament.maxPlayers != null) {
+      const taken = existing.filter((e) => e.status === "REGISTERED").length;
+      if (taken + newUsers.length > tournament.maxPlayers) {
+        res.status(400).json({ error: `Only ${tournament.maxPlayers - taken} of ${tournament.maxPlayers} places left` });
+        return;
+      }
+    }
     const created = await prisma.$transaction(
       newUsers.map((userId) => prisma.tournamentUser.create({ data: { tournamentId: req.params.id, userId, status: "REGISTERED" } }))
     );
@@ -108,6 +146,11 @@ tournamentRouter.post("/:id/join", authMiddleware, async (req: AuthenticatedRequ
     const tournament = await prisma.tournament.findUnique({ where: { id: req.params.id } });
     if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
     if (tournament.status !== "DRAFT") { res.status(400).json({ error: "This tournament is no longer accepting participants" }); return; }
+
+    if (tournament.maxPlayers != null) {
+      const taken = await prisma.tournamentUser.count({ where: { tournamentId: tournament.id, status: "REGISTERED" } });
+      if (taken >= tournament.maxPlayers) { res.status(400).json({ error: "This tournament is full" }); return; }
+    }
 
     if (tournament.minRating != null || tournament.maxRating != null) {
       const user = await prisma.user.findUnique({ where: { id: req.user!.userId }, select: { rating: true } });
@@ -133,6 +176,10 @@ tournamentRouter.post("/:id/players/:userId/approve", authMiddleware, async (req
   try {
     const tournament = await loadOwnedTournament(res, req.params.id, req.user!.userId);
     if (!tournament) return;
+    if (tournament.maxPlayers != null) {
+      const taken = await prisma.tournamentUser.count({ where: { tournamentId: tournament.id, status: "REGISTERED" } });
+      if (taken >= tournament.maxPlayers) { res.status(400).json({ error: "This tournament is full" }); return; }
+    }
     const updated = await prisma.tournamentUser.update({
       where: { tournamentId_userId: { tournamentId: req.params.id, userId: req.params.userId } },
       data: { status: "REGISTERED" },

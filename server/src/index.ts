@@ -12,6 +12,9 @@ import { matchRouter } from "./routes/matches.js";
 import { bookingRouter } from "./routes/bookings.js";
 import { subscriptionRouter } from "./routes/subscriptions.js";
 import { profileRouter } from "./routes/profile.js";
+import { clubRouter } from "./routes/clubs.js";
+import { playerRouter, ratingRouter } from "./routes/players.js";
+import { liveRouter, publicRouter } from "./routes/public.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -28,6 +31,11 @@ app.use("/api/matches", matchRouter);
 app.use("/api/bookings", bookingRouter);
 app.use("/api/subscriptions", subscriptionRouter);
 app.use("/api/profile", profileRouter);
+app.use("/api/clubs", clubRouter);
+app.use("/api/players", playerRouter);
+app.use("/api/rating", ratingRouter);
+app.use("/api/live", liveRouter);
+app.use("/api/public", publicRouter);
 
 app.get("/api/health", (_req, res) => res.json({ status: "ok", timestamp: new Date().toISOString() }));
 
