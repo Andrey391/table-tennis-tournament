@@ -80,9 +80,11 @@ export default function TournamentPage() {
     setSelected(next);
   };
 
-  const live = tournament.matches?.filter((m: any) => m.status === "IN_PROGRESS") || [];
-  const scheduled = tournament.matches?.filter((m: any) => m.status === "NOT_STARTED") || [];
-  const completed = tournament.matches?.filter((m: any) => m.status === "COMPLETED") || [];
+  const matches: any[] = tournament.matches || [];
+  const currentRound = matches.reduce((max: number, m: any) => Math.max(max, m.round), 0);
+  const roundUnresolved = matches.filter((m: any) => m.round === currentRound && m.status !== "COMPLETED").length;
+  const canStartNextRound = !isDraft && roundUnresolved === 0;
+  const rounds = Array.from(new Set(matches.map((m: any) => m.round))).sort((a, b) => b - a);
 
   return (
     <Layout>
@@ -93,7 +95,11 @@ export default function TournamentPage() {
             tournament.status === "ACTIVE" ? "bg-yellow-500/10 text-yellow-400 border border-yellow-500/20" :
             tournament.status === "COMPLETED" ? "bg-green-500/10 text-green-400 border border-green-500/20" :
             "bg-[#1e1e2e] text-[#8888a0] border border-[#333]"
-          }`}>{isDraft ? "Adding players" : tournament.status === "ACTIVE" ? "In progress" : "Completed"}</span>
+          }`}>
+            {isDraft ? "Adding players" :
+              tournament.status === "ACTIVE" ? `Round ${currentRound} in progress` :
+              `Round ${currentRound} finished`}
+          </span>
           <span className="text-xs text-[#555566]">{tournament.tablesCount} tables</span>
           <span className="text-xs text-[#555566]">Managed by {tournament.organizer?.firstName} {tournament.organizer?.lastName}</span>
         </div>
@@ -199,24 +205,18 @@ export default function TournamentPage() {
 
       {!isDraft && (
         <section className="space-y-4">
-          {live.length > 0 && (
-            <div>
-              <h2 className="text-xs font-medium text-yellow-400 uppercase tracking-wider mb-2">Live</h2>
-              {live.map((m: any) => <MatchRow key={m.id} m={m} tournamentId={id!} />)}
-            </div>
+          {isManager && (
+            <button onClick={pair} disabled={!canStartNextRound || busy}
+              className="w-full bg-[#3b82f6] text-white py-3 rounded-lg text-sm font-medium disabled:opacity-40">
+              {busy ? "Pairing..." : canStartNextRound ? `Start round ${currentRound + 1}` : `Finish round ${currentRound} first`}
+            </button>
           )}
-          {scheduled.length > 0 && (
-            <div>
-              <h2 className="text-xs font-medium text-[#666680] uppercase tracking-wider mb-2">Scheduled</h2>
-              {scheduled.map((m: any) => <MatchRow key={m.id} m={m} tournamentId={id!} />)}
+          {rounds.map((round) => (
+            <div key={round}>
+              <h2 className="text-xs font-medium text-[#666680] uppercase tracking-wider mb-2">Round {round}</h2>
+              {matches.filter((m: any) => m.round === round).map((m: any) => <MatchRow key={m.id} m={m} tournamentId={id!} />)}
             </div>
-          )}
-          {completed.length > 0 && (
-            <div>
-              <h2 className="text-xs font-medium text-[#666680] uppercase tracking-wider mb-2">Completed</h2>
-              {completed.map((m: any) => <MatchRow key={m.id} m={m} tournamentId={id!} />)}
-            </div>
-          )}
+          ))}
         </section>
       )}
 

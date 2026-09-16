@@ -47,6 +47,10 @@ export default function MatchPage() {
   const undo = async () => { try { const r = await apiService.matches.undo(matchId!); setMatch(r.data.match); } catch (e: any) { setError(e.response?.data?.error || "Failed"); } };
   const recordLet = async () => { try { const r = await apiService.matches.recordLet(matchId!); setMatch(r.data.match); } catch (e: any) { setError(e.response?.data?.error || "Failed"); } };
   const endMatch = async () => { try { await apiService.matches.end(matchId!); navigate(`/tournament/${id}`); } catch (e: any) { setError(e.response?.data?.error || "Failed"); } };
+  const forfeit = async (loserSide: 1 | 2) => {
+    try { const r = await apiService.matches.forfeit(matchId!, { loserSide }); setMatch(r.data); }
+    catch (e: any) { setError(e.response?.data?.error || "Failed"); }
+  };
 
   if (!match) return <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center text-[#666680] text-sm">Loading...</div>;
 
@@ -105,24 +109,36 @@ export default function MatchPage() {
           <p className="text-center py-3 text-sm text-[#666680] bg-[#12121a] rounded-lg border border-[#1e1e2e]">
             Only the tournament manager can update this match
           </p>
-        ) : match.status === "NOT_STARTED" ? (
-          <button onClick={startMatch} className="w-full bg-[#3b82f6] text-white py-4 rounded-lg text-sm font-medium active:scale-[0.98] transition-transform">
-            Start Match
-          </button>
         ) : (
           <div className="space-y-2">
-            <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => score(1)} className="bg-[#3b82f6] text-white py-6 rounded-lg text-lg font-bold active:scale-[0.97] transition-transform">
-                {match.player1?.firstName || "P1"} +1
+            {match.status === "NOT_STARTED" ? (
+              <button onClick={startMatch} className="w-full bg-[#3b82f6] text-white py-4 rounded-lg text-sm font-medium active:scale-[0.98] transition-transform">
+                Start Match
               </button>
-              <button onClick={() => score(2)} className="bg-[#ef4444] text-white py-6 rounded-lg text-lg font-bold active:scale-[0.97] transition-transform">
-                {match.player2?.firstName || "P2"} +1
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={() => score(1)} className="bg-[#3b82f6] text-white py-6 rounded-lg text-lg font-bold active:scale-[0.97] transition-transform">
+                    {match.player1?.firstName || "P1"} +1
+                  </button>
+                  <button onClick={() => score(2)} className="bg-[#ef4444] text-white py-6 rounded-lg text-lg font-bold active:scale-[0.97] transition-transform">
+                    {match.player2?.firstName || "P2"} +1
+                  </button>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <button onClick={undo} className="bg-[#1e1e2e] text-[#8888a0] py-2.5 rounded-lg text-sm border border-[#333]">Undo</button>
+                  <button onClick={recordLet} className="bg-yellow-500/10 text-yellow-400 py-2.5 rounded-lg text-sm border border-yellow-500/20">Let</button>
+                  <button onClick={endMatch} className="bg-[#1e1e2e] text-[#8888a0] py-2.5 rounded-lg text-sm border border-[#333]">End</button>
+                </div>
+              </>
+            )}
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <button onClick={() => forfeit(1)} className="text-red-400 py-2 rounded-lg text-xs border border-red-500/20 bg-red-500/5">
+                {match.player1?.firstName || "P1"} no-show
               </button>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <button onClick={undo} className="bg-[#1e1e2e] text-[#8888a0] py-2.5 rounded-lg text-sm border border-[#333]">Undo</button>
-              <button onClick={recordLet} className="bg-yellow-500/10 text-yellow-400 py-2.5 rounded-lg text-sm border border-yellow-500/20">Let</button>
-              <button onClick={endMatch} className="bg-[#1e1e2e] text-[#8888a0] py-2.5 rounded-lg text-sm border border-[#333]">End</button>
+              <button onClick={() => forfeit(2)} className="text-red-400 py-2 rounded-lg text-xs border border-red-500/20 bg-red-500/5">
+                {match.player2?.firstName || "P2"} no-show
+              </button>
             </div>
           </div>
         )}
