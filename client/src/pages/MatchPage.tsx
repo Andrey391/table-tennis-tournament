@@ -1,10 +1,12 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useEffect, useState, useCallback } from "react";
 import { apiService } from "../services/api";
+import { useAuth } from "../context/AuthContext";
 
 export default function MatchPage() {
   const { id, matchId } = useParams<{ id: string; matchId: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [match, setMatch] = useState<any>(null);
   const [deuce, setDeuce] = useState(false);
   const [error, setError] = useState("");
@@ -49,6 +51,7 @@ export default function MatchPage() {
   if (!match) return <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center text-[#666680] text-sm">Loading...</div>;
 
   const isDeuceNow = deuce || (match.score1 >= match.pointsToWin - 1 && match.score2 >= match.pointsToWin - 1);
+  const canManage = !!user && match.tournament?.organizerId === user.id;
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] p-3 pb-8">
@@ -61,7 +64,7 @@ export default function MatchPage() {
           <p className="text-[11px] text-[#555566] uppercase tracking-wider mb-1">
             {match.tableNumber ? `Table ${match.tableNumber}` : "No table"} &middot; Race to {match.pointsToWin}
           </p>
-          {match.status === "NOT_STARTED" && (
+          {match.status === "NOT_STARTED" && canManage && (
             <div className="flex justify-center gap-2 mt-2">
               {[11, 21].map(pts => (
                 <button key={pts} onClick={() => setPointsToWin(pts)}
@@ -98,6 +101,10 @@ export default function MatchPage() {
             <p className="text-green-400 font-medium text-sm">Match completed</p>
             <p className="text-green-300/70 text-xs mt-1">Winner: {match.score1 > match.score2 ? match.player1?.firstName : match.player2?.firstName}</p>
           </div>
+        ) : !canManage ? (
+          <p className="text-center py-3 text-sm text-[#666680] bg-[#12121a] rounded-lg border border-[#1e1e2e]">
+            Only the tournament manager can update this match
+          </p>
         ) : match.status === "NOT_STARTED" ? (
           <button onClick={startMatch} className="w-full bg-[#3b82f6] text-white py-4 rounded-lg text-sm font-medium active:scale-[0.98] transition-transform">
             Start Match

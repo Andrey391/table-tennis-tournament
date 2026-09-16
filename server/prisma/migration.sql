@@ -57,6 +57,10 @@ END $$;
 CREATE INDEX IF NOT EXISTS "User_club_idx" ON "User"("club");
 CREATE INDEX IF NOT EXISTS "User_rating_idx" ON "User"("rating");
 
+-- Self-service join requests need a pending state before the tournament
+-- manager approves them.
+ALTER TYPE "PlayerStatus" ADD VALUE IF NOT EXISTS 'PENDING';
+
 -- Tournament: simplified, no type/system/format/group sizing.
 CREATE TABLE "Tournament" (
     "id" TEXT NOT NULL,

@@ -12,7 +12,17 @@ const matchInclude = {
   player1: { select: playerSelect },
   player2: { select: playerSelect },
   judge: { select: { id: true, firstName: true, lastName: true } },
+  tournament: { select: { organizerId: true } },
 };
+
+// Loads the match and confirms the caller manages its tournament.
+// Sends the appropriate error response and returns null when the caller can't proceed.
+async function loadOwnedMatch(res: Response, matchId: string, userId: string) {
+  const match = await prisma.match.findUnique({ where: { id: matchId }, include: { tournament: { select: { organizerId: true } } } });
+  if (!match) { res.status(404).json({ error: "Not found" }); return null; }
+  if (match.tournament.organizerId !== userId) { res.status(403).json({ error: "Only the tournament manager can record this match" }); return null; }
+  return match;
+}
 
 matchRouter.get("/tournament/:tournamentId", async (req, res: Response) => {
   const matches = await prisma.match.findMany({
@@ -40,8 +50,8 @@ matchRouter.get("/:id", async (req, res: Response) => {
 
 matchRouter.put("/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const match = await prisma.match.findUnique({ where: { id: req.params.id } });
-    if (!match) { res.status(404).json({ error: "Not found" }); return; }
+    const match = await loadOwnedMatch(res, req.params.id, req.user!.userId);
+    if (!match) return;
     if (match.status !== "NOT_STARTED") { res.status(400).json({ error: "Can only change settings before the match starts" }); return; }
     const data = MatchSettingsSchema.parse(req.body);
     const updated = await prisma.match.update({ where: { id: match.id }, data, include: matchInclude });
@@ -53,12 +63,14 @@ matchRouter.put("/:id", authMiddleware, async (req: AuthenticatedRequest, res: R
 
 matchRouter.post("/:id/start", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const match = await prisma.match.update({
-      where: { id: req.params.id },
+    const match = await loadOwnedMatch(res, req.params.id, req.user!.userId);
+    if (!match) return;
+    const updated = await prisma.match.update({
+      where: { id: match.id },
       data: { status: "IN_PROGRESS", startedAt: new Date(), judgeId: req.user!.userId },
       include: matchInclude,
     });
-    res.json(match);
+    res.json(updated);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
@@ -66,11 +78,11 @@ matchRouter.post("/:id/start", authMiddleware, async (req: AuthenticatedRequest,
 
 matchRouter.post("/:id/score", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { side } = ScorePointSchema.parse(req.body);
-    const match = await prisma.match.findUnique({ where: { id: req.params.id } });
-    if (!match) { res.status(404).json({ error: "Not found" }); return; }
+    const match = await loadOwnedMatch(res, req.params.id, req.user!.userId);
+    if (!match) return;
     if (match.status !== "IN_PROGRESS") { res.status(400).json({ error: "Match is not in progress" }); return; }
 
+    const { side } = ScorePointSchema.parse(req.body);
     const score1 = side === 1 ? match.score1 + 1 : match.score1;
     const score2 = side === 2 ? match.score2 + 1 : match.score2;
     const deuce = isDeuce(score1, score2, match.pointsToWin);
@@ -99,8 +111,8 @@ matchRouter.post("/:id/score", authMiddleware, async (req: AuthenticatedRequest,
 
 matchRouter.post("/:id/undo", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const match = await prisma.match.findUnique({ where: { id: req.params.id } });
-    if (!match) { res.status(404).json({ error: "Not found" }); return; }
+    const match = await loadOwnedMatch(res, req.params.id, req.user!.userId);
+    if (!match) return;
     if (!match.lastScorer) { res.status(400).json({ error: "Nothing to undo" }); return; }
 
     const score1 = match.lastScorer === 1 ? Math.max(match.score1 - 1, 0) : match.score1;
@@ -119,8 +131,10 @@ matchRouter.post("/:id/undo", authMiddleware, async (req: AuthenticatedRequest, 
 
 matchRouter.post("/:id/let", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const match = await prisma.match.update({ where: { id: req.params.id }, data: { letCount: { increment: 1 } }, include: matchInclude });
-    res.json({ match });
+    const match = await loadOwnedMatch(res, req.params.id, req.user!.userId);
+    if (!match) return;
+    const updated = await prisma.match.update({ where: { id: match.id }, data: { letCount: { increment: 1 } }, include: matchInclude });
+    res.json({ match: updated });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
@@ -128,9 +142,11 @@ matchRouter.post("/:id/let", authMiddleware, async (req: AuthenticatedRequest, r
 
 matchRouter.post("/:id/end", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const match = await prisma.match.update({ where: { id: req.params.id }, data: { status: "COMPLETED", endedAt: new Date() }, include: matchInclude });
+    const match = await loadOwnedMatch(res, req.params.id, req.user!.userId);
+    if (!match) return;
+    const updated = await prisma.match.update({ where: { id: match.id }, data: { status: "COMPLETED", endedAt: new Date() }, include: matchInclude });
     await AuditLog.create({ userId: req.user!.userId, action: "MATCH_END", entity: "Match", entityId: match.id });
-    res.json(match);
+    res.json(updated);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
