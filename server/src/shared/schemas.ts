@@ -4,6 +4,8 @@ export const CreateTournamentSchema = z.object({
   name: z.string().min(1).max(200),
   tablesCount: z.number().int().min(1).max(50).default(4),
   startTime: z.string().datetime().optional(),
+  minRating: z.number().int().min(0).max(5000).optional(),
+  maxRating: z.number().int().min(0).max(5000).optional(),
 });
 
 export const UpdateTournamentSchema = z.object({
@@ -12,6 +14,24 @@ export const UpdateTournamentSchema = z.object({
   status: z.enum(["DRAFT", "ACTIVE", "COMPLETED"]).optional(),
   startTime: z.string().datetime().optional(),
   endTime: z.string().datetime().optional(),
+  minRating: z.number().int().min(0).max(5000).nullable().optional(),
+  maxRating: z.number().int().min(0).max(5000).nullable().optional(),
+});
+
+export const CreateBookingSchema = z.object({
+  club: z.string().min(1).max(200),
+  date: z.string().datetime(),
+  startTime: z.string().min(1).max(20),
+  durationHours: z.number().min(0.5).max(8).default(1),
+  tableNumber: z.number().int().min(1).optional(),
+});
+
+export const SubscribeSchema = z.object({
+  club: z.string().min(1).max(200),
+});
+
+export const ChatMessageSchema = z.object({
+  text: z.string().min(1).max(1000),
 });
 
 export const AddPlayersSchema = z.object({

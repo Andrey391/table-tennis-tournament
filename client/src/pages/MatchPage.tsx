@@ -52,20 +52,20 @@ export default function MatchPage() {
     catch (e: any) { setError(e.response?.data?.error || "Failed"); }
   };
 
-  if (!match) return <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center text-[#666680] text-sm">Loading...</div>;
+  if (!match) return <div className="min-h-screen bg-[#0a1628] flex items-center justify-center text-[#6b84a0] text-sm">Loading...</div>;
 
   const isDeuceNow = deuce || (match.score1 >= match.pointsToWin - 1 && match.score2 >= match.pointsToWin - 1);
   const canManage = !!user && match.tournament?.organizerId === user.id;
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] p-3 pb-8">
+    <div className="min-h-screen bg-[#0a1628] p-3 pb-8">
       <div className="max-w-sm mx-auto">
-        <button onClick={() => navigate(`/tournament/${id}`)} className="text-[#666680] mb-3 text-sm">&larr; Back</button>
+        <button onClick={() => navigate(`/tournament/${id}`)} className="text-[#6b84a0] mb-3 text-sm">&larr; Back</button>
 
         {error && <div className="bg-red-500/10 text-red-400 p-3 rounded text-sm border border-red-500/20 mb-3">{error}</div>}
 
-        <div className="bg-[#12121a] rounded-lg p-4 mb-3 border border-[#1e1e2e] text-center">
-          <p className="text-[11px] text-[#555566] uppercase tracking-wider mb-1">
+        <div className="bg-[#101f36] rounded-lg p-4 mb-3 border border-[#1c3350] text-center">
+          <p className="text-[11px] text-[#4d6480] uppercase tracking-wider mb-1">
             {match.tableNumber ? `Table ${match.tableNumber}` : "No table"} &middot; Race to {match.pointsToWin}
           </p>
           {match.status === "NOT_STARTED" && canManage && (
@@ -73,7 +73,7 @@ export default function MatchPage() {
               {[11, 21].map(pts => (
                 <button key={pts} onClick={() => setPointsToWin(pts)}
                   className={`px-4 py-1.5 rounded text-sm font-medium border ${
-                    match.pointsToWin === pts ? "bg-[#ccff00] text-[#0a0a0f] border-[#ccff00]" : "bg-transparent text-[#8888a0] border-[#333]"
+                    match.pointsToWin === pts ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00]" : "bg-transparent text-[#93a8c2] border-[#333]"
                   }`}>
                   {pts} pts
                 </button>
@@ -82,8 +82,8 @@ export default function MatchPage() {
           )}
         </div>
 
-        <div className="bg-[#12121a] rounded-lg p-4 mb-3 border border-[#1e1e2e]">
-          <div className="text-center text-[11px] text-[#555566] uppercase tracking-wider mb-3">
+        <div className="bg-[#101f36] rounded-lg p-4 mb-3 border border-[#1c3350]">
+          <div className="text-center text-[11px] text-[#4d6480] uppercase tracking-wider mb-3">
             {match.status === "IN_PROGRESS" ? (isDeuceNow ? "DEUCE" : `Serving: ${match.serverSide === 1 ? (match.player1?.firstName || "P1") : (match.player2?.firstName || "P2")}`) : match.status.replace("_", " ")}
             {match.letCount > 0 && ` · Lets: ${match.letCount}`}
           </div>
@@ -106,13 +106,13 @@ export default function MatchPage() {
             <p className="text-green-300/70 text-xs mt-1">Winner: {match.score1 > match.score2 ? match.player1?.firstName : match.player2?.firstName}</p>
           </div>
         ) : !canManage ? (
-          <p className="text-center py-3 text-sm text-[#666680] bg-[#12121a] rounded-lg border border-[#1e1e2e]">
+          <p className="text-center py-3 text-sm text-[#6b84a0] bg-[#101f36] rounded-lg border border-[#1c3350]">
             Only the tournament manager can update this match
           </p>
         ) : (
           <div className="space-y-2">
             {match.status === "NOT_STARTED" ? (
-              <button onClick={startMatch} className="w-full bg-[#ccff00] text-[#0a0a0f] py-4 rounded-lg text-base font-bold active:scale-[0.98] transition-transform">
+              <button onClick={startMatch} className="w-full bg-[#ccff00] text-[#0a1628] py-4 rounded-lg text-base font-bold active:scale-[0.98] transition-transform">
                 Start Match
               </button>
             ) : (
@@ -126,9 +126,9 @@ export default function MatchPage() {
                   </button>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
-                  <button onClick={undo} className="bg-[#1e1e2e] text-[#8888a0] py-2.5 rounded-lg text-sm border border-[#333]">Undo</button>
+                  <button onClick={undo} className="bg-[#1c3350] text-[#93a8c2] py-2.5 rounded-lg text-sm border border-[#333]">Undo</button>
                   <button onClick={recordLet} className="bg-yellow-500/10 text-yellow-400 py-2.5 rounded-lg text-sm border border-yellow-500/20">Let</button>
-                  <button onClick={endMatch} className="bg-[#1e1e2e] text-[#8888a0] py-2.5 rounded-lg text-sm border border-[#333]">End</button>
+                  <button onClick={endMatch} className="bg-[#1c3350] text-[#93a8c2] py-2.5 rounded-lg text-sm border border-[#333]">End</button>
                 </div>
               </>
             )}

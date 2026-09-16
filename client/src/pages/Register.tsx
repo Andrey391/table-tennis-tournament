@@ -21,46 +21,46 @@ export default function Register() {
   const set = (key: string) => (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [key]: e.target.value });
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center px-4">
+    <div className="min-h-screen bg-[#0a1628] flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <Logo size="lg" as="plain" />
-          <p className="text-[#666680] text-sm mt-3">Create your account</p>
+          <p className="text-[#6b84a0] text-sm mt-3">Create your account</p>
         </div>
-        <form onSubmit={handleSubmit} className="space-y-4 bg-[#12121a] p-6 rounded-lg border border-[#1e1e2e]">
+        <form onSubmit={handleSubmit} className="space-y-4 bg-[#101f36] p-6 rounded-lg border border-[#1c3350]">
           {error && <div className="bg-red-500/10 text-red-400 p-3 rounded text-sm border border-red-500/20">{error}</div>}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-[#666680] mb-1.5 uppercase tracking-wider">First Name</label>
+              <label className="block text-xs font-medium text-[#6b84a0] mb-1.5 uppercase tracking-wider">First Name</label>
               <input type="text" value={form.firstName} onChange={set("firstName")}
-                className="w-full px-3 py-2.5 bg-[#0a0a0f] rounded border border-[#1e1e2e] text-sm focus:border-[#ccff00] focus:outline-none" required />
+                className="w-full px-3 py-2.5 bg-[#0a1628] rounded border border-[#1c3350] text-sm focus:border-[#ccff00] focus:outline-none" required />
             </div>
             <div>
-              <label className="block text-xs font-medium text-[#666680] mb-1.5 uppercase tracking-wider">Last Name</label>
+              <label className="block text-xs font-medium text-[#6b84a0] mb-1.5 uppercase tracking-wider">Last Name</label>
               <input type="text" value={form.lastName} onChange={set("lastName")}
-                className="w-full px-3 py-2.5 bg-[#0a0a0f] rounded border border-[#1e1e2e] text-sm focus:border-[#ccff00] focus:outline-none" required />
+                className="w-full px-3 py-2.5 bg-[#0a1628] rounded border border-[#1c3350] text-sm focus:border-[#ccff00] focus:outline-none" required />
             </div>
           </div>
           <div>
-            <label className="block text-xs font-medium text-[#666680] mb-1.5 uppercase tracking-wider">Email</label>
+            <label className="block text-xs font-medium text-[#6b84a0] mb-1.5 uppercase tracking-wider">Email</label>
             <input type="email" value={form.email} onChange={set("email")}
-              className="w-full px-3 py-2.5 bg-[#0a0a0f] rounded border border-[#1e1e2e] text-sm focus:border-[#ccff00] focus:outline-none" required />
+              className="w-full px-3 py-2.5 bg-[#0a1628] rounded border border-[#1c3350] text-sm focus:border-[#ccff00] focus:outline-none" required />
           </div>
           <div>
-            <label className="block text-xs font-medium text-[#666680] mb-1.5 uppercase tracking-wider">Password</label>
+            <label className="block text-xs font-medium text-[#6b84a0] mb-1.5 uppercase tracking-wider">Password</label>
             <input type="password" value={form.password} onChange={set("password")}
-              className="w-full px-3 py-2.5 bg-[#0a0a0f] rounded border border-[#1e1e2e] text-sm focus:border-[#ccff00] focus:outline-none" required minLength={6} />
+              className="w-full px-3 py-2.5 bg-[#0a1628] rounded border border-[#1c3350] text-sm focus:border-[#ccff00] focus:outline-none" required minLength={6} />
           </div>
           <div>
-            <label className="block text-xs font-medium text-[#666680] mb-1.5 uppercase tracking-wider">Club</label>
+            <label className="block text-xs font-medium text-[#6b84a0] mb-1.5 uppercase tracking-wider">Club</label>
             <input type="text" value={form.club} onChange={set("club")} placeholder="Optional"
-              className="w-full px-3 py-2.5 bg-[#0a0a0f] rounded border border-[#1e1e2e] text-sm focus:border-[#ccff00] focus:outline-none" />
+              className="w-full px-3 py-2.5 bg-[#0a1628] rounded border border-[#1c3350] text-sm focus:border-[#ccff00] focus:outline-none" />
           </div>
           <button type="submit" disabled={loading}
-            className="w-full bg-[#ccff00] text-[#0a0a0f] py-3 rounded-lg text-sm font-bold hover:bg-[#d8ff33] disabled:opacity-50 transition-colors">
+            className="w-full bg-[#ccff00] text-[#0a1628] py-3 rounded-lg text-sm font-bold hover:bg-[#d8ff33] disabled:opacity-50 transition-colors">
             {loading ? "Creating..." : "Create Account"}
           </button>
-          <p className="text-center text-sm text-[#666680]">
+          <p className="text-center text-sm text-[#6b84a0]">
             Have account? <Link to="/login" className="text-[#ccff00] font-medium">Sign In</Link>
           </p>
         </form>

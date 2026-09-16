@@ -29,6 +29,8 @@ export const apiService = {
     approvePlayer: (id: string, userId: string) => api.post(`/tournaments/${id}/players/${userId}/approve`),
     pair: (id: string) => api.post(`/tournaments/${id}/pair`),
     standings: (id: string) => api.get(`/tournaments/${id}/standings`),
+    getChat: (id: string) => api.get(`/tournaments/${id}/chat`),
+    sendChat: (id: string, d: { text: string }) => api.post(`/tournaments/${id}/chat`, d),
   },
   matches: {
     getByTournament: (id: string) => api.get(`/matches/tournament/${id}`),
@@ -50,6 +52,19 @@ export const apiService = {
   },
   rating: {
     getAll: () => api.get("/rating"),
+  },
+  bookings: {
+    getMine: () => api.get("/bookings/mine"),
+    create: (d: { club: string; date: string; startTime: string; durationHours: number; tableNumber?: number }) => api.post("/bookings", d),
+    remove: (id: string) => api.delete(`/bookings/${id}`),
+  },
+  subscriptions: {
+    getMine: () => api.get("/subscriptions/mine"),
+    subscribe: (club: string) => api.post("/subscriptions", { club }),
+    unsubscribe: (club: string) => api.delete(`/subscriptions/${encodeURIComponent(club)}`),
+  },
+  profile: {
+    stats: () => api.get("/profile/stats"),
   },
 };
 
