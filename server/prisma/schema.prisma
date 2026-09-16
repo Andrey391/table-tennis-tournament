@@ -37,7 +37,7 @@ model User {
   lastName         String
   role             Role      @default(PLAYER)
   club             String?
-  rating           Int       @default(1000)
+  rating           Int       @default(300)
   dateOfBirth      DateTime?
   phone            String?
   createdAt        DateTime  @default(now())

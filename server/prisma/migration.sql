@@ -62,6 +62,10 @@ END $$;
 CREATE INDEX IF NOT EXISTS "User_club_idx" ON "User"("club");
 CREATE INDEX IF NOT EXISTS "User_rating_idx" ON "User"("rating");
 
+-- New accounts now start at 300 instead of 1000 (Elo baseline). Existing
+-- users' ratings are left as-is — this only changes the default for new rows.
+ALTER TABLE "User" ALTER COLUMN "rating" SET DEFAULT 300;
+
 -- Self-service join requests need a pending state before the tournament
 -- manager approves them.
 ALTER TYPE "PlayerStatus" ADD VALUE IF NOT EXISTS 'PENDING';

@@ -66,9 +66,12 @@ function generateRoundPairings(candidates: RoundCandidate[], isFirstRound: boole
 
   let byeUserId: string | null = null;
   if (sorted.length % 2 === 1) {
+    // Bye goes to whoever has played the MOST matches so far (sat out the fewest
+    // times) — picking the fewest-matches player would give them the bye forever,
+    // since sitting out keeps their count lowest. Rating tiebreaks (lowest first).
     let byeIdx = 0;
     for (let i = 1; i < sorted.length; i++) {
-      if (sorted[i].matchesPlayed < sorted[byeIdx].matchesPlayed || (sorted[i].matchesPlayed === sorted[byeIdx].matchesPlayed && sorted[i].rating < sorted[byeIdx].rating)) byeIdx = i;
+      if (sorted[i].matchesPlayed > sorted[byeIdx].matchesPlayed || (sorted[i].matchesPlayed === sorted[byeIdx].matchesPlayed && sorted[i].rating < sorted[byeIdx].rating)) byeIdx = i;
     }
     byeUserId = sorted[byeIdx].userId;
     sorted.splice(byeIdx, 1);
@@ -106,6 +109,30 @@ function nextServerSide(totalPoints: number, currentServer: number, deuceMode: b
   return shouldSwitch ? (currentServer === 1 ? 2 : 1) : currentServer;
 }
 
+const ELO_K = 32;
+function computeEloDelta(winnerRating: number, loserRating: number, k: number = ELO_K) {
+  const expectedWinner = 1 / (1 + Math.pow(10, (loserRating - winnerRating) / 400));
+  const winnerDelta = Math.round(k * (1 - expectedWinner));
+  return { winnerDelta, loserDelta: -winnerDelta };
+}
+
+// Updates both players' global rating using the match result (Elo). Called whenever
+// a match resolves to COMPLETED with a clear winner.
+async function applyEloUpdate(winnerId: string | null, loserId: string | null) {
+  if (!winnerId || !loserId) return;
+  const d = db();
+  const [winner, loser] = await Promise.all([
+    d.user.findUnique({ where: { id: winnerId }, select: { rating: true } }),
+    d.user.findUnique({ where: { id: loserId }, select: { rating: true } }),
+  ]);
+  if (!winner || !loser) return;
+  const { winnerDelta, loserDelta } = computeEloDelta(winner.rating, loser.rating);
+  await d.$transaction([
+    d.user.update({ where: { id: winnerId }, data: { rating: winner.rating + winnerDelta } }),
+    d.user.update({ where: { id: loserId }, data: { rating: Math.max(0, loser.rating + loserDelta) } }),
+  ]);
+}
+
 // ─── SCHEMA SETUP ───────────────────────────────────────────────────────────────
 
 app.get("/api/health", (_req, res) => { res.json({ status: "ok", time: new Date().toISOString() }); });
@@ -119,7 +146,7 @@ app.get("/api/setup", async (_req, res) => {
     await d.$executeRawUnsafe(doBlock(`CREATE TYPE "MatchStatus" AS ENUM ('NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED')`));
 
     const tables = [
-      `CREATE TABLE IF NOT EXISTS "User" ("id" TEXT NOT NULL, "email" TEXT NOT NULL, "password" TEXT NOT NULL, "firstName" TEXT NOT NULL, "lastName" TEXT NOT NULL, "role" "Role" NOT NULL DEFAULT 'PLAYER', "club" TEXT, "rating" INTEGER NOT NULL DEFAULT 1000, "dateOfBirth" TIMESTAMP(3), "phone" TEXT, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "User_pkey" PRIMARY KEY ("id"))`,
+      `CREATE TABLE IF NOT EXISTS "User" ("id" TEXT NOT NULL, "email" TEXT NOT NULL, "password" TEXT NOT NULL, "firstName" TEXT NOT NULL, "lastName" TEXT NOT NULL, "role" "Role" NOT NULL DEFAULT 'PLAYER', "club" TEXT, "rating" INTEGER NOT NULL DEFAULT 300, "dateOfBirth" TIMESTAMP(3), "phone" TEXT, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "User_pkey" PRIMARY KEY ("id"))`,
       `CREATE UNIQUE INDEX IF NOT EXISTS "User_email_key" ON "User"("email")`,
       `CREATE TABLE IF NOT EXISTS "Tournament" ("id" TEXT NOT NULL, "name" TEXT NOT NULL, "tablesCount" INTEGER NOT NULL DEFAULT 4, "status" TEXT NOT NULL DEFAULT 'DRAFT', "startTime" TIMESTAMP(3), "endTime" TIMESTAMP(3), "organizerId" TEXT NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "Tournament_pkey" PRIMARY KEY ("id"))`,
       `CREATE TABLE IF NOT EXISTS "TournamentUser" ("id" TEXT NOT NULL, "tournamentId" TEXT NOT NULL, "userId" TEXT NOT NULL, "seed" INTEGER, "status" "PlayerStatus" NOT NULL DEFAULT 'REGISTERED', "joinedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "TournamentUser_pkey" PRIMARY KEY ("id"))`,
@@ -131,6 +158,7 @@ app.get("/api/setup", async (_req, res) => {
     ];
     for (const t of tables) await d.$executeRawUnsafe(t);
     await d.$executeRawUnsafe(`ALTER TABLE "Match" ADD COLUMN IF NOT EXISTS "round" INTEGER NOT NULL DEFAULT 1`);
+    await d.$executeRawUnsafe(`ALTER TABLE "User" ALTER COLUMN "rating" SET DEFAULT 300`);
     res.json({ status: "ok", message: "Schema created" });
   } catch (e: any) {
     res.json({ status: "ok", message: e.message?.includes("already exists") ? "Already exists" : "Partial" });
@@ -430,7 +458,10 @@ app.post("/api/matches/:id/score", authMiddleware, async (req: any, res) => {
       data: { score1, score2, serverSide: server, lastScorer: side, prevServerSide: match.serverSide, status: winner ? "COMPLETED" : "IN_PROGRESS", endedAt: winner ? new Date() : undefined },
       include: matchInclude,
     });
-    if (winner) await maybeCompleteTournament(match.tournamentId);
+    if (winner) {
+      await applyEloUpdate(winner === 1 ? match.player1Id : match.player2Id, winner === 1 ? match.player2Id : match.player1Id);
+      await maybeCompleteTournament(match.tournamentId);
+    }
     res.json({ match: updated, deuce, winner });
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
@@ -465,6 +496,9 @@ app.post("/api/matches/:id/end", authMiddleware, async (req: any, res) => {
     const match = await loadOwnedMatch(res, req.params.id, req.user.userId);
     if (!match) return;
     const updated = await db().match.update({ where: { id: match.id }, data: { status: "COMPLETED", endedAt: new Date() }, include: matchInclude });
+    if (match.score1 !== match.score2) {
+      await applyEloUpdate(match.score1 > match.score2 ? match.player1Id : match.player2Id, match.score1 > match.score2 ? match.player2Id : match.player1Id);
+    }
     await maybeCompleteTournament(match.tournamentId);
     res.json(updated);
   } catch (e: any) { res.status(400).json({ error: e.message }); }
@@ -487,6 +521,7 @@ app.post("/api/matches/:id/forfeit", authMiddleware, async (req: any, res) => {
       data: { score1, score2, status: "COMPLETED", startedAt: match.startedAt || new Date(), endedAt: new Date() },
       include: matchInclude,
     });
+    await applyEloUpdate(loserSide === 1 ? match.player2Id : match.player1Id, loserSide === 1 ? match.player1Id : match.player2Id);
     await maybeCompleteTournament(match.tournamentId);
     res.json(updated);
   } catch (e: any) { res.status(400).json({ error: e.message }); }

@@ -46,7 +46,7 @@ async function main() {
         lastName: p.lastName,
         role: "PLAYER",
         club: p.club,
-        rating: Math.floor(Math.random() * 2000) + 1000,
+        rating: Math.floor(Math.random() * 400) + 100,
       },
     });
     console.log(`Player: ${user.firstName} ${user.lastName} (${user.club})`);

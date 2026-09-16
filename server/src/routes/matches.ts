@@ -2,7 +2,7 @@ import { Router, Response } from "express";
 import { prisma } from "../config/db.js";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth.js";
 import { MatchSettingsSchema, ScorePointSchema, ForfeitSchema } from "../shared/schemas.js";
-import { isDeuce, getMatchWinner, nextServerSide } from "../shared/scoring.js";
+import { isDeuce, getMatchWinner, nextServerSide, computeEloDelta } from "../shared/scoring.js";
 import AuditLog from "../models/AuditLog.js";
 
 export const matchRouter = Router();
@@ -31,6 +31,22 @@ async function maybeCompleteTournament(tournamentId: string) {
   if (unresolved === 0) {
     await prisma.tournament.updateMany({ where: { id: tournamentId, status: "ACTIVE" }, data: { status: "COMPLETED" } });
   }
+}
+
+// Updates both players' global rating using the match result (Elo). Called whenever
+// a match resolves to COMPLETED with a clear winner.
+async function applyEloUpdate(winnerId: string | null, loserId: string | null) {
+  if (!winnerId || !loserId) return;
+  const [winner, loser] = await Promise.all([
+    prisma.user.findUnique({ where: { id: winnerId }, select: { rating: true } }),
+    prisma.user.findUnique({ where: { id: loserId }, select: { rating: true } }),
+  ]);
+  if (!winner || !loser) return;
+  const { winnerDelta, loserDelta } = computeEloDelta(winner.rating, loser.rating);
+  await prisma.$transaction([
+    prisma.user.update({ where: { id: winnerId }, data: { rating: winner.rating + winnerDelta } }),
+    prisma.user.update({ where: { id: loserId }, data: { rating: Math.max(0, loser.rating + loserDelta) } }),
+  ]);
 }
 
 matchRouter.get("/tournament/:tournamentId", async (req, res: Response) => {
@@ -110,6 +126,7 @@ matchRouter.post("/:id/score", authMiddleware, async (req: AuthenticatedRequest,
 
     if (winner) {
       await AuditLog.create({ userId: req.user!.userId, action: "MATCH_COMPLETE", entity: "Match", entityId: match.id, newValue: { score1, score2 } });
+      await applyEloUpdate(winner === 1 ? match.player1Id : match.player2Id, winner === 1 ? match.player2Id : match.player1Id);
       await maybeCompleteTournament(match.tournamentId);
     }
 
@@ -156,6 +173,9 @@ matchRouter.post("/:id/end", authMiddleware, async (req: AuthenticatedRequest, r
     if (!match) return;
     const updated = await prisma.match.update({ where: { id: match.id }, data: { status: "COMPLETED", endedAt: new Date() }, include: matchInclude });
     await AuditLog.create({ userId: req.user!.userId, action: "MATCH_END", entity: "Match", entityId: match.id });
+    if (match.score1 !== match.score2) {
+      await applyEloUpdate(match.score1 > match.score2 ? match.player1Id : match.player2Id, match.score1 > match.score2 ? match.player2Id : match.player1Id);
+    }
     await maybeCompleteTournament(match.tournamentId);
     res.json(updated);
   } catch (err: any) {
@@ -181,6 +201,7 @@ matchRouter.post("/:id/forfeit", authMiddleware, async (req: AuthenticatedReques
       include: matchInclude,
     });
     await AuditLog.create({ userId: req.user!.userId, action: "MATCH_FORFEIT", entity: "Match", entityId: match.id, newValue: { loserSide } });
+    await applyEloUpdate(loserSide === 1 ? match.player2Id : match.player1Id, loserSide === 1 ? match.player1Id : match.player2Id);
     await maybeCompleteTournament(match.tournamentId);
     res.json(updated);
   } catch (err: any) {
