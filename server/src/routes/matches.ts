@@ -1,6 +1,6 @@
 import { Router, Response } from "express";
 import { prisma } from "../config/db.js";
-import { AuthenticatedRequest, authMiddleware, roleMiddleware } from "../middleware/auth.js";
+import { AuthenticatedRequest, authMiddleware } from "../middleware/auth.js";
 import { MatchSettingsSchema, ScorePointSchema } from "../shared/schemas.js";
 import { isDeuce, getMatchWinner, nextServerSide } from "../shared/scoring.js";
 import AuditLog from "../models/AuditLog.js";
@@ -38,7 +38,7 @@ matchRouter.get("/:id", async (req, res: Response) => {
   res.json(match);
 });
 
-matchRouter.put("/:id", authMiddleware, roleMiddleware("ADMIN", "ORGANIZER", "JUDGE"), async (req: AuthenticatedRequest, res: Response) => {
+matchRouter.put("/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const match = await prisma.match.findUnique({ where: { id: req.params.id } });
     if (!match) { res.status(404).json({ error: "Not found" }); return; }
@@ -51,7 +51,7 @@ matchRouter.put("/:id", authMiddleware, roleMiddleware("ADMIN", "ORGANIZER", "JU
   }
 });
 
-matchRouter.post("/:id/start", authMiddleware, roleMiddleware("ADMIN", "ORGANIZER", "JUDGE"), async (req: AuthenticatedRequest, res: Response) => {
+matchRouter.post("/:id/start", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const match = await prisma.match.update({
       where: { id: req.params.id },
@@ -64,7 +64,7 @@ matchRouter.post("/:id/start", authMiddleware, roleMiddleware("ADMIN", "ORGANIZE
   }
 });
 
-matchRouter.post("/:id/score", authMiddleware, roleMiddleware("ADMIN", "ORGANIZER", "JUDGE"), async (req: AuthenticatedRequest, res: Response) => {
+matchRouter.post("/:id/score", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { side } = ScorePointSchema.parse(req.body);
     const match = await prisma.match.findUnique({ where: { id: req.params.id } });
@@ -97,7 +97,7 @@ matchRouter.post("/:id/score", authMiddleware, roleMiddleware("ADMIN", "ORGANIZE
   }
 });
 
-matchRouter.post("/:id/undo", authMiddleware, roleMiddleware("ADMIN", "ORGANIZER", "JUDGE"), async (req: AuthenticatedRequest, res: Response) => {
+matchRouter.post("/:id/undo", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const match = await prisma.match.findUnique({ where: { id: req.params.id } });
     if (!match) { res.status(404).json({ error: "Not found" }); return; }
@@ -117,7 +117,7 @@ matchRouter.post("/:id/undo", authMiddleware, roleMiddleware("ADMIN", "ORGANIZER
   }
 });
 
-matchRouter.post("/:id/let", authMiddleware, roleMiddleware("ADMIN", "ORGANIZER", "JUDGE"), async (req: AuthenticatedRequest, res: Response) => {
+matchRouter.post("/:id/let", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const match = await prisma.match.update({ where: { id: req.params.id }, data: { letCount: { increment: 1 } }, include: matchInclude });
     res.json({ match });
@@ -126,7 +126,7 @@ matchRouter.post("/:id/let", authMiddleware, roleMiddleware("ADMIN", "ORGANIZER"
   }
 });
 
-matchRouter.post("/:id/end", authMiddleware, roleMiddleware("ADMIN", "ORGANIZER", "JUDGE"), async (req: AuthenticatedRequest, res: Response) => {
+matchRouter.post("/:id/end", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const match = await prisma.match.update({ where: { id: req.params.id }, data: { status: "COMPLETED", endedAt: new Date() }, include: matchInclude });
     await AuditLog.create({ userId: req.user!.userId, action: "MATCH_END", entity: "Match", entityId: match.id });

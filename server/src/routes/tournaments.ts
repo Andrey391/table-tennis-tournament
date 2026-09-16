@@ -1,6 +1,6 @@
 import { Router, Response } from "express";
 import { prisma } from "../config/db.js";
-import { AuthenticatedRequest, authMiddleware, roleMiddleware } from "../middleware/auth.js";
+import { AuthenticatedRequest, authMiddleware } from "../middleware/auth.js";
 import { CreateTournamentSchema, UpdateTournamentSchema, AddPlayersSchema } from "../shared/schemas.js";
 import AuditLog from "../models/AuditLog.js";
 
@@ -8,7 +8,7 @@ export const tournamentRouter = Router();
 
 const playerSelect = { id: true, firstName: true, lastName: true, club: true, rating: true };
 
-tournamentRouter.post("/", authMiddleware, roleMiddleware("ADMIN", "ORGANIZER"), async (req: AuthenticatedRequest, res: Response) => {
+tournamentRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const data = CreateTournamentSchema.parse(req.body);
     const tournament = await prisma.tournament.create({ data: { ...data, organizerId: req.user!.userId } });
@@ -40,7 +40,7 @@ tournamentRouter.get("/:id", async (req, res: Response) => {
   res.json(tournament);
 });
 
-tournamentRouter.put("/:id", authMiddleware, roleMiddleware("ADMIN", "ORGANIZER"), async (req: AuthenticatedRequest, res: Response) => {
+tournamentRouter.put("/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const data = UpdateTournamentSchema.parse(req.body);
     const tournament = await prisma.tournament.update({ where: { id: req.params.id }, data });
@@ -51,7 +51,7 @@ tournamentRouter.put("/:id", authMiddleware, roleMiddleware("ADMIN", "ORGANIZER"
   }
 });
 
-tournamentRouter.post("/:id/players", authMiddleware, roleMiddleware("ADMIN", "ORGANIZER"), async (req: AuthenticatedRequest, res: Response) => {
+tournamentRouter.post("/:id/players", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { userIds } = AddPlayersSchema.parse(req.body);
     const tournament = await prisma.tournament.findUnique({ where: { id: req.params.id } });
@@ -70,7 +70,7 @@ tournamentRouter.post("/:id/players", authMiddleware, roleMiddleware("ADMIN", "O
   }
 });
 
-tournamentRouter.delete("/:id/players/:userId", authMiddleware, roleMiddleware("ADMIN", "ORGANIZER"), async (req: AuthenticatedRequest, res: Response) => {
+tournamentRouter.delete("/:id/players/:userId", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const tournament = await prisma.tournament.findUnique({ where: { id: req.params.id } });
     if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
@@ -84,7 +84,7 @@ tournamentRouter.delete("/:id/players/:userId", authMiddleware, roleMiddleware("
 
 // Locks the roster and pairs players by rating: strongest paired with next-strongest, and so on.
 // A leftover player (odd headcount) gets a bye and no match.
-tournamentRouter.post("/:id/pair", authMiddleware, roleMiddleware("ADMIN", "ORGANIZER"), async (req: AuthenticatedRequest, res: Response) => {
+tournamentRouter.post("/:id/pair", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const tournament = await prisma.tournament.findUnique({
       where: { id: req.params.id },

@@ -20,13 +20,6 @@ function authMiddleware(req: any, res: any, next: any) {
   catch { res.status(401).json({ error: "Invalid token" }); }
 }
 
-function requireRole(...roles: string[]) {
-  return (req: any, res: any, next: any) => {
-    if (!req.user || !roles.includes(req.user.role)) { res.status(403).json({ error: "Forbidden" }); return; }
-    next();
-  };
-}
-
 const playerSelect = { id: true, firstName: true, lastName: true, club: true, rating: true };
 const matchInclude = {
   player1: { select: playerSelect },
@@ -151,7 +144,7 @@ app.get("/api/tournaments/:id", async (req, res) => {
   res.json(tournament);
 });
 
-app.post("/api/tournaments", authMiddleware, requireRole("ADMIN", "ORGANIZER"), async (req: any, res) => {
+app.post("/api/tournaments", authMiddleware, async (req: any, res) => {
   try {
     const { name, tablesCount, startTime } = req.body;
     const tournament = await db().tournament.create({ data: { name, tablesCount: tablesCount || 4, startTime, organizerId: req.user.userId } });
@@ -159,7 +152,7 @@ app.post("/api/tournaments", authMiddleware, requireRole("ADMIN", "ORGANIZER"), 
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
-app.put("/api/tournaments/:id", authMiddleware, requireRole("ADMIN", "ORGANIZER"), async (req: any, res) => {
+app.put("/api/tournaments/:id", authMiddleware, async (req: any, res) => {
   try {
     const { name, status, startTime, endTime, tablesCount } = req.body;
     const tournament = await db().tournament.update({ where: { id: req.params.id }, data: { name, status, startTime, endTime, tablesCount } });
@@ -167,7 +160,7 @@ app.put("/api/tournaments/:id", authMiddleware, requireRole("ADMIN", "ORGANIZER"
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
-app.post("/api/tournaments/:id/players", authMiddleware, requireRole("ADMIN", "ORGANIZER"), async (req, res) => {
+app.post("/api/tournaments/:id/players", authMiddleware, async (req, res) => {
   try {
     const { userIds } = req.body;
     const d = db();
@@ -182,7 +175,7 @@ app.post("/api/tournaments/:id/players", authMiddleware, requireRole("ADMIN", "O
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
-app.delete("/api/tournaments/:id/players/:userId", authMiddleware, requireRole("ADMIN", "ORGANIZER"), async (req, res) => {
+app.delete("/api/tournaments/:id/players/:userId", authMiddleware, async (req, res) => {
   try {
     const d = db();
     const tournament = await d.tournament.findUnique({ where: { id: req.params.id } });
@@ -194,7 +187,7 @@ app.delete("/api/tournaments/:id/players/:userId", authMiddleware, requireRole("
 });
 
 // Locks the roster and pairs players by rating: strongest with next-strongest, and so on.
-app.post("/api/tournaments/:id/pair", authMiddleware, requireRole("ADMIN", "ORGANIZER"), async (req, res) => {
+app.post("/api/tournaments/:id/pair", authMiddleware, async (req, res) => {
   try {
     const d = db();
     const tournament = await d.tournament.findUnique({ where: { id: req.params.id }, include: { players: { include: { user: { select: { id: true, rating: true } } } } } });
@@ -263,7 +256,7 @@ app.get("/api/matches/:id", async (req, res) => {
   res.json(match);
 });
 
-app.put("/api/matches/:id", authMiddleware, requireRole("ADMIN", "ORGANIZER", "JUDGE"), async (req: any, res) => {
+app.put("/api/matches/:id", authMiddleware, async (req: any, res) => {
   try {
     const d = db();
     const match = await d.match.findUnique({ where: { id: req.params.id } });
