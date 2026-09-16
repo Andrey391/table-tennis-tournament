@@ -15,281 +15,109 @@ enum Role {
   VIEWER
 }
 
-enum TournamentType {
-  SINGLE
-  DOUBLE
-  TEAM
-}
-
-enum TournamentSystem {
-  ROUND_ROBIN
-  OLYMPIC
-  DOUBLE_ELIMINATION
-  MIXED
-}
-
-enum MatchFormat {
-  BEST_OF_3
-  BEST_OF_5
-  BEST_OF_7
-}
-
-enum GameState {
-  NOT_STARTED
-  IN_PROGRESS
-  COMPLETED
-  CANCELLED
-}
-
 enum PlayerStatus {
   REGISTERED
   WITHDRAWN
   DISQUALIFIED
 }
 
-enum MatchType {
-  SINGLE
-  DOUBLE
-  TEAM
+enum MatchStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
 }
 
 model User {
-  id            String   @id @default(uuid())
-  email         String   @unique
-  password      String
-  firstName     String
-  lastName      String
-  role          Role     @default(PLAYER)
-  club          String?
-  rating        Int      @default(1000)
-  dateOfBirth   DateTime?
-  phone         String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  tournaments   TournamentUser[]
-  matches       Match[]   @relation("judgeMatches")
-  players       Player[]
+  id               String    @id @default(uuid())
+  email            String    @unique
+  password         String
+  firstName        String
+  lastName         String
+  role             Role      @default(PLAYER)
+  club             String?
+  rating           Int       @default(1000)
+  dateOfBirth      DateTime?
+  phone            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  tournaments      TournamentUser[]
+  matchesAsPlayer1 Match[]   @relation("player1")
+  matchesAsPlayer2 Match[]   @relation("player2")
+  judgedMatches    Match[]   @relation("judgeMatches")
   organizedTournaments Tournament[] @relation("tournamentOrganizer")
-  auditLogs     AuditLog[]
-  ratings       Rating[]
-  captainedTeams Team[] @relation("captain")
-  groupPlayers   GroupPlayer[]
-}
+  auditLogs        AuditLog[]
 
-model Player {
-  id            String   @id @default(uuid())
-  userId        String?  @unique
-  user          User?    @relation(fields: [userId], references: [id])
-  firstName     String
-  lastName      String
-  club          String?
-  rating        Int      @default(1000)
-  dateOfBirth   DateTime?
-  status        PlayerStatus @default(REGISTERED)
-  teamId        String?
-  team          Team?    @relation(fields: [teamId], references: [id])
-  matchAsPlayer1 Match[]  @relation("player1")
-  matchAsPlayer2 Match[]  @relation("player2")
-  ratings       Rating[]
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  @@index([teamId])
   @@index([club])
   @@index([rating])
 }
 
-model Team {
-  id            String   @id @default(uuid())
-  name          String
-  club          String?
-  captainId     String?
-  captain       User?    @relation("captain", fields: [captainId], references: [id])
-  players       Player[]
-  tournamentId  String?
-  tournament    Tournament? @relation(fields: [tournamentId], references: [id])
-  matchesAsTeam1 Match[] @relation("team1")
-  matchesAsTeam2 Match[] @relation("team2")
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-}
-
 model Tournament {
-  id              String   @id @default(uuid())
-  name            String
-  type            TournamentType
-  system          TournamentSystem
-  format          MatchFormat
-  maxGroups       Int?
-  playersPerGroup Int?
-  playersOut      Int?
-  tablesCount     Int      @default(4)
-  status          String   @default("DRAFT")
-  startTime       DateTime?
-  endTime         DateTime?
-  organizerId     String
-  organizer       User     @relation("tournamentOrganizer", fields: [organizerId], references: [id])
-  players         TournamentUser[]
-  groups          Group[]
-  matches         Match[]
-  brackets        Bracket[]
-  teams           Team[]
-  ratings         Rating[]
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id          String    @id @default(uuid())
+  name        String
+  tablesCount Int       @default(4)
+  status      String    @default("DRAFT")
+  startTime   DateTime?
+  endTime     DateTime?
+  organizerId String
+  organizer   User      @relation("tournamentOrganizer", fields: [organizerId], references: [id])
+  players     TournamentUser[]
+  matches     Match[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([status])
   @@index([startTime])
 }
 
 model TournamentUser {
-  id            String   @id @default(uuid())
-  tournamentId  String
-  tournament    Tournament @relation(fields: [tournamentId], references: [id])
-  userId        String
-  user          User       @relation(fields: [userId], references: [id])
-  teamId        String?
-  seed          Int?
-  status        PlayerStatus @default(REGISTERED)
-  joinedAt      DateTime @default(now())
+  id           String       @id @default(uuid())
+  tournamentId String
+  tournament   Tournament   @relation(fields: [tournamentId], references: [id])
+  userId       String
+  user         User         @relation(fields: [userId], references: [id])
+  seed         Int?
+  status       PlayerStatus @default(REGISTERED)
+  joinedAt     DateTime     @default(now())
 
   @@unique([tournamentId, userId])
   @@index([tournamentId])
   @@index([tournamentId, seed])
 }
 
-model Group {
-  id            String   @id @default(uuid())
-  tournamentId  String
-  tournament    Tournament @relation(fields: [tournamentId], references: [id])
-  name          String
-  playersInGroup Int
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  matches       Match[]
-  groupPlayers  GroupPlayer[]
-
-  @@index([tournamentId])
-}
-
-model GroupPlayer {
-  id            String   @id @default(uuid())
-  groupId       String
-  group         Group    @relation(fields: [groupId], references: [id])
-  userId        String
-  user          User     @relation(fields: [userId], references: [id])
-  seed          Int?
-  wins          Int      @default(0)
-  losses        Int      @default(0)
-  gamesWon      Int      @default(0)
-  gamesLost     Int      @default(0)
-  pointsWon     Int      @default(0)
-  pointsLost    Int      @default(0)
-  tiebreak1     Float    @default(0)
-  tiebreak2     Float    @default(0)
-  position      Int?
-
-  @@unique([groupId, userId])
-  @@index([groupId])
-}
-
 model Match {
-  id           String   @id @default(uuid())
+  id           String      @id @default(uuid())
   tournamentId String
-  tournament   Tournament @relation(fields: [tournamentId], references: [id])
-  groupId      String?
-  group        Group?     @relation(fields: [groupId], references: [id])
-  bracketId    String?
-  bracket      Bracket?   @relation(fields: [bracketId], references: [id])
-  round        Int?
+  tournament   Tournament  @relation(fields: [tournamentId], references: [id])
   matchIndex   Int?
   tableNumber  Int?
-  scheduledAt  DateTime?
   player1Id    String?
-  player1      Player?    @relation("player1", fields: [player1Id], references: [id])
+  player1      User?       @relation("player1", fields: [player1Id], references: [id])
   player2Id    String?
-  player2      Player?    @relation("player2", fields: [player2Id], references: [id])
-  team1Id      String?
-  team1        Team?    @relation("team1", fields: [team1Id], references: [id])
-  team2Id      String?
-  team2        Team?    @relation("team2", fields: [team2Id], references: [id])
+  player2      User?       @relation("player2", fields: [player2Id], references: [id])
   judgeId      String?
-  judge        User?    @relation("judgeMatches", fields: [judgeId], references: [id])
-  matchType    MatchType  @default(SINGLE)
-  format       MatchFormat
-  status       GameState  @default(NOT_STARTED)
-  score1       Int       @default(0)
-  score2       Int       @default(0)
-  gamesWon1    Int       @default(0)
-  gamesWon2    Int       @default(0)
+  judge        User?       @relation("judgeMatches", fields: [judgeId], references: [id])
+  pointsToWin  Int         @default(11)
+  score1       Int         @default(0)
+  score2       Int         @default(0)
+  serverSide   Int         @default(1)
+  lastScorer   Int?
+  prevServerSide Int?
+  letCount     Int         @default(0)
+  status       MatchStatus @default(NOT_STARTED)
   startedAt    DateTime?
   endedAt      DateTime?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  games        Game[]
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
   @@index([tournamentId])
-  @@index([groupId])
-  @@index([bracketId])
   @@index([status])
-}
-
-model Game {
-  id            String   @id @default(uuid())
-  matchId       String
-  match         Match  @relation(fields: [matchId], references: [id])
-  gameNumber    Int      @default(1)
-  player1Score  Int      @default(0)
-  player2Score  Int      @default(0)
-  letCount      Int      @default(0)
-  serverSide    Int      @default(1)
-  state         String   @default("NOT_STARTED")
-  winnerSide    Int?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  @@index([matchId])
-}
-
-model Bracket {
-  id          String   @id @default(uuid())
-  tournamentId String
-  tournament  Tournament @relation(fields: [tournamentId], references: [id])
-  type        String   @default("WINNERS")
-  round       Int      @default(1)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  matches     Match[]
-
-  @@index([tournamentId])
-}
-
-model Rating {
-  id          String   @id @default(uuid())
-  tournamentId String
-  tournament  Tournament @relation(fields: [tournamentId], references: [id])
-  playerId    String
-  player      Player   @relation(fields: [playerId], references: [id])
-  userId      String?
-  user        User?    @relation(fields: [userId], references: [id])
-  points      Int      @default(0)
-  won         Int      @default(0)
-  lost        Int      @default(0)
-  draws       Int      @default(0)
-  pointsFor   Int      @default(0)
-  pointsAgainst Int    @default(0)
-  position    Int?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@unique([tournamentId, playerId])
-  @@index([userId])
 }
 
 model AuditLog {
   id        String   @id @default(uuid())
   userId    String
-  user      User   @relation(fields: [userId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
   action    String
   entity    String
   entityId  String?

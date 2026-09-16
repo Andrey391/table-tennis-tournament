@@ -1,77 +1,46 @@
 import { useEffect, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
+import { Link } from "react-router-dom";
 import { apiService } from "../services/api";
+import Layout from "../components/Layout";
 
-const NAV = [
-  { to: "/", label: "Dashboard", icon: "🏠" },
-  { to: "/players", label: "Players", icon: "👥" },
-  { to: "/results", label: "Results", icon: "📊" },
-  { to: "/rating", label: "Rating", icon: "🏆" },
-];
+const STATUS_LABEL: Record<string, string> = { DRAFT: "Adding players", ACTIVE: "In progress", COMPLETED: "Completed" };
 
 export default function Dashboard() {
-  const { user, logout } = useAuth();
-  const location = useLocation();
   const [tournaments, setTournaments] = useState<any[]>([]);
 
   useEffect(() => { apiService.tournaments.getAll().then(r => setTournaments(r.data)).catch(console.error); }, []);
 
   return (
-    <div className="min-h-screen bg-gray-900">
-      <header className="bg-gray-800 border-b border-gray-700 px-6 py-3">
-        <div className="max-w-6xl mx-auto flex justify-between items-center">
-          <div className="flex items-center gap-6">
-            <Link to="/" className="text-xl font-bold">🏓 TT</Link>
-            <nav className="flex gap-1">
-              {NAV.map(n => (
-                <Link key={n.to} to={n.to}
-                  className={`px-3 py-1.5 rounded text-sm ${location.pathname === n.to ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-gray-700"}`}>
-                  {n.icon} {n.label}
-                </Link>
-              ))}
-            </nav>
-          </div>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-400">{user?.firstName} {user?.lastName} <span className="text-xs text-gray-600">({user?.role})</span></span>
-            <button onClick={() => { logout(); }} className="px-3 py-1.5 bg-red-600 rounded text-sm hover:bg-red-700">Logout</button>
-          </div>
+    <Layout>
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-lg font-bold">Tournaments</h1>
+        <Link to="/tournament/new" className="px-3 py-2 bg-[#3b82f6] text-white rounded text-sm font-medium active:scale-[0.97] transition-transform">+ New</Link>
+      </div>
+      {tournaments.length === 0 ? (
+        <div className="text-center py-16 bg-[#12121a] rounded-lg border border-[#1e1e2e] px-4">
+          <p className="text-[#666680] mb-4 text-sm">No tournaments yet</p>
+          <Link to="/tournament/new" className="inline-block px-5 py-2.5 bg-[#3b82f6] text-white rounded text-sm font-medium">Create first tournament</Link>
         </div>
-      </header>
-      <main className="max-w-6xl mx-auto p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold">Tournaments</h1>
-          <Link to="/tournament/new" className="px-4 py-2 bg-blue-600 rounded hover:bg-blue-700">+ Create</Link>
-        </div>
-        {tournaments.length === 0 ? (
-          <div className="text-center py-16 bg-gray-800 rounded-lg border border-gray-700">
-            <p className="text-gray-400 text-lg mb-4">No tournaments yet</p>
-            <Link to="/tournament/new" className="px-6 py-2 bg-blue-600 rounded hover:bg-blue-700">Create first tournament</Link>
-          </div>
-        ) : (
-          <div className="grid gap-3">
-            {tournaments.map(t => (
-              <Link key={t.id} to={`/tournament/${t.id}`}
-                className="bg-gray-800 p-4 rounded-lg hover:bg-gray-750 border border-gray-700 hover:border-gray-600 transition">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <h2 className="text-lg font-semibold">{t.name}</h2>
-                    <p className="text-gray-400 text-sm">{t.type} · {t.system} · {t.format}</p>
-                  </div>
-                  <div className="text-right">
-                    <span className={`px-2 py-1 rounded text-xs ${
-                      t.status === "IN_PROGRESS" ? "bg-yellow-900 text-yellow-200" :
-                      t.status === "COMPLETED" ? "bg-green-900 text-green-200" :
-                      "bg-gray-700 text-gray-400"
-                    }`}>{t.status}</span>
-                    <p className="text-gray-500 text-xs mt-1">{t._count?.players || 0} players · {t._count?.matches || 0} matches</p>
-                  </div>
+      ) : (
+        <div className="space-y-2">
+          {tournaments.map(t => (
+            <Link key={t.id} to={`/tournament/${t.id}`}
+              className="block bg-[#12121a] p-3 rounded-lg border border-[#1e1e2e] active:bg-[#1e1e2e] transition-colors">
+              <div className="flex justify-between items-start gap-2">
+                <div className="min-w-0">
+                  <h2 className="font-semibold text-sm truncate">{t.name}</h2>
+                  <p className="text-xs text-[#666680] mt-0.5">{t._count?.players || 0} players &middot; {t._count?.matches || 0} matches</p>
                 </div>
-              </Link>
-            ))}
-          </div>
-        )}
-      </main>
-    </div>
+                <span className={`shrink-0 px-2 py-0.5 rounded text-[11px] font-medium whitespace-nowrap ${
+                  t.status === "ACTIVE" ? "bg-yellow-500/10 text-yellow-400 border border-yellow-500/20" :
+                  t.status === "COMPLETED" ? "bg-green-500/10 text-green-400 border border-green-500/20" :
+                  "bg-[#1e1e2e] text-[#8888a0] border border-[#333]"
+                }`}>{STATUS_LABEL[t.status] || t.status}</span>
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
+    </Layout>
   );
 }

@@ -1,10 +1,12 @@
 import { Router, Response } from "express";
 import { prisma } from "../config/db.js";
 import { AuthenticatedRequest, authMiddleware, roleMiddleware } from "../middleware/auth.js";
-import { CreateTournamentSchema } from "../shared/schemas.js";
+import { CreateTournamentSchema, UpdateTournamentSchema, AddPlayersSchema } from "../shared/schemas.js";
 import AuditLog from "../models/AuditLog.js";
 
 export const tournamentRouter = Router();
+
+const playerSelect = { id: true, firstName: true, lastName: true, club: true, rating: true };
 
 tournamentRouter.post("/", authMiddleware, roleMiddleware("ADMIN", "ORGANIZER"), async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -29,11 +31,9 @@ tournamentRouter.get("/:id", async (req, res: Response) => {
   const tournament = await prisma.tournament.findUnique({
     where: { id: req.params.id },
     include: {
-      groups: { include: { matches: true } },
-      matches: { include: { player1: true, player2: true, team1: true, team2: true, judge: true } },
-      brackets: true,
-      ratings: { include: { player: true } },
-      players: { include: { user: true } },
+      organizer: { select: { firstName: true, lastName: true } },
+      players: { include: { user: { select: playerSelect } }, orderBy: { seed: "asc" } },
+      matches: { include: { player1: { select: playerSelect }, player2: { select: playerSelect }, judge: { select: { firstName: true, lastName: true } } }, orderBy: [{ matchIndex: "asc" }] },
     },
   });
   if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
@@ -42,8 +42,9 @@ tournamentRouter.get("/:id", async (req, res: Response) => {
 
 tournamentRouter.put("/:id", authMiddleware, roleMiddleware("ADMIN", "ORGANIZER"), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const tournament = await prisma.tournament.update({ where: { id: req.params.id }, data: req.body });
-    await AuditLog.create({ userId: req.user!.userId, action: "TOURNAMENT_UPDATE", entity: "Tournament", entityId: tournament.id, newValue: req.body });
+    const data = UpdateTournamentSchema.parse(req.body);
+    const tournament = await prisma.tournament.update({ where: { id: req.params.id }, data });
+    await AuditLog.create({ userId: req.user!.userId, action: "TOURNAMENT_UPDATE", entity: "Tournament", entityId: tournament.id, newValue: data });
     res.json(tournament);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -52,9 +53,13 @@ tournamentRouter.put("/:id", authMiddleware, roleMiddleware("ADMIN", "ORGANIZER"
 
 tournamentRouter.post("/:id/players", authMiddleware, roleMiddleware("ADMIN", "ORGANIZER"), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { userIds } = req.body as { userIds: string[] };
+    const { userIds } = AddPlayersSchema.parse(req.body);
+    const tournament = await prisma.tournament.findUnique({ where: { id: req.params.id } });
+    if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
+    if (tournament.status !== "DRAFT") { res.status(400).json({ error: "Roster is locked, cannot add players" }); return; }
+
     const existing = await prisma.tournamentUser.findMany({ where: { tournamentId: req.params.id }, select: { userId: true } });
-    const existingIds = new Set(existing.map((e: { userId: string }) => e.userId));
+    const existingIds = new Set(existing.map((e) => e.userId));
     const newUsers = userIds.filter((id) => !existingIds.has(id));
     const created = await prisma.$transaction(
       newUsers.map((userId) => prisma.tournamentUser.create({ data: { tournamentId: req.params.id, userId } }))
@@ -65,28 +70,91 @@ tournamentRouter.post("/:id/players", authMiddleware, roleMiddleware("ADMIN", "O
   }
 });
 
-tournamentRouter.post("/:id/draw", authMiddleware, roleMiddleware("ADMIN", "ORGANIZER"), async (req: AuthenticatedRequest, res: Response) => {
+tournamentRouter.delete("/:id/players/:userId", authMiddleware, roleMiddleware("ADMIN", "ORGANIZER"), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const tournament = await prisma.tournament.findUnique({ where: { id: req.params.id }, include: { players: true } });
+    const tournament = await prisma.tournament.findUnique({ where: { id: req.params.id } });
     if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
-    const shuffled = [...tournament.players].sort(() => Math.random() - 0.5);
-    await prisma.$transaction(shuffled.map((p, idx) => prisma.tournamentUser.update({ where: { id: p.id }, data: { seed: idx + 1 } })));
-    res.json({ message: "Draw completed", total: shuffled.length });
+    if (tournament.status !== "DRAFT") { res.status(400).json({ error: "Roster is locked, cannot remove players" }); return; }
+    await prisma.tournamentUser.delete({ where: { tournamentId_userId: { tournamentId: req.params.id, userId: req.params.userId } } });
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Locks the roster and pairs players by rating: strongest paired with next-strongest, and so on.
+// A leftover player (odd headcount) gets a bye and no match.
+tournamentRouter.post("/:id/pair", authMiddleware, roleMiddleware("ADMIN", "ORGANIZER"), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const tournament = await prisma.tournament.findUnique({
+      where: { id: req.params.id },
+      include: { players: { include: { user: { select: { id: true, rating: true } } } } },
+    });
+    if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
+    if (tournament.status !== "DRAFT") { res.status(400).json({ error: "Tournament already paired" }); return; }
+    if (tournament.players.length < 2) { res.status(400).json({ error: "Need at least 2 players" }); return; }
+
+    const sorted = [...tournament.players].sort((a, b) => (b.user?.rating || 0) - (a.user?.rating || 0));
+
+    await prisma.$transaction(sorted.map((p, idx) => prisma.tournamentUser.update({ where: { id: p.id }, data: { seed: idx + 1 } })));
+
+    const pairs: { player1Id: string; player2Id: string }[] = [];
+    for (let i = 0; i + 1 < sorted.length; i += 2) {
+      pairs.push({ player1Id: sorted[i].userId, player2Id: sorted[i + 1].userId });
+    }
+    const bye = sorted.length % 2 === 1 ? sorted[sorted.length - 1] : null;
+
+    const tablesCount = tournament.tablesCount || 1;
+    await prisma.$transaction([
+      ...pairs.map((p, idx) =>
+        prisma.match.create({
+          data: {
+            tournamentId: tournament.id,
+            player1Id: p.player1Id,
+            player2Id: p.player2Id,
+            matchIndex: idx,
+            tableNumber: (idx % tablesCount) + 1,
+          },
+        })
+      ),
+      prisma.tournament.update({ where: { id: tournament.id }, data: { status: "ACTIVE" } }),
+    ]);
+
+    await AuditLog.create({ userId: req.user!.userId, action: "TOURNAMENT_PAIR", entity: "Tournament", entityId: tournament.id, newValue: { pairs: pairs.length, bye: bye?.userId || null } });
+    res.json({ message: "Paired", matches: pairs.length, bye: bye?.userId || null });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
 });
 
 tournamentRouter.get("/:id/standings", async (req, res: Response) => {
-  const ratings = await prisma.rating.findMany({ where: { tournamentId: req.params.id }, include: { player: true }, orderBy: [{ points: "desc" }, { pointsFor: "desc" }] });
-  res.json(ratings);
-});
+  try {
+    const tournament = await prisma.tournament.findUnique({
+      where: { id: req.params.id },
+      include: {
+        players: { include: { user: { select: playerSelect } } },
+        matches: { where: { status: "COMPLETED" }, select: { player1Id: true, player2Id: true, score1: true, score2: true } },
+      },
+    });
+    if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
 
-tournamentRouter.get("/:id/schedule", async (req, res: Response) => {
-  const matches = await prisma.match.findMany({
-    where: { tournamentId: req.params.id },
-    include: { player1: true, player2: true, team1: true, team2: true, judge: true },
-    orderBy: [{ round: "asc" }, { tableNumber: "asc" }],
-  });
-  res.json(matches);
+    const stats = new Map<string, { userId: string; firstName: string; lastName: string; club?: string | null; rating: number; wins: number; losses: number; pointsFor: number; pointsAgainst: number }>();
+    for (const p of tournament.players) {
+      if (!p.user) continue;
+      stats.set(p.userId, { userId: p.userId, firstName: p.user.firstName, lastName: p.user.lastName, club: p.user.club, rating: p.user.rating, wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0 });
+    }
+    for (const m of tournament.matches) {
+      if (!m.player1Id || !m.player2Id) continue;
+      const s1 = stats.get(m.player1Id);
+      const s2 = stats.get(m.player2Id);
+      if (!s1 || !s2) continue;
+      s1.pointsFor += m.score1; s1.pointsAgainst += m.score2;
+      s2.pointsFor += m.score2; s2.pointsAgainst += m.score1;
+      if (m.score1 > m.score2) { s1.wins++; s2.losses++; } else { s2.wins++; s1.losses++; }
+    }
+    const result = Array.from(stats.values()).sort((a, b) => b.wins - a.wins || (b.pointsFor - b.pointsAgainst) - (a.pointsFor - a.pointsAgainst));
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
 });
