@@ -1,6 +1,7 @@
 import { useParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { apiService } from "../services/api";
+import Logo from "../components/Logo";
 
 export default function PublicTournament() {
   const { id } = useParams<{ id: string }>();
@@ -19,7 +20,8 @@ export default function PublicTournament() {
     <div className="min-h-screen bg-[#0a0a0f]">
       <div className="max-w-sm mx-auto p-3">
         <div className="text-center mb-6">
-          <h1 className="text-xl font-bold tracking-tight">{data.tournament.name}</h1>
+          <div className="mb-3"><Logo as="plain" /></div>
+          <h1 className="text-2xl font-bold tracking-tight">{data.tournament.name}</h1>
           <p className={`text-xs mt-1 uppercase tracking-wider font-medium ${
             data.tournament.status === "ACTIVE" ? "text-yellow-400" : data.tournament.status === "COMPLETED" ? "text-green-400" : "text-[#555566]"
           }`}>{data.tournament.status === "ACTIVE" ? "In progress" : data.tournament.status}</p>

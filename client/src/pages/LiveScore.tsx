@@ -17,7 +17,7 @@ export default function LiveScore() {
   return (
     <div className="min-h-screen bg-[#0a0a0f] p-3">
       <div className="max-w-sm mx-auto">
-        <h1 className="text-xl font-bold text-center mb-1 tracking-tight">LIVE <span className="text-[#3b82f6]">SCORE</span></h1>
+        <h1 className="text-2xl font-bold text-center mb-1 tracking-tight">LIVE <span className="text-[#ccff00]">SCORE</span></h1>
         <p className="text-center text-[#555566] text-xs mb-6">Updates every 2 seconds</p>
 
         {matches.length === 0 ? (
