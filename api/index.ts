@@ -180,19 +180,43 @@ function computeEloDelta(winnerRating: number, loserRating: number, k: number = 
 
 // Updates both players' global rating using the match result (Elo). Called whenever
 // a match resolves to COMPLETED with a clear winner.
-async function applyEloUpdate(kind: string, winnerId: string | null, loserId: string | null) {
+async function applyEloUpdate(kind: string, winnerId: string | null, loserId: string | null): Promise<number | null> {
   // A GAME is deliberately unrated; only a TOURNAMENT moves anyone's Elo.
-  if (kind !== "TOURNAMENT" || !winnerId || !loserId) return;
+  if (kind !== "TOURNAMENT" || !winnerId || !loserId) return null;
   const d = db();
   const [winner, loser] = await Promise.all([
     d.user.findUnique({ where: { id: winnerId }, select: { rating: true } }),
     d.user.findUnique({ where: { id: loserId }, select: { rating: true } }),
   ]);
-  if (!winner || !loser) return;
+  if (!winner || !loser) return null;
   const { winnerDelta, loserDelta } = computeEloDelta(winner.rating, loser.rating);
   await d.$transaction([
     d.user.update({ where: { id: winnerId }, data: { rating: winner.rating + winnerDelta } }),
     d.user.update({ where: { id: loserId }, data: { rating: Math.max(0, loser.rating + loserDelta) } }),
+  ]);
+  // Stored on the match so undoing the point that settled it hands back exactly
+  // what was given, instead of recomputing from ratings that have already moved.
+  return winnerDelta;
+}
+
+// Takes back the rating change a match applied, when the point that ended it is
+// undone. The loser's rating was floored at 0 on the way down, so it is floored
+// again on the way back rather than trusted to be symmetric.
+async function revertEloUpdate(match: any) {
+  if (match.eloDelta == null || match.setsWon1 === match.setsWon2) return;
+  const d = db();
+  const p1Won = match.setsWon1 > match.setsWon2;
+  const winnerId = p1Won ? match.player1Id : match.player2Id;
+  const loserId = p1Won ? match.player2Id : match.player1Id;
+  if (!winnerId || !loserId) return;
+  const [winner, loser] = await Promise.all([
+    d.user.findUnique({ where: { id: winnerId }, select: { rating: true } }),
+    d.user.findUnique({ where: { id: loserId }, select: { rating: true } }),
+  ]);
+  if (!winner || !loser) return;
+  await d.$transaction([
+    d.user.update({ where: { id: winnerId }, data: { rating: Math.max(0, winner.rating - match.eloDelta) } }),
+    d.user.update({ where: { id: loserId }, data: { rating: loser.rating + match.eloDelta } }),
   ]);
 }
 
@@ -249,6 +273,9 @@ app.get("/api/setup", async (_req, res) => {
     await d.$executeRawUnsafe(`ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "kind" TEXT NOT NULL DEFAULT 'TOURNAMENT'`);
     await d.$executeRawUnsafe(`ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "pointsToWin" INTEGER NOT NULL DEFAULT 11`);
     await d.$executeRawUnsafe(`ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "isPublic" BOOLEAN NOT NULL DEFAULT true`);
+    await d.$executeRawUnsafe(`ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "setsToWin" INTEGER NOT NULL DEFAULT 1`);
+    await d.$executeRawUnsafe(`ALTER TABLE "Match" ADD COLUMN IF NOT EXISTS "setsToWin" INTEGER NOT NULL DEFAULT 1`);
+    await d.$executeRawUnsafe(`ALTER TABLE "Match" ADD COLUMN IF NOT EXISTS "eloDelta" INTEGER`);
     await d.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "RoundBye" ("id" TEXT NOT NULL, "tournamentId" TEXT NOT NULL, "round" INTEGER NOT NULL, "userId" TEXT NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "RoundBye_pkey" PRIMARY KEY ("id"))`);
     await d.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "RoundBye_tournamentId_round_key" ON "RoundBye"("tournamentId", "round")`);
     await d.$executeRawUnsafe(`ALTER TABLE "Match" ADD COLUMN IF NOT EXISTS "setsWon1" INTEGER NOT NULL DEFAULT 0`);
@@ -482,8 +509,8 @@ app.put("/api/tournaments/:id", authMiddleware, async (req: any, res) => {
   try {
     const tournament = await loadOwnedTournament(res, req.params.id, req.user.userId);
     if (!tournament) return;
-    const { name, description, status, startTime, endTime, tablesCount, maxPlayers, clubId, minRating, maxRating, pointsToWin, isPublic } = req.body;
-    const updated = await db().tournament.update({ where: { id: tournament.id }, data: { name, description, status, startTime, endTime, tablesCount, maxPlayers, clubId, minRating, maxRating, pointsToWin, isPublic } });
+    const { name, description, status, startTime, endTime, tablesCount, maxPlayers, clubId, minRating, maxRating, pointsToWin, setsToWin, isPublic } = req.body;
+    const updated = await db().tournament.update({ where: { id: tournament.id }, data: { name, description, status, startTime, endTime, tablesCount, maxPlayers, clubId, minRating, maxRating, pointsToWin, setsToWin, isPublic } });
     res.json(updated);
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
@@ -683,7 +710,7 @@ app.post("/api/tournaments/:id/pair", authMiddleware, async (req: any, res) => {
 
     const tablesCount = tournament.tablesCount || 1;
     await d.$transaction([
-      ...pairs.map((p, idx) => d.match.create({ data: { tournamentId: tournament.id, round: newRound, player1Id: p.player1Id, player2Id: p.player2Id, matchIndex: idx, pointsToWin: tournament.pointsToWin, tableNumber: (idx % tablesCount) + 1 } })),
+      ...pairs.map((p, idx) => d.match.create({ data: { tournamentId: tournament.id, round: newRound, player1Id: p.player1Id, player2Id: p.player2Id, matchIndex: idx, pointsToWin: tournament.pointsToWin, setsToWin: tournament.setsToWin, tableNumber: (idx % tablesCount) + 1 } })),
       d.tournament.update({ where: { id: tournament.id }, data: { status: "ACTIVE" } }),
       // Who sat this one out, so the round can say so rather than the client
       // inferring it from "has no match here".
@@ -805,7 +832,7 @@ app.post("/api/bookings", authMiddleware, async (req: any, res) => {
     const startsAt = bookingStartsAt(day, startTime);
     const endsAt = bookingEndsAt(day, startTime, hours);
     const title = (req.body.eventTitle || "").trim() || club.name;
-    const { pointsToWin, isPublic } = req.body;
+    const { pointsToWin, setsToWin, isPublic } = req.body;
 
     const booking = await d.$transaction(async (tx: any) => {
       // A game and a tournament are the same row; `kind` is the only difference.
@@ -815,6 +842,7 @@ app.post("/api/bookings", authMiddleware, async (req: any, res) => {
           // The "11 / 21" choice on the booking screen is the target its matches
           // get created with, and a private slot stays out of the city feed.
           ...(pointsToWin === 11 || pointsToWin === 21 ? { pointsToWin } : {}),
+          ...(setsToWin ? { setsToWin: Number(setsToWin) } : {}),
           ...(isPublic === undefined ? {} : { isPublic: !!isPublic }),
         },
       });
@@ -988,7 +1016,8 @@ async function finishMatch(match: any) {
   });
   if (match.setsWon1 !== match.setsWon2) {
     const p1Won = match.setsWon1 > match.setsWon2;
-    await applyEloUpdate(tournamentKind, p1Won ? match.player1Id : match.player2Id, p1Won ? match.player2Id : match.player1Id);
+    const delta = await applyEloUpdate(tournamentKind, p1Won ? match.player1Id : match.player2Id, p1Won ? match.player2Id : match.player1Id);
+    if (delta != null) await d.match.update({ where: { id: match.id }, data: { eloDelta: delta } });
   }
   await maybeCompleteTournament(match.tournamentId);
 }
@@ -1009,8 +1038,8 @@ app.put("/api/matches/:id", authMiddleware, async (req: any, res) => {
     const match = await loadOwnedMatch(res, req.params.id, req.user.userId);
     if (!match) return;
     if (match.status !== "NOT_STARTED") { res.status(400).json({ error: "Can only change settings before the match starts" }); return; }
-    const { pointsToWin, tableNumber, judgeId } = req.body;
-    await db().match.update({ where: { id: match.id }, data: { pointsToWin, tableNumber, judgeId } });
+    const { pointsToWin, tableNumber, judgeId, setsToWin } = req.body;
+    await db().match.update({ where: { id: match.id }, data: { pointsToWin, tableNumber, judgeId, setsToWin } });
     res.json(await reloadMatch(match.id));
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
@@ -1063,17 +1092,26 @@ app.post("/api/matches/:id/score", authMiddleware, async (req: any, res) => {
       },
     });
 
+    let matchOver = false;
     if (setWinner) {
+      // Credit the set, then decide whether that was the match. Everything that
+      // counts - the profile tallies, the standings, Elo - reads COMPLETED matches
+      // only, so a match that waits for someone to remember a button is a match
+      // that never happened. `setsToWin` defaults to 1: one set to 11 and done.
+      const setsWon1 = setWinner === 1 ? match.setsWon1 + 1 : match.setsWon1;
+      const setsWon2 = setWinner === 2 ? match.setsWon2 + 1 : match.setsWon2;
+      matchOver = Math.max(setsWon1, setsWon2) >= match.setsToWin;
+
       await d.$transaction([
-        d.match.update({
-          where: { id: match.id },
-          data: setWinner === 1 ? { setsWon1: { increment: 1 } } : { setsWon2: { increment: 1 } },
-        }),
-        d.matchSet.create({ data: { matchId: match.id, index: set.index + 1, pointsToWin: match.pointsToWin } }),
+        d.match.update({ where: { id: match.id }, data: { setsWon1, setsWon2 } }),
+        // Only open the next set if there is still a match to play.
+        ...(matchOver ? [] : [d.matchSet.create({ data: { matchId: match.id, index: set.index + 1, pointsToWin: match.pointsToWin } })]),
       ]);
+
+      if (matchOver) await finishMatch({ ...match, setsWon1, setsWon2 });
     }
 
-    res.json({ match: await reloadMatch(match.id), deuce, setWinner });
+    res.json({ match: await reloadMatch(match.id), deuce, setWinner, matchOver });
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
@@ -1090,6 +1128,16 @@ app.post("/api/matches/:id/undo", authMiddleware, async (req: any, res) => {
       ? open
       : [...match.sets].reverse().find((x: any) => x.status === "COMPLETED" && x.lastScorer != null) || null;
     if (!target) { res.status(400).json({ error: "Nothing to undo" }); return; }
+
+    // A match now ends on the point that wins its last set, so undoing that point
+    // has to reopen the match and hand the rating back - otherwise a mis-tap on
+    // match point would be unfixable.
+    if (match.status === "COMPLETED") {
+      await revertEloUpdate(match);
+      await d.match.update({ where: { id: match.id }, data: { status: "IN_PROGRESS", endedAt: null, eloDelta: null } });
+      // The event was flipped to COMPLETED by this match; it is live again.
+      await d.tournament.updateMany({ where: { id: match.tournamentId, status: "COMPLETED" }, data: { status: "ACTIVE" } });
+    }
 
     const reopening = target.status === "COMPLETED";
     const ops: any[] = [

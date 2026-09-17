@@ -370,6 +370,14 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 
+-- 14. Matches finish themselves. Everything that counts — profile tallies,
+-- standings, Elo — reads COMPLETED matches, and completing one used to need the
+-- judge to remember a button that has no equivalent at the table.
+ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "setsToWin" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "Match" ADD COLUMN IF NOT EXISTS "setsToWin" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "Match" ADD COLUMN IF NOT EXISTS "eloDelta" INTEGER;
+
+
 -- NOTE: an earlier iteration of this branch had a standalone "Game" table and a
 -- "Booking"."gameId" column. Games are Tournament rows now, so neither is used
 -- any more. They are deliberately left in place rather than dropped: nothing

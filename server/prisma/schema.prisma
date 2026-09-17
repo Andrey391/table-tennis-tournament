@@ -107,6 +107,9 @@ model Tournament {
   // The target score matches of this event are created with (11 or 21). A judge
   // can still override it per match while that match hasn't started.
   pointsToWin Int       @default(11)
+  // How many sets win a match here. 1 is the club-night default: one set to 11
+  // and the pair is done. Matches inherit it and finish themselves on reaching it.
+  setsToWin   Int       @default(1)
   status      String    @default("DRAFT")
   startTime   DateTime?
   endTime     DateTime?
@@ -233,6 +236,13 @@ model Match {
   // The target score every set in this match is played to (11 or 21). Each set
   // records its own copy so historical stats stay accurate if it ever changes.
   pointsToWin  Int         @default(11)
+  // Sets needed to take this match. Reaching it completes the match on the spot:
+  // the statistics, the standings and Elo all read COMPLETED matches only, so a
+  // match nobody remembered to end was a match that never happened.
+  setsToWin    Int         @default(1)
+  // The rating points the winner gained when this match was settled, kept so that
+  // undoing the point that ended it can hand them back exactly.
+  eloDelta     Int?
   sets         MatchSet[]
   // Running tally of sets won. There is no fixed "best of N": sets are played
   // one after another and the judge ends the match, whoever leads takes it.

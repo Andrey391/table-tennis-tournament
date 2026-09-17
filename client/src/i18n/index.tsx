@@ -75,6 +75,8 @@ const DICT: Record<Lang, Record<string, string>> = {
     "create.ratingHint": "Пусто — без ограничения. Игроки вне диапазона не смогут присоединиться.",
     "create.pointsToWin": "Партия до",
     "create.pointsToWinHint": "С этим счётом создаются все матчи турнира. Для отдельного матча его можно изменить до начала.",
+    "create.setsToWin": "Партий до победы в матче",
+    "create.setsToWinHint": "Матч завершается сам на этой отметке — только завершённые матчи идут в таблицу, статистику и рейтинг.",
     "create.hint": "После создания добавьте участников и разбейте их на пары.",
 
     "play.title": "Играть",
@@ -246,6 +248,10 @@ const DICT: Record<Lang, Record<string, string>> = {
     "match.sidesSwapped": "Стороны поменялись",
     "match.canEnd": "Можно завершить: {score} по партиям",
     "match.endNow": "Завершить",
+    "match.setsToWin": "Партий до победы",
+    "match.setsToWinHint": "Матч закроется сам, как только кто-то возьмёт столько партий.",
+    "match.bestOf": "до {n} побед",
+    "match.oneSet": "одна партия",
 
     "stats.events": "События",
     "stats.tournaments": "Турниры",
@@ -380,6 +386,8 @@ const DICT: Record<Lang, Record<string, string>> = {
     "create.ratingHint": "Leave blank for no restriction. Players outside this range can't join.",
     "create.pointsToWin": "Sets played to",
     "create.pointsToWinHint": "Every match of this tournament is created with this target. It can still be changed on a match that hasn't started.",
+    "create.setsToWin": "Sets to win a match",
+    "create.setsToWinHint": "A match ends itself here - only completed matches reach the standings, the stats and the rating.",
     "create.hint": "After creating, add participants and pair them up.",
 
     "play.title": "Play",
@@ -551,6 +559,10 @@ const DICT: Record<Lang, Record<string, string>> = {
     "match.sidesSwapped": "Ends swapped",
     "match.canEnd": "Can be ended: {score} on sets",
     "match.endNow": "End it",
+    "match.setsToWin": "Sets to win",
+    "match.setsToWinHint": "The match closes itself as soon as someone takes that many sets.",
+    "match.bestOf": "first to {n}",
+    "match.oneSet": "single set",
 
     "stats.events": "Events",
     "stats.tournaments": "Tournaments",

@@ -8,7 +8,7 @@ export default function CreateTournament() {
   const navigate = useNavigate();
   const { t } = useT();
   const [clubs, setClubs] = React.useState<any[]>([]);
-  const [form, setForm] = React.useState({ name: "", description: "", clubId: "", startTime: "", endTime: "", tablesCount: 4, maxPlayers: "", minRating: "", maxRating: "", pointsToWin: 11 as 11 | 21 });
+  const [form, setForm] = React.useState({ name: "", description: "", clubId: "", startTime: "", endTime: "", tablesCount: 4, maxPlayers: "", minRating: "", maxRating: "", pointsToWin: 11 as 11 | 21, setsToWin: 1 });
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
 
@@ -27,6 +27,7 @@ export default function CreateTournament() {
       endTime: form.endTime ? new Date(form.endTime).toISOString() : undefined,
       tablesCount: form.tablesCount,
       pointsToWin: form.pointsToWin,
+      setsToWin: form.setsToWin,
       maxPlayers: form.maxPlayers ? +form.maxPlayers : undefined,
       minRating: form.minRating ? +form.minRating : undefined,
       maxRating: form.maxRating ? +form.maxRating : undefined,
@@ -91,6 +92,18 @@ export default function CreateTournament() {
             ))}
           </div>
           <p className="text-xs text-[#4d6480] mt-1.5">{t("create.pointsToWinHint")}</p>
+        </div>
+        <div>
+          <label className={label}>{t("create.setsToWin")}</label>
+          <div className="flex gap-2">
+            {[1, 2, 3].map(n => (
+              <button key={n} type="button" onClick={() => set("setsToWin", n)}
+                className={`flex-1 py-2.5 rounded-lg text-sm font-medium border ${
+                  form.setsToWin === n ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00]" : "bg-[#0a1628] text-[#93a8c2] border-[#1c3350]"
+                }`}>{n}</button>
+            ))}
+          </div>
+          <p className="text-xs text-[#4d6480] mt-1.5">{t("create.setsToWinHint")}</p>
         </div>
         <div>
           <label className={label}>{t("create.ratingRange")} <span className="normal-case text-[#4d6480]">({t("common.optional")})</span></label>

@@ -52,6 +52,9 @@ export default function MatchPage() {
   const setPointsToWin = (pointsToWin: number) => write(async () => {
     try { const r = await apiService.matches.updateSettings(matchId!, { pointsToWin }); setMatch(r.data); } catch (e) { fail(e); }
   });
+  const setSetsToWin = (setsToWin: number) => write(async () => {
+    try { const r = await apiService.matches.updateSettings(matchId!, { setsToWin }); setMatch(r.data); } catch (e) { fail(e); }
+  });
   const startMatch = () => write(async () => {
     try { const r = await apiService.matches.start(matchId!); setMatch(r.data); } catch (e) { fail(e); }
   });
@@ -66,7 +69,8 @@ export default function MatchPage() {
         // A won set is credited and the next one opens immediately, so the big
         // numbers jump back to 0:0. Say which set was just taken, otherwise the
         // judge sees the score disappear and taps again.
-        if (r.data.setWinner) {
+        if (r.data.matchOver) setLastSet(null);
+      else if (r.data.setWinner) {
           const done = (r.data.match.sets || []).filter((st: any) => st.status === "COMPLETED");
           const finished = done[done.length - 1];
           if (finished) setLastSet({ index: finished.index, score: `${finished.score1}:${finished.score2}` });
@@ -109,12 +113,14 @@ export default function MatchPage() {
   ];
   const ordered = leftIsP1 ? sides : [sides[1], sides[0]];
 
-  // A match has no fixed "best of N" — the judge calls it. Once someone is two
-  // sets clear and the next set hasn't started, say so rather than let an evening
-  // drift on because nobody remembered the match needs ending.
+  // A match normally closes itself the moment someone reaches `setsToWin`. Two
+  // cases still need a prompt: a match started before that existed and left
+  // hanging (its target is already met, yet it is open), and one the judge chose
+  // to keep playing past a decisive lead. Neither nags during a normal best-of-3.
   const setLead = Math.abs(match.setsWon1 - match.setsWon2);
   const betweenSets = shown.score1 === 0 && shown.score2 === 0;
-  const suggestEnd = canManage && match.status === "IN_PROGRESS" && betweenSets && setLead >= 2;
+  const targetReached = Math.max(match.setsWon1, match.setsWon2) >= (match.setsToWin ?? 1);
+  const suggestEnd = canManage && match.status === "IN_PROGRESS" && betweenSets && (targetReached || setLead >= 2);
 
   return (
     <div className="min-h-screen bg-[#0a1628] p-3 pb-8">
@@ -126,19 +132,35 @@ export default function MatchPage() {
         <div className="bg-[#101f36] rounded-lg p-4 mb-3 border border-[#1c3350] text-center">
           <p className="text-[11px] text-[#4d6480] uppercase tracking-wider mb-1">
             {match.tableNumber ? `${t("tournament.table")} ${match.tableNumber}` : t("match.noTable")} &middot; {t("match.raceTo", { n: match.pointsToWin })}
+            {" · "}
+            {match.setsToWin > 1 ? t("match.bestOf", { n: match.setsToWin }) : t("match.oneSet")}
             {match.tournament?.kind === "GAME" && ` · ${t("games.unrated")}`}
           </p>
           {match.status === "NOT_STARTED" && canManage && (
-            <div className="flex justify-center gap-2 mt-2">
-              {[11, 21].map(pts => (
-                <button key={pts} onClick={() => setPointsToWin(pts)}
-                  className={`px-4 py-1.5 rounded text-sm font-medium border ${
-                    match.pointsToWin === pts ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00]" : "bg-transparent text-[#93a8c2] border-[#1c3350]"
-                  }`}>
-                  {t("match.pts", { n: pts })}
-                </button>
-              ))}
-            </div>
+            <>
+              <div className="flex justify-center gap-2 mt-2">
+                {[11, 21].map(pts => (
+                  <button key={pts} onClick={() => setPointsToWin(pts)}
+                    className={`px-4 py-1.5 rounded text-sm font-medium border ${
+                      match.pointsToWin === pts ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00]" : "bg-transparent text-[#93a8c2] border-[#1c3350]"
+                    }`}>
+                    {t("match.pts", { n: pts })}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[11px] text-[#4d6480] uppercase tracking-wider mt-3">{t("match.setsToWin")}</p>
+              <div className="flex justify-center gap-2 mt-1.5">
+                {[1, 2, 3].map(n => (
+                  <button key={n} onClick={() => setSetsToWin(n)}
+                    className={`px-4 py-1.5 rounded text-sm font-medium border ${
+                      match.setsToWin === n ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00]" : "bg-transparent text-[#93a8c2] border-[#1c3350]"
+                    }`}>
+                    {n}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[11px] text-[#4d6480] mt-2 normal-case">{t("match.setsToWinHint")}</p>
+            </>
           )}
         </div>
 

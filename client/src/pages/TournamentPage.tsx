@@ -130,6 +130,7 @@ export default function TournamentPage() {
     minRating: tournament.minRating ?? "",
     maxRating: tournament.maxRating ?? "",
     pointsToWin: tournament.pointsToWin ?? 11,
+    setsToWin: tournament.setsToWin ?? 1,
     isPublic: tournament.isPublic !== false,
   });
 
@@ -149,6 +150,7 @@ export default function TournamentPage() {
         minRating: edit.minRating === "" ? null : +edit.minRating,
         maxRating: edit.maxRating === "" ? null : +edit.maxRating,
         pointsToWin: edit.pointsToWin,
+        setsToWin: edit.setsToWin,
         isPublic: edit.isPublic,
       });
       setEdit(null);
@@ -275,6 +277,17 @@ export default function TournamentPage() {
                   className={`flex-1 py-2 rounded-lg text-sm font-medium border ${
                     edit.pointsToWin === pts ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00]" : "bg-[#0a1628] text-[#93a8c2] border-[#1c3350]"
                   }`}>{t("match.pts", { n: pts })}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("create.setsToWin")}</label>
+            <div className="flex gap-2">
+              {[1, 2, 3].map(n => (
+                <button key={n} type="button" onClick={() => setEdit({ ...edit, setsToWin: n })}
+                  className={`flex-1 py-2 rounded-lg text-sm font-medium border ${
+                    edit.setsToWin === n ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00]" : "bg-[#0a1628] text-[#93a8c2] border-[#1c3350]"
+                  }`}>{n}</button>
               ))}
             </div>
           </div>
