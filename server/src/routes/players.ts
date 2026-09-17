@@ -12,6 +12,39 @@ playerRouter.get("/", authMiddleware, async (_req, res: Response) => {
   res.json(players);
 });
 
+// Anyone signed in can open anyone's profile: who they are, how they are doing,
+// and the matches behind it. The match list is what "who did I play last
+// Thursday" needs, and the profile screen had no answer for it.
+playerRouter.get("/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const player = await prisma.user.findUnique({
+    where: { id: req.params.id },
+    select: { id: true, firstName: true, lastName: true, club: true, city: true, rating: true, createdAt: true },
+  });
+  if (!player) { res.status(404).json({ error: "Not found" }); return; }
+
+  const matches = await prisma.match.findMany({
+    where: { status: "COMPLETED", OR: [{ player1Id: player.id }, { player2Id: player.id }] },
+    include: {
+      player1: { select: { id: true, firstName: true, lastName: true, rating: true } },
+      player2: { select: { id: true, firstName: true, lastName: true, rating: true } },
+      tournament: { select: { id: true, name: true, kind: true } },
+      sets: { select: { score1: true, score2: true, status: true }, orderBy: { index: "asc" } },
+    },
+    orderBy: { endedAt: "desc" },
+    take: 25,
+  });
+
+  // Rated matches only move the rating, but the record covers everything played.
+  let wins = 0, losses = 0;
+  for (const m of matches) {
+    const isP1 = m.player1Id === player.id;
+    const mine = isP1 ? m.setsWon1 : m.setsWon2;
+    const theirs = isP1 ? m.setsWon2 : m.setsWon1;
+    if (mine > theirs) wins++; else if (theirs > mine) losses++;
+  }
+  res.json({ player, matches, recent: { wins, losses } });
+});
+
 // A player edits their own profile. Rating is never client-settable — it only moves
 // through Elo after a match — and admins are the only ones who can edit someone else.
 playerRouter.put("/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {

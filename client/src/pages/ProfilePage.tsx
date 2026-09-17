@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { apiService } from "../services/api";
 import Avatar from "../components/Avatar";
 import Layout from "../components/Layout";
 import { useT, type Lang } from "../i18n";
+import { playerName } from "../lib/format";
 
 type Tally = { played: number; wins: number; losses: number };
 type Bucket = { played: number; wins: number };
@@ -20,7 +22,15 @@ export default function ProfilePage() {
   const { t, lang, setLang } = useT();
   const [stats, setStats] = useState<Stats | null>(null);
 
+  const [history, setHistory] = useState<any[]>([]);
+
   useEffect(() => { apiService.profile.stats().then(r => setStats(r.data)).catch(console.error); }, []);
+  // The tallies say how much was played; this says what. "Who did I play last
+  // Thursday" had no answer on this screen before.
+  useEffect(() => {
+    if (!user?.id) return;
+    apiService.players.getById(user.id).then(r => setHistory(r.data.matches || [])).catch(console.error);
+  }, [user?.id]);
 
   const card = "bg-[#101f36] rounded-lg border border-[#1c3350]";
   const label = "text-xs font-medium text-[#6b84a0] uppercase tracking-wider";
@@ -99,6 +109,35 @@ export default function ProfilePage() {
       <LevelCard titleKey="stats.inTournaments" level={stats?.tournaments} accent="#ccff00" />
       <p className="text-[11px] text-[#4d6480] -mt-2 mb-4">{t("stats.ratedHint")}</p>
       <LevelCard titleKey="stats.inGames" level={stats?.games} accent="#3b82f6" />
+
+      <h2 className={`${label} mb-2`}>{t("player.history")}</h2>
+      {history.length === 0 ? (
+        <div className={`${card} p-6 text-center mb-5`}>
+          <p className="text-[#6b84a0] text-sm">{t("player.noHistory")}</p>
+        </div>
+      ) : (
+        <div className="space-y-2 mb-5">
+          {history.slice(0, 10).map((m: any) => {
+            const isP1 = m.player1?.id === user?.id;
+            const opponent = isP1 ? m.player2 : m.player1;
+            const mine = isP1 ? m.setsWon1 : m.setsWon2;
+            const theirs = isP1 ? m.setsWon2 : m.setsWon1;
+            const tone = mine > theirs ? "text-green-400" : theirs > mine ? "text-red-400" : "text-[#93a8c2]";
+            return (
+              <Link key={m.id} to={`/tournament/${m.tournament?.id}`} className={`${card} block p-3 active:bg-[#1c3350] transition-colors`}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm truncate">{t("player.vs")} {playerName(opponent)}</span>
+                  <span className={`font-mono font-bold text-sm shrink-0 ${tone}`}>{mine} : {theirs}</span>
+                </div>
+                <p className="text-[11px] text-[#4d6480] truncate mt-0.5">
+                  {t("player.inEvent")} {m.tournament?.name}
+                  {m.tournament?.kind === "GAME" && ` · ${t("games.unrated")}`}
+                </p>
+              </Link>
+            );
+          })}
+        </div>
+      )}
 
       <div className={`${card} p-4`}>
         <h2 className={`${label} mb-3`}>{t("profile.settings")}</h2>

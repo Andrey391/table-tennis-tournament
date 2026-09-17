@@ -53,6 +53,7 @@ model User {
   subscriptions    Subscription[]
   chatMessages     ChatMessage[]
   createdClubs     Club[]    @relation("clubCreator")
+  byes             RoundBye[]
 
   @@index([club])
   @@index([city])
@@ -103,17 +104,26 @@ model Tournament {
   description String?
   tablesCount Int       @default(4)
   maxPlayers  Int?
+  // The target score matches of this event are created with (11 or 21). A judge
+  // can still override it per match while that match hasn't started.
+  pointsToWin Int       @default(11)
   status      String    @default("DRAFT")
   startTime   DateTime?
   endTime     DateTime?
   minRating   Int?
   maxRating   Int?
+  // Whether the event shows up in the public feed. Every table booking creates an
+  // event, and a solo practice slot has no business sitting in the city feed next
+  // to a club tournament — so a booking can keep its event to itself. Its own
+  // participants and its organiser always see it.
+  isPublic    Boolean   @default(true)
   clubId      String?
   club        Club?     @relation(fields: [clubId], references: [id])
   organizerId String
   organizer   User      @relation("tournamentOrganizer", fields: [organizerId], references: [id])
   players     TournamentUser[]
   matches     Match[]
+  byes        RoundBye[]
   chatMessages ChatMessage[]
   bookings    Booking[]
   createdAt   DateTime  @default(now())
@@ -172,6 +182,23 @@ model ChatMessage {
   text         String
   createdAt    DateTime   @default(now())
 
+  @@index([tournamentId])
+}
+
+// Who sat a round out. With an odd headcount the pairing endpoint picks exactly
+// one player per round and gives them no match; that used to be computed in the
+// client as "on the roster but in none of this round's matches", which silently
+// lied about rounds that happened before a latecomer joined.
+model RoundBye {
+  id           String     @id @default(uuid())
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id])
+  round        Int
+  userId       String
+  user         User       @relation(fields: [userId], references: [id])
+  createdAt    DateTime   @default(now())
+
+  @@unique([tournamentId, round])
   @@index([tournamentId])
 }
 

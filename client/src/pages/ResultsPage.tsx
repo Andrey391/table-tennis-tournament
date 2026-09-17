@@ -10,9 +10,17 @@ export default function ResultsPage() {
   const [tournaments, setTournaments] = useState<any[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [matches, setMatches] = useState<any[]>([]);
+  const [search, setSearch] = useState("");
 
   useEffect(() => { apiService.tournaments.getAll().then(r => setTournaments(r.data)).catch(console.error); }, []);
   useEffect(() => { if (selected) apiService.matches.getByTournament(selected).then(r => setMatches(r.data)).catch(console.error); }, [selected]);
+
+  // Newest first: the tournament someone wants results for is almost always a
+  // recent one, and the feed hands them over oldest-first.
+  const options = tournaments
+    .filter((tr: any) => tr.name.toLowerCase().includes(search.toLowerCase()))
+    .slice()
+    .reverse();
 
   const live = matches.filter((m: any) => m.status === "IN_PROGRESS");
   const completed = matches.filter((m: any) => m.status === "COMPLETED");
@@ -20,10 +28,12 @@ export default function ResultsPage() {
   return (
     <Layout>
       <h1 className="text-2xl font-bold tracking-tight mb-3">{t("results.title")}</h1>
+      <input type="text" placeholder={t("results.search")} value={search} onChange={e => setSearch(e.target.value)}
+        className="w-full px-3 py-2.5 bg-[#101f36] rounded border border-[#1c3350] text-sm focus:outline-none mb-2" />
       <select value={selected || ""} onChange={e => setSelected(e.target.value || null)}
         className="w-full px-3 py-2.5 bg-[#101f36] rounded border border-[#1c3350] text-sm focus:outline-none mb-4">
         <option value="">{t("results.select")}</option>
-        {tournaments.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
+        {options.map((tr: any) => <option key={tr.id} value={tr.id}>{tr.name}</option>)}
       </select>
 
       {live.length > 0 && (

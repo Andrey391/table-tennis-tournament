@@ -247,6 +247,10 @@ app.get("/api/setup", async (_req, res) => {
     await d.$executeRawUnsafe(`ALTER TABLE "Subscription" ADD COLUMN IF NOT EXISTS "clubId" TEXT`);
     await d.$executeRawUnsafe(`ALTER TABLE "Booking" ADD COLUMN IF NOT EXISTS "tournamentId" TEXT`);
     await d.$executeRawUnsafe(`ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "kind" TEXT NOT NULL DEFAULT 'TOURNAMENT'`);
+    await d.$executeRawUnsafe(`ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "pointsToWin" INTEGER NOT NULL DEFAULT 11`);
+    await d.$executeRawUnsafe(`ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "isPublic" BOOLEAN NOT NULL DEFAULT true`);
+    await d.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "RoundBye" ("id" TEXT NOT NULL, "tournamentId" TEXT NOT NULL, "round" INTEGER NOT NULL, "userId" TEXT NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "RoundBye_pkey" PRIMARY KEY ("id"))`);
+    await d.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "RoundBye_tournamentId_round_key" ON "RoundBye"("tournamentId", "round")`);
     await d.$executeRawUnsafe(`ALTER TABLE "Match" ADD COLUMN IF NOT EXISTS "setsWon1" INTEGER NOT NULL DEFAULT 0`);
     await d.$executeRawUnsafe(`ALTER TABLE "Match" ADD COLUMN IF NOT EXISTS "setsWon2" INTEGER NOT NULL DEFAULT 0`);
     await d.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "Subscription_userId_clubId_key" ON "Subscription"("userId", "clubId")`);
@@ -261,14 +265,14 @@ app.get("/api/setup", async (_req, res) => {
 app.post("/api/auth/register", async (req, res) => {
   try {
     const bcrypt = await import("bcryptjs");
-    const { email, password, firstName, lastName, club } = req.body;
+    const { email, password, firstName, lastName, club, city } = req.body;
     const hashed = await bcrypt.hash(password, 10);
     // This endpoint is unauthenticated self-signup, so the role is never taken from
     // the request body (that would let anyone register as ADMIN). Everyone who signs
     // up can organize their own tournaments.
-    const user = await db().user.create({ data: { email, password: hashed, firstName, lastName, club, role: "ORGANIZER" } });
+    const user = await db().user.create({ data: { email, password: hashed, firstName, lastName, club, city, role: "ORGANIZER" } });
     const token = jwt.sign({ userId: user.id, role: user.role }, process.env.JWT_SECRET || "secret", { expiresIn: "24h" });
-    res.status(201).json({ token, user: { id: user.id, email: user.email, role: user.role, firstName: user.firstName, lastName: user.lastName } });
+    res.status(201).json({ token, user: { id: user.id, email: user.email, role: user.role, firstName: user.firstName, lastName: user.lastName, rating: user.rating, club: user.club } });
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
@@ -332,7 +336,8 @@ app.get("/api/profile/stats", authMiddleware, async (req: any, res) => {
   const userId = req.user.userId;
 
   const [events, matches] = await Promise.all([
-    d.tournamentUser.findMany({ where: { userId, status: "REGISTERED" }, select: { tournament: { select: { kind: true } } } }),
+    // An event someone withdrew from was still an event they took part in.
+    d.tournamentUser.findMany({ where: { userId, status: { in: ["REGISTERED", "WITHDRAWN"] } }, select: { tournament: { select: { kind: true } } } }),
     d.match.findMany({
       where: { status: "COMPLETED", OR: [{ player1Id: userId }, { player2Id: userId }] },
       select: {
@@ -365,6 +370,38 @@ app.get("/api/players", authMiddleware, async (_req, res) => {
 
 // A player edits their own profile. Rating is never client-settable — it only moves
 // through Elo after a match — and admins are the only ones who can edit someone else.
+// Anyone signed in can open anyone's profile: who they are, how they are doing,
+// and the matches behind it — "who did I play last Thursday" had no answer before.
+app.get("/api/players/:id", authMiddleware, async (req: any, res) => {
+  const d = db();
+  const player = await d.user.findUnique({
+    where: { id: req.params.id },
+    select: { id: true, firstName: true, lastName: true, club: true, city: true, rating: true, createdAt: true },
+  });
+  if (!player) { res.status(404).json({ error: "Not found" }); return; }
+
+  const matches = await d.match.findMany({
+    where: { status: "COMPLETED", OR: [{ player1Id: player.id }, { player2Id: player.id }] },
+    include: {
+      player1: { select: { id: true, firstName: true, lastName: true, rating: true } },
+      player2: { select: { id: true, firstName: true, lastName: true, rating: true } },
+      tournament: { select: { id: true, name: true, kind: true } },
+      sets: { select: { score1: true, score2: true, status: true }, orderBy: { index: "asc" } },
+    },
+    orderBy: { endedAt: "desc" },
+    take: 25,
+  });
+
+  let wins = 0, losses = 0;
+  for (const m of matches) {
+    const isP1 = m.player1Id === player.id;
+    const mine = isP1 ? m.setsWon1 : m.setsWon2;
+    const theirs = isP1 ? m.setsWon2 : m.setsWon1;
+    if (mine > theirs) wins++; else if (theirs > mine) losses++;
+  }
+  res.json({ player, matches, recent: { wins, losses } });
+});
+
 app.put("/api/players/:id", authMiddleware, async (req: any, res) => {
   try {
     if (req.params.id !== req.user.userId && req.user.role !== "ADMIN") {
@@ -385,9 +422,13 @@ app.get("/api/tournaments", async (req, res) => {
   const { kind, city, clubId, status, from, to, q } = req.query as Record<string, string | undefined>;
   const tournaments = await db().tournament.findMany({
     where: {
+      // Events marked private never appear in this feed; /mine still shows them.
+      isPublic: true,
       ...(kind ? { kind } : {}),
       ...(clubId ? { clubId } : {}),
-      ...(city ? { club: { city } } : {}),
+      // An event at a club in that city, or a venue-less one run by someone who
+      // lives there — otherwise User.city would decide nothing at all.
+      ...(city ? { OR: [{ club: { city } }, { clubId: null, organizer: { city } }] } : {}),
       ...(status ? { status: { in: status.split(",") } } : {}),
       ...(from || to ? { startTime: { ...(from ? { gte: new Date(from) } : {}), ...(to ? { lte: new Date(to) } : {}) } } : {}),
       ...(q ? { name: { contains: q, mode: "insensitive" as const } } : {}),
@@ -418,6 +459,7 @@ app.get("/api/tournaments/:id", async (req, res) => {
       organizer: { select: { id: true, firstName: true, lastName: true } },
       club: { select: clubSelect },
       players: { include: { user: { select: playerSelect } }, orderBy: { seed: "asc" } },
+      byes: { include: { user: { select: playerSelect } } },
       matches: { include: matchInclude, orderBy: [{ round: "asc" }, { matchIndex: "asc" }] },
     },
   });
@@ -440,9 +482,32 @@ app.put("/api/tournaments/:id", authMiddleware, async (req: any, res) => {
   try {
     const tournament = await loadOwnedTournament(res, req.params.id, req.user.userId);
     if (!tournament) return;
-    const { name, description, status, startTime, endTime, tablesCount, maxPlayers, clubId, minRating, maxRating } = req.body;
-    const updated = await db().tournament.update({ where: { id: tournament.id }, data: { name, description, status, startTime, endTime, tablesCount, maxPlayers, clubId, minRating, maxRating } });
+    const { name, description, status, startTime, endTime, tablesCount, maxPlayers, clubId, minRating, maxRating, pointsToWin, isPublic } = req.body;
+    const updated = await db().tournament.update({ where: { id: tournament.id }, data: { name, description, status, startTime, endTime, tablesCount, maxPlayers, clubId, minRating, maxRating, pointsToWin, isPublic } });
     res.json(updated);
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+// Deletes the event for good. Without this a mistyped tournament (or the event
+// that every table booking creates) stayed in the public feed forever, since
+// cancelling the booking deliberately leaves its event alone. Nothing cascades on
+// its own, so everything pointing at the tournament is cleared in one transaction;
+// a booking keeps existing and just loses its event.
+app.delete("/api/tournaments/:id", authMiddleware, async (req: any, res) => {
+  try {
+    const tournament = await loadOwnedTournament(res, req.params.id, req.user.userId);
+    if (!tournament) return;
+    const d = db();
+    await d.$transaction([
+      d.booking.updateMany({ where: { tournamentId: tournament.id }, data: { tournamentId: null } }),
+      d.chatMessage.deleteMany({ where: { tournamentId: tournament.id } }),
+      d.roundBye.deleteMany({ where: { tournamentId: tournament.id } }),
+      // MatchSet rows cascade with their match.
+      d.match.deleteMany({ where: { tournamentId: tournament.id } }),
+      d.tournamentUser.deleteMany({ where: { tournamentId: tournament.id } }),
+      d.tournament.delete({ where: { id: tournament.id } }),
+    ]);
+    res.json({ ok: true });
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
@@ -451,21 +516,26 @@ app.post("/api/tournaments/:id/players", authMiddleware, async (req: any, res) =
   try {
     const tournament = await loadOwnedTournament(res, req.params.id, req.user.userId);
     if (!tournament) return;
-    if (tournament.status !== "DRAFT") { res.status(400).json({ error: "Roster is locked, cannot add players" }); return; }
 
     const { userIds } = req.body;
     const d = db();
     const existing = await d.tournamentUser.findMany({ where: { tournamentId: req.params.id }, select: { userId: true, status: true } });
-    const existingIds = new Set(existing.map((e: any) => e.userId));
-    const newUsers = userIds.filter((id: string) => !existingIds.has(id));
+    const byId = new Map(existing.map((e: any) => [e.userId, e.status]));
+    // Someone already REGISTERED is a no-op; a PENDING request or a player who had
+    // withdrawn is promoted back onto the roster rather than duplicated.
+    const affected = userIds.filter((id: string) => byId.get(id) !== "REGISTERED");
     if (tournament.maxPlayers != null) {
       const taken = existing.filter((e: any) => e.status === "REGISTERED").length;
-      if (taken + newUsers.length > tournament.maxPlayers) {
+      if (taken + affected.length > tournament.maxPlayers) {
         res.status(400).json({ error: `Only ${tournament.maxPlayers - taken} of ${tournament.maxPlayers} places left` });
         return;
       }
     }
-    const created = await d.$transaction(newUsers.map((userId: string) => d.tournamentUser.create({ data: { tournamentId: req.params.id, userId, status: "REGISTERED" } })));
+    const created = await d.$transaction(affected.map((userId: string) => d.tournamentUser.upsert({
+      where: { tournamentId_userId: { tournamentId: req.params.id, userId } },
+      create: { tournamentId: req.params.id, userId, status: "REGISTERED" },
+      update: { status: "REGISTERED" },
+    })));
     res.status(201).json(created);
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
@@ -477,7 +547,12 @@ app.post("/api/tournaments/:id/join", authMiddleware, async (req: any, res) => {
     const d = db();
     const tournament = await d.tournament.findUnique({ where: { id: req.params.id } });
     if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
-    if (tournament.status !== "DRAFT") { res.status(400).json({ error: "This tournament is no longer accepting participants" }); return; }
+    // A club night runs Swiss-style and nobody is eliminated, so a latecomer can
+    // still be let in between rounds: they simply enter the next pairing with no
+    // wins yet. Only a cancelled event is closed for good.
+    if (tournament.status === "CANCELLED") { res.status(400).json({ error: "This tournament was cancelled" }); return; }
+    const previous = await d.tournamentUser.findUnique({ where: { tournamentId_userId: { tournamentId: tournament.id, userId: req.user.userId } } });
+    if (previous && previous.status === "REGISTERED") { res.status(400).json({ error: "You are already taking part" }); return; }
 
     if (tournament.maxPlayers != null) {
       const taken = await d.tournamentUser.count({ where: { tournamentId: tournament.id, status: "REGISTERED" } });
@@ -493,6 +568,15 @@ app.post("/api/tournaments/:id/join", authMiddleware, async (req: any, res) => {
       }
     }
 
+    if (previous) {
+      // Withdrawn (or rejected) earlier — turn the existing row back into a request.
+      const again = await d.tournamentUser.update({
+        where: { tournamentId_userId: { tournamentId: tournament.id, userId: req.user.userId } },
+        data: { status: "PENDING" },
+      });
+      res.status(201).json(again);
+      return;
+    }
     const entry = await d.tournamentUser.create({ data: { tournamentId: req.params.id, userId: req.user.userId, status: "PENDING" } });
     res.status(201).json(entry);
   } catch (e: any) {
@@ -518,14 +602,28 @@ app.post("/api/tournaments/:id/players/:userId/approve", authMiddleware, async (
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
-// Manager rejects a pending request or removes an already-approved participant.
+// Manager rejects a pending request or drops a participant. Before any match has
+// been played the row is simply deleted; afterwards the player is marked WITHDRAWN
+// instead, which keeps the matches they already played in the standings while
+// taking them out of every future pairing.
 app.delete("/api/tournaments/:id/players/:userId", authMiddleware, async (req: any, res) => {
   try {
     const tournament = await loadOwnedTournament(res, req.params.id, req.user.userId);
     if (!tournament) return;
-    if (tournament.status !== "DRAFT") { res.status(400).json({ error: "Roster is locked, cannot remove players" }); return; }
-    await db().tournamentUser.delete({ where: { tournamentId_userId: { tournamentId: req.params.id, userId: req.params.userId } } });
-    res.json({ ok: true });
+    const d = db();
+    const played = await d.match.count({
+      where: { tournamentId: tournament.id, OR: [{ player1Id: req.params.userId }, { player2Id: req.params.userId }] },
+    });
+    if (played > 0) {
+      await d.tournamentUser.update({
+        where: { tournamentId_userId: { tournamentId: req.params.id, userId: req.params.userId } },
+        data: { status: "WITHDRAWN" },
+      });
+      res.json({ ok: true, withdrawn: true });
+      return;
+    }
+    await d.tournamentUser.delete({ where: { tournamentId_userId: { tournamentId: req.params.id, userId: req.params.userId } } });
+    res.json({ ok: true, withdrawn: false });
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
@@ -585,8 +683,15 @@ app.post("/api/tournaments/:id/pair", authMiddleware, async (req: any, res) => {
 
     const tablesCount = tournament.tablesCount || 1;
     await d.$transaction([
-      ...pairs.map((p, idx) => d.match.create({ data: { tournamentId: tournament.id, round: newRound, player1Id: p.player1Id, player2Id: p.player2Id, matchIndex: idx, tableNumber: (idx % tablesCount) + 1 } })),
+      ...pairs.map((p, idx) => d.match.create({ data: { tournamentId: tournament.id, round: newRound, player1Id: p.player1Id, player2Id: p.player2Id, matchIndex: idx, pointsToWin: tournament.pointsToWin, tableNumber: (idx % tablesCount) + 1 } })),
       d.tournament.update({ where: { id: tournament.id }, data: { status: "ACTIVE" } }),
+      // Who sat this one out, so the round can say so rather than the client
+      // inferring it from "has no match here".
+      ...(byeUserId ? [d.roundBye.upsert({
+        where: { tournamentId_round: { tournamentId: tournament.id, round: newRound } },
+        create: { tournamentId: tournament.id, round: newRound, userId: byeUserId },
+        update: { userId: byeUserId },
+      })] : []),
     ]);
 
     res.json({ message: "Paired", round: newRound, matches: pairs.length, bye: byeUserId });
@@ -599,7 +704,8 @@ app.get("/api/tournaments/:id/standings", async (req, res) => {
     const tournament = await d.tournament.findUnique({
       where: { id: req.params.id },
       include: {
-        players: { where: { status: "REGISTERED" }, include: { user: { select: playerSelect } } },
+        // Someone who left mid-event keeps the matches they already played.
+        players: { where: { status: { in: ["REGISTERED", "WITHDRAWN"] } }, include: { user: { select: playerSelect } } },
         matches: { where: { status: "COMPLETED" }, select: { player1Id: true, player2Id: true, setsWon1: true, setsWon2: true, sets: { select: { score1: true, score2: true, status: true } } } },
       },
     });
@@ -699,11 +805,18 @@ app.post("/api/bookings", authMiddleware, async (req: any, res) => {
     const startsAt = bookingStartsAt(day, startTime);
     const endsAt = bookingEndsAt(day, startTime, hours);
     const title = (req.body.eventTitle || "").trim() || club.name;
+    const { pointsToWin, isPublic } = req.body;
 
     const booking = await d.$transaction(async (tx: any) => {
       // A game and a tournament are the same row; `kind` is the only difference.
       const event = await tx.tournament.create({
-        data: { kind: isTournament ? "TOURNAMENT" : "GAME", name: title, clubId, startTime: startsAt, endTime: endsAt, organizerId: userId },
+        data: {
+          kind: isTournament ? "TOURNAMENT" : "GAME", name: title, clubId, startTime: startsAt, endTime: endsAt, organizerId: userId,
+          // The "11 / 21" choice on the booking screen is the target its matches
+          // get created with, and a private slot stays out of the city feed.
+          ...(pointsToWin === 11 || pointsToWin === 21 ? { pointsToWin } : {}),
+          ...(isPublic === undefined ? {} : { isPublic: !!isPublic }),
+        },
       });
       // The organiser is a participant of their own event from the start.
       await tx.tournamentUser.create({ data: { tournamentId: event.id, userId, status: "REGISTERED" } });
@@ -1093,7 +1206,8 @@ app.get("/api/public/tournament/:id/standings", async (req, res) => {
     const tournament = await d.tournament.findUnique({
       where: { id: req.params.id },
       include: {
-        players: { where: { status: "REGISTERED" }, include: { user: { select: playerSelect } } },
+        // Someone who left mid-event keeps the matches they already played.
+        players: { where: { status: { in: ["REGISTERED", "WITHDRAWN"] } }, include: { user: { select: playerSelect } } },
         matches: { where: { status: "COMPLETED" }, select: { player1Id: true, player2Id: true, setsWon1: true, setsWon2: true, sets: { select: { score1: true, score2: true, status: true } } } },
       },
     });

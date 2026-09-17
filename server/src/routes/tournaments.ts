@@ -81,9 +81,15 @@ tournamentRouter.get("/", async (req, res: Response) => {
   const { kind, city, clubId, status, from, to, q } = req.query as Record<string, string | undefined>;
   const tournaments = await prisma.tournament.findMany({
     where: {
+      // Events marked private are visible on their own page and under /mine,
+      // never in this feed.
+      isPublic: true,
       ...(kind ? { kind } : {}),
       ...(clubId ? { clubId } : {}),
-      ...(city ? { club: { city } } : {}),
+      // An event at a club in that city, or one with no venue run by someone who
+      // lives there — otherwise `User.city`, which every account is asked for at
+      // signup, would decide nothing at all.
+      ...(city ? { OR: [{ club: { city } }, { clubId: null, organizer: { city } }] } : {}),
       ...(status ? { status: { in: status.split(",") } } : {}),
       ...(from || to ? { startTime: { ...(from ? { gte: new Date(from) } : {}), ...(to ? { lte: new Date(to) } : {}) } } : {}),
       ...(q ? { name: { contains: q, mode: "insensitive" as const } } : {}),
@@ -114,6 +120,7 @@ tournamentRouter.get("/:id", async (req, res: Response) => {
       organizer: { select: { id: true, firstName: true, lastName: true } },
       club: { select: clubSelect },
       players: { include: { user: { select: playerSelect } }, orderBy: { seed: "asc" } },
+      byes: { include: { user: { select: playerSelect } } },
       matches: { include: { player1: { select: playerSelect }, player2: { select: playerSelect }, judge: { select: { firstName: true, lastName: true } } }, orderBy: [{ round: "asc" }, { matchIndex: "asc" }] },
     },
   });
@@ -134,26 +141,58 @@ tournamentRouter.put("/:id", authMiddleware, async (req: AuthenticatedRequest, r
   }
 });
 
+// Deletes the event for good. Without this a mistyped tournament (or the event
+// that every table booking creates) stayed in the public feed forever, since
+// cancelling the booking deliberately leaves its event alone. Nothing here
+// cascades on its own, so the rows that point at the tournament are cleared in
+// the same transaction: a booking keeps existing and just loses its event.
+tournamentRouter.delete("/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const tournament = await loadOwnedTournament(res, req.params.id, req.user!.userId);
+    if (!tournament) return;
+    await prisma.$transaction([
+      prisma.booking.updateMany({ where: { tournamentId: tournament.id }, data: { tournamentId: null } }),
+      prisma.chatMessage.deleteMany({ where: { tournamentId: tournament.id } }),
+      prisma.roundBye.deleteMany({ where: { tournamentId: tournament.id } }),
+      // MatchSet rows cascade with their match.
+      prisma.match.deleteMany({ where: { tournamentId: tournament.id } }),
+      prisma.tournamentUser.deleteMany({ where: { tournamentId: tournament.id } }),
+      prisma.tournament.delete({ where: { id: tournament.id } }),
+    ]);
+    await AuditLog.create({ userId: req.user!.userId, action: "TOURNAMENT_DELETE", entity: "Tournament", entityId: tournament.id, oldValue: { name: tournament.name, kind: tournament.kind } });
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // Manager directly adds already-known players to the roster, pre-approved.
 tournamentRouter.post("/:id/players", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const tournament = await loadOwnedTournament(res, req.params.id, req.user!.userId);
     if (!tournament) return;
-    if (tournament.status !== "DRAFT") { res.status(400).json({ error: "Roster is locked, cannot add players" }); return; }
 
     const { userIds } = AddPlayersSchema.parse(req.body);
     const existing = await prisma.tournamentUser.findMany({ where: { tournamentId: req.params.id }, select: { userId: true, status: true } });
-    const existingIds = new Set(existing.map((e) => e.userId));
-    const newUsers = userIds.filter((id) => !existingIds.has(id));
+    const byId = new Map(existing.map((e) => [e.userId, e.status]));
+    // Someone who is already REGISTERED is a no-op; a PENDING request or a player
+    // who had withdrawn is promoted back onto the roster rather than duplicated.
+    const affected = userIds.filter((id) => byId.get(id) !== "REGISTERED");
     if (tournament.maxPlayers != null) {
       const taken = existing.filter((e) => e.status === "REGISTERED").length;
-      if (taken + newUsers.length > tournament.maxPlayers) {
+      if (taken + affected.length > tournament.maxPlayers) {
         res.status(400).json({ error: `Only ${tournament.maxPlayers - taken} of ${tournament.maxPlayers} places left` });
         return;
       }
     }
     const created = await prisma.$transaction(
-      newUsers.map((userId) => prisma.tournamentUser.create({ data: { tournamentId: req.params.id, userId, status: "REGISTERED" } }))
+      affected.map((userId) =>
+        prisma.tournamentUser.upsert({
+          where: { tournamentId_userId: { tournamentId: req.params.id, userId } },
+          create: { tournamentId: req.params.id, userId, status: "REGISTERED" },
+          update: { status: "REGISTERED" },
+        })
+      )
     );
     res.status(201).json(created);
   } catch (err: any) {
@@ -167,7 +206,14 @@ tournamentRouter.post("/:id/join", authMiddleware, async (req: AuthenticatedRequ
   try {
     const tournament = await prisma.tournament.findUnique({ where: { id: req.params.id } });
     if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
-    if (tournament.status !== "DRAFT") { res.status(400).json({ error: "This tournament is no longer accepting participants" }); return; }
+    // A club night runs Swiss-style and nobody is eliminated, so a latecomer can
+    // still be let in between rounds: they simply enter the next pairing with no
+    // wins yet. Only a cancelled event is closed for good.
+    if (tournament.status === "CANCELLED") { res.status(400).json({ error: "This tournament was cancelled" }); return; }
+    const previous = await prisma.tournamentUser.findUnique({
+      where: { tournamentId_userId: { tournamentId: tournament.id, userId: req.user!.userId } },
+    });
+    if (previous && previous.status === "REGISTERED") { res.status(400).json({ error: "You are already taking part" }); return; }
 
     if (tournament.maxPlayers != null) {
       const taken = await prisma.tournamentUser.count({ where: { tournamentId: tournament.id, status: "REGISTERED" } });
@@ -183,6 +229,15 @@ tournamentRouter.post("/:id/join", authMiddleware, async (req: AuthenticatedRequ
       }
     }
 
+    if (previous) {
+      // Withdrawn (or rejected) earlier — turn the existing row back into a request.
+      const entry = await prisma.tournamentUser.update({
+        where: { tournamentId_userId: { tournamentId: tournament.id, userId: req.user!.userId } },
+        data: { status: "PENDING" },
+      });
+      res.status(201).json(entry);
+      return;
+    }
     const entry = await prisma.tournamentUser.create({
       data: { tournamentId: req.params.id, userId: req.user!.userId, status: "PENDING" },
     });
@@ -212,14 +267,27 @@ tournamentRouter.post("/:id/players/:userId/approve", authMiddleware, async (req
   }
 });
 
-// Manager rejects a pending request or removes an already-approved participant.
+// Manager rejects a pending request or drops a participant. Before any match has
+// been played the row is simply deleted; afterwards the player is marked
+// WITHDRAWN instead, which keeps the matches they already played in the standings
+// while taking them out of every future pairing.
 tournamentRouter.delete("/:id/players/:userId", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const tournament = await loadOwnedTournament(res, req.params.id, req.user!.userId);
     if (!tournament) return;
-    if (tournament.status !== "DRAFT") { res.status(400).json({ error: "Roster is locked, cannot remove players" }); return; }
+    const played = await prisma.match.count({
+      where: { tournamentId: tournament.id, OR: [{ player1Id: req.params.userId }, { player2Id: req.params.userId }] },
+    });
+    if (played > 0) {
+      await prisma.tournamentUser.update({
+        where: { tournamentId_userId: { tournamentId: req.params.id, userId: req.params.userId } },
+        data: { status: "WITHDRAWN" },
+      });
+      res.json({ ok: true, withdrawn: true });
+      return;
+    }
     await prisma.tournamentUser.delete({ where: { tournamentId_userId: { tournamentId: req.params.id, userId: req.params.userId } } });
-    res.json({ ok: true });
+    res.json({ ok: true, withdrawn: false });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
@@ -289,11 +357,19 @@ tournamentRouter.post("/:id/pair", authMiddleware, async (req: AuthenticatedRequ
             player1Id: p.player1Id,
             player2Id: p.player2Id,
             matchIndex: idx,
+            pointsToWin: tournament.pointsToWin,
             tableNumber: (idx % tablesCount) + 1,
           },
         })
       ),
       prisma.tournament.update({ where: { id: tournament.id }, data: { status: "ACTIVE" } }),
+      // Who sat this one out, so the round can say so instead of the client
+      // inferring it from "has no match here".
+      ...(byeUserId ? [prisma.roundBye.upsert({
+        where: { tournamentId_round: { tournamentId: tournament.id, round: newRound } },
+        create: { tournamentId: tournament.id, round: newRound, userId: byeUserId },
+        update: { userId: byeUserId },
+      })] : []),
     ]);
 
     await AuditLog.create({ userId: req.user!.userId, action: "TOURNAMENT_PAIR", entity: "Tournament", entityId: tournament.id, newValue: { round: newRound, pairs: pairs.length, bye: byeUserId } });
@@ -345,7 +421,9 @@ tournamentRouter.get("/:id/standings", async (req, res: Response) => {
     const tournament = await prisma.tournament.findUnique({
       where: { id: req.params.id },
       include: {
-        players: { where: { status: "REGISTERED" }, include: { user: { select: playerSelect } } },
+        // Someone who left mid-event keeps the matches they already played, so
+        // WITHDRAWN rows still belong in the table.
+        players: { where: { status: { in: ["REGISTERED", "WITHDRAWN"] } }, include: { user: { select: playerSelect } } },
         matches: { where: { status: "COMPLETED" }, select: { player1Id: true, player2Id: true, setsWon1: true, setsWon2: true, sets: { select: { score1: true, score2: true, status: true } } } },
       },
     });
