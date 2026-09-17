@@ -10,8 +10,7 @@ export const bookingRouter = Router();
 const bookingInclude = {
   club: { select: { id: true, name: true, city: true, address: true, phone: true } },
   table: { select: { id: true, number: true, indoor: true } },
-  game: { select: { id: true, title: true, pointsToWin: true, status: true } },
-  tournament: { select: { id: true, name: true, status: true } },
+  tournament: { select: { id: true, kind: true, name: true, status: true } },
 };
 
 // Table reservations — no payment processing, this just records who booked what/when.
@@ -47,22 +46,17 @@ bookingRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, res: R
     const title = data.eventTitle?.trim() || club.name;
 
     const booking = await prisma.$transaction(async (tx) => {
-      const event = data.eventType === "TOURNAMENT"
-        ? await tx.tournament.create({
-            data: { name: title, clubId: club.id, startTime: startsAt, endTime: endsAt, organizerId: userId },
-          })
-        : await tx.game.create({
-            data: {
-              title, clubId: club.id, tableId: data.tableId, startTime: startsAt,
-              pointsToWin: data.pointsToWin ?? 11, organizerId: userId, player1Id: userId,
-            },
-          });
+      // A game and a tournament are the same row; `kind` is the only difference.
+      const event = await tx.tournament.create({
+        data: { kind: data.eventType, name: title, clubId: club.id, startTime: startsAt, endTime: endsAt, organizerId: userId },
+      });
+      // The organiser is a participant of their own event from the start.
+      await tx.tournamentUser.create({ data: { tournamentId: event.id, userId, status: "REGISTERED" } });
 
       return tx.booking.create({
         data: {
           clubId: club.id, tableId: data.tableId, date, startTime: data.startTime,
-          durationHours: data.durationHours, userId,
-          ...(data.eventType === "TOURNAMENT" ? { tournamentId: event.id } : { gameId: event.id }),
+          durationHours: data.durationHours, userId, tournamentId: event.id,
         },
         include: bookingInclude,
       });

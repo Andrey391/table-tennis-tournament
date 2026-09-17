@@ -49,3 +49,19 @@ export function playerName(
   const initial = p?.lastName?.trim()?.[0];
   return initial ? `${first} ${initial.toUpperCase()}.` : first;
 }
+
+// A match is won on sets, so the headline figure is the set tally, not points.
+export function matchScoreLine(m: { status?: string; setsWon1?: number; setsWon2?: number }): string {
+  if (!m || m.status === "NOT_STARTED") return "vs";
+  return `${m.setsWon1 ?? 0} : ${m.setsWon2 ?? 0}`;
+}
+
+// "11:9, 8:11" — the points of each finished set, for a detail line.
+export function setScores(m: { sets?: { score1: number; score2: number; status: string }[] }): string {
+  return (m?.sets ?? []).filter(s => s.status === "COMPLETED").map(s => `${s.score1}:${s.score2}`).join(", ");
+}
+
+// The set being played right now, if any.
+export function liveSet(m: { sets?: { score1: number; score2: number; status: string; index: number }[] }) {
+  return (m?.sets ?? []).find(s => s.status !== "COMPLETED") ?? null;
+}

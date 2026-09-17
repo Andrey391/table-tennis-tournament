@@ -5,7 +5,7 @@ import { useAuth } from "../context/AuthContext";
 import Layout from "../components/Layout";
 import Avatar from "../components/Avatar";
 import { useT } from "../i18n";
-import { formatEventDay, formatTimeRange, playerName } from "../lib/format";
+import { formatEventDay, formatTimeRange, playerName, matchScoreLine, setScores } from "../lib/format";
 
 export default function TournamentPage() {
   const { id } = useParams<{ id: string }>();
@@ -99,6 +99,7 @@ export default function TournamentPage() {
     <Layout>
       <div className="mb-4">
         <h1 className="text-2xl font-bold tracking-tight truncate">{tournament.name}</h1>
+        {tournament.kind === "GAME" && <p className="text-xs text-[#6b84a0] mt-0.5">{t("games.unrated")}</p>}
         <div className="flex items-center gap-2 mt-1 flex-wrap">
           <span className={`px-2 py-0.5 rounded text-[11px] font-medium ${
             tournament.status === "ACTIVE" ? "bg-yellow-500/10 text-yellow-400 border border-yellow-500/20" :
@@ -276,7 +277,7 @@ export default function TournamentPage() {
                 <span className="flex items-center gap-3 shrink-0 text-xs">
                   <span className="text-green-400">{s.wins}{t("tournament.winShort")}</span>
                   <span className="text-red-400">{s.losses}{t("tournament.lossShort")}</span>
-                  <span className="font-mono text-[#93a8c2]">{s.pointsFor}-{s.pointsAgainst}</span>
+                  <span className="font-mono text-[#93a8c2]">{s.setsWon}:{s.setsLost}</span>
                 </span>
               </div>
             ))}
@@ -293,8 +294,9 @@ function MatchRow({ m, tournamentId, tableLabel }: { m: any; tournamentId: strin
     <Link to={`/tournament/${tournamentId}/match/${m.id}`}
       className={`flex items-center justify-between bg-[#101f36] border ${borderClass} p-3 rounded-lg mb-2`}>
       <span className="flex-1 min-w-0 text-right text-sm truncate pr-2">{playerName(m.player1)}</span>
-      <span className={`px-3 font-mono font-bold text-sm shrink-0 ${m.status === "IN_PROGRESS" ? "text-yellow-400" : "text-[#93a8c2]"}`}>
-        {m.status === "NOT_STARTED" ? "vs" : `${m.score1} - ${m.score2}`}
+      <span className={`px-3 shrink-0 text-center ${m.status === "IN_PROGRESS" ? "text-yellow-400" : "text-[#93a8c2]"}`}>
+        <span className="block font-mono font-bold text-sm">{matchScoreLine(m)}</span>
+        {setScores(m) && <span className="block text-[10px] text-[#4d6480] font-mono">{setScores(m)}</span>}
       </span>
       <span className="flex-1 min-w-0 text-sm truncate pl-2">{playerName(m.player2)}</span>
       {m.tableNumber && <span className="ml-2 text-[10px] text-[#4d6480] shrink-0">{tableLabel} {m.tableNumber}</span>}

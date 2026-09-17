@@ -25,16 +25,13 @@ export function initSocket(server: HTTPServer): Server {
       socket.leave(`match:${matchId}`);
     });
 
-    socket.on("score-update", async (data: { matchId: string; score1: number; score2: number }) => {
+    // Scores live on the match's current set now, so this only relays state and
+    // marks the match live; the REST routes remain the source of truth.
+    socket.on("score-update", async (data: { matchId: string }) => {
       try {
         const match = await prisma.match.update({
           where: { id: data.matchId },
-          data: {
-            score1: data.score1,
-            score2: data.score2,
-            status: "IN_PROGRESS",
-            startedAt: new Date(),
-          },
+          data: { status: "IN_PROGRESS", startedAt: new Date() },
         });
         io?.to(`match:${data.matchId}`).emit("score-changed", match);
         io?.to(`tournament:${match.tournamentId}`).emit("match-updated", match);

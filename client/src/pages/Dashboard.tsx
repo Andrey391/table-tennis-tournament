@@ -13,7 +13,7 @@ export default function Dashboard() {
 
   useEffect(() => { apiService.clubs.cities().then(r => setCities(r.data)).catch(console.error); }, []);
   useEffect(() => {
-    apiService.tournaments.getAll(city ? { city } : undefined).then(r => setTournaments(r.data)).catch(console.error);
+    apiService.tournaments.getAll({ kind: "TOURNAMENT", ...(city ? { city } : {}) }).then(r => setTournaments(r.data)).catch(console.error);
     try { localStorage.setItem("city", city); } catch { /* choice just won't persist */ }
   }, [city]);
 
@@ -81,7 +81,7 @@ export default function Dashboard() {
                   {tr.startTime && <p className="text-xs text-[#93a8c2] mt-1">{formatEventDay(tr.startTime, lang)} &middot; {formatTimeRange(tr.startTime, tr.endTime, lang)}</p>}
                   {tr.club && <p className="text-xs text-[#6b84a0] mt-0.5 truncate">{tr.club.name} &middot; {tr.club.city}</p>}
                   <p className="text-xs text-[#6b84a0] mt-0.5">
-                    {tr._count?.players || 0}{tr.maxPlayers ? `/${tr.maxPlayers}` : ""} {t("common.players")} &middot; {tr._count?.matches || 0} {t("profile.matches").toLowerCase()}
+                    {tr._count?.players || 0}{tr.maxPlayers ? `/${tr.maxPlayers}` : ""} {t("common.players")} &middot; {tr._count?.matches || 0} {t("stats.matches").toLowerCase()}
                   </p>
                 </div>
                 <span className={`shrink-0 px-2 py-0.5 rounded text-[11px] font-medium whitespace-nowrap ${
