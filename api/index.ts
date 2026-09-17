@@ -976,6 +976,7 @@ app.delete("/api/clubs/:id/tables/:tableId", authMiddleware, async (req: any, re
 // nobody's rating.
 async function finishMatch(match: any) {
   const d = db();
+  const tournamentKind = match.tournament?.kind || "TOURNAMENT";
   await d.match.update({
     where: { id: match.id },
     data: { status: "COMPLETED", startedAt: match.startedAt || new Date(), endedAt: new Date() },
@@ -987,8 +988,7 @@ async function finishMatch(match: any) {
   });
   if (match.setsWon1 !== match.setsWon2) {
     const p1Won = match.setsWon1 > match.setsWon2;
-    const kind = match.tournament?.kind || "TOURNAMENT";
-    await applyEloUpdate(kind, p1Won ? match.player1Id : match.player2Id, p1Won ? match.player2Id : match.player1Id);
+    await applyEloUpdate(tournamentKind, p1Won ? match.player1Id : match.player2Id, p1Won ? match.player2Id : match.player1Id);
   }
   await maybeCompleteTournament(match.tournamentId);
 }
@@ -1131,11 +1131,10 @@ app.post("/api/matches/:id/let", authMiddleware, async (req: any, res) => {
 
 app.post("/api/matches/:id/end", authMiddleware, async (req: any, res) => {
     try {
-        const d = db();
         const match = await loadOwnedMatch(res, req.params.id, req.user.userId);
         if (!match) return;
         await finishMatch(match);
-        await d.auditLog.create({ userId: req.user.userId, action: "MATCH_END", entity: "Match", entityId: match.id, newValue: { setsWon1: match.setsWon1, setsWon2: match.setsWon2 } });
+        await db().auditLog.create({ userId: req.user.userId, action: "MATCH_END", entity: "Match", entityId: match.id, newValue: { setsWon1: match.setsWon1, setsWon2: match.setsWon2 } });
         res.json(await reloadMatch(match.id));
     } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
@@ -1178,6 +1177,7 @@ app.post("/api/matches/:id/forfeit", authMiddleware, async (req: any, res) => {
 
     const settled = await d.match.findUnique({ where: { id: match.id }, include: { tournament: { select: { kind: true } } } });
     if (settled) await finishMatch(settled);
+    else await maybeCompleteTournament(match.tournamentId);
     await d.auditLog.create({ userId: req.user.userId, action: "MATCH_FORFEIT", entity: "Match", entityId: match.id, newValue: { loserSide } });
     res.json(await reloadMatch(match.id));
   } catch (e: any) { res.status(400).json({ error: e.message }); }
