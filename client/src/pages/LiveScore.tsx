@@ -2,6 +2,7 @@ import { useParams } from "react-router-dom";
 import { useEffect, useState, useCallback } from "react";
 import { apiService } from "../services/api";
 import { useT } from "../i18n";
+import { playerName } from "../lib/format";
 
 export default function LiveScore() {
   const { tournamentId } = useParams<{ tournamentId: string }>();
@@ -33,12 +34,12 @@ export default function LiveScore() {
                 <p className="text-[11px] text-[#4d6480] uppercase tracking-wider mb-3">{t("tournament.table")} {m.tableNumber || "?"}</p>
                 <div className="flex justify-around items-center">
                   <div className="text-center flex-1">
-                    <p className="text-sm font-medium text-[#3b82f6] truncate px-1">{m.player1?.firstName || t("common.none")}</p>
+                    <p className="text-sm font-medium text-[#3b82f6] truncate px-1">{playerName(m.player1, t("common.none"))}</p>
                     <p className="text-5xl font-bold mt-2 text-[#3b82f6]">{m.score1}</p>
                   </div>
                   <p className="text-xl text-[#333] px-2">:</p>
                   <div className="text-center flex-1">
-                    <p className="text-sm font-medium text-[#ef4444] truncate px-1">{m.player2?.firstName || t("common.none")}</p>
+                    <p className="text-sm font-medium text-[#ef4444] truncate px-1">{playerName(m.player2, t("common.none"))}</p>
                     <p className="text-5xl font-bold mt-2 text-[#ef4444]">{m.score2}</p>
                   </div>
                 </div>

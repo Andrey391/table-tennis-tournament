@@ -76,6 +76,23 @@ export const MatchSettingsSchema = z.object({
   judgeId: z.string().optional(),
 });
 
+export const CreateGameSchema = z.object({
+  title: z.string().max(200).optional(),
+  clubId: z.string().optional(),
+  tableId: z.string().optional(),
+  startTime: z.string().datetime().optional(),
+  pointsToWin: z.union([z.literal(11), z.literal(21)]).optional(),
+  player2Id: z.string().optional(),
+});
+
+export const GameSettingsSchema = z.object({
+  title: z.string().max(200).optional(),
+  pointsToWin: z.union([z.literal(11), z.literal(21)]).optional(),
+  clubId: z.string().nullable().optional(),
+  tableId: z.string().nullable().optional(),
+  startTime: z.string().datetime().nullable().optional(),
+});
+
 export const ScorePointSchema = z.object({
   side: z.union([z.literal(1), z.literal(2)]),
 });

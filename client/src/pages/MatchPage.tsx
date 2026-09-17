@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from "react";
 import { apiService } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { useT } from "../i18n";
+import { playerName } from "../lib/format";
 
 export default function MatchPage() {
   const { id, matchId } = useParams<{ id: string; matchId: string }>();
@@ -87,18 +88,18 @@ export default function MatchPage() {
         <div className="bg-[#101f36] rounded-lg p-4 mb-3 border border-[#1c3350]">
           <div className="text-center text-[11px] text-[#4d6480] uppercase tracking-wider mb-3">
             {match.status === "IN_PROGRESS"
-              ? (isDeuceNow ? t("match.deuce") : `${t("match.server")}: ${match.serverSide === 1 ? (match.player1?.firstName || "P1") : (match.player2?.firstName || "P2")}`)
+              ? (isDeuceNow ? t("match.deuce") : `${t("match.server")}: ${playerName(match.serverSide === 1 ? match.player1 : match.player2, t("common.none"))}`)
               : t(`match.${match.status === "NOT_STARTED" ? "notStarted" : match.status === "COMPLETED" ? "completed" : "inProgress"}`)}
             {match.letCount > 0 && ` · ${t("match.lets")}: ${match.letCount}`}
           </div>
           <div className="flex justify-around items-center">
             <div className="text-center flex-1">
-              <p className="text-base font-semibold text-[#3b82f6] truncate px-1">{match.player1?.firstName || t("common.none")}</p>
+              <p className="text-base font-semibold text-[#3b82f6] truncate px-1">{playerName(match.player1, t("common.none"))}</p>
               <p className="text-7xl font-bold mt-1 tabular-nums leading-none text-[#3b82f6]">{match.score1}</p>
             </div>
             <p className="text-2xl text-[#333] px-1">:</p>
             <div className="text-center flex-1">
-              <p className="text-base font-semibold text-[#ef4444] truncate px-1">{match.player2?.firstName || t("common.none")}</p>
+              <p className="text-base font-semibold text-[#ef4444] truncate px-1">{playerName(match.player2, t("common.none"))}</p>
               <p className="text-7xl font-bold mt-1 tabular-nums leading-none text-[#ef4444]">{match.score2}</p>
             </div>
           </div>
@@ -107,7 +108,7 @@ export default function MatchPage() {
         {match.status === "COMPLETED" ? (
           <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4 text-center">
             <p className="text-green-400 font-medium text-sm">{t("match.matchCompleted")}</p>
-            <p className="text-green-300/70 text-xs mt-1">{t("match.winner")}: {match.score1 > match.score2 ? match.player1?.firstName : match.player2?.firstName}</p>
+            <p className="text-green-300/70 text-xs mt-1">{t("match.winner")}: {playerName(match.score1 > match.score2 ? match.player1 : match.player2, t("common.none"))}</p>
           </div>
         ) : !canManage ? (
           <p className="text-center py-3 text-sm text-[#6b84a0] bg-[#101f36] rounded-lg border border-[#1c3350]">
@@ -123,10 +124,10 @@ export default function MatchPage() {
               <>
                 <div className="grid grid-cols-2 gap-2">
                   <button onClick={() => score(1)} className="bg-[#3b82f6] text-white py-6 rounded-lg text-lg font-bold active:scale-[0.97] transition-transform">
-                    {match.player1?.firstName || "P1"} +1
+                    {playerName(match.player1, "P1")} +1
                   </button>
                   <button onClick={() => score(2)} className="bg-[#ef4444] text-white py-6 rounded-lg text-lg font-bold active:scale-[0.97] transition-transform">
-                    {match.player2?.firstName || "P2"} +1
+                    {playerName(match.player2, "P2")} +1
                   </button>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
@@ -138,10 +139,10 @@ export default function MatchPage() {
             )}
             <div className="grid grid-cols-2 gap-2 pt-1">
               <button onClick={() => forfeit(1)} className="text-red-400 py-2 rounded-lg text-xs border border-red-500/20 bg-red-500/5">
-                {match.player1?.firstName || "P1"} {t("match.noShow")}
+                {playerName(match.player1, "P1")} {t("match.noShow")}
               </button>
               <button onClick={() => forfeit(2)} className="text-red-400 py-2 rounded-lg text-xs border border-red-500/20 bg-red-500/5">
-                {match.player2?.firstName || "P2"} {t("match.noShow")}
+                {playerName(match.player2, "P2")} {t("match.noShow")}
               </button>
             </div>
           </div>

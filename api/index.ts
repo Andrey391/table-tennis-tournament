@@ -75,6 +75,28 @@ async function loadOwnedClub(res: any, clubId: string, userId: string) {
   return club;
 }
 
+const gameInclude = {
+  organizer: { select: { id: true, firstName: true, lastName: true } },
+  player1: { select: playerSelect },
+  player2: { select: playerSelect },
+  club: { select: { id: true, name: true, city: true, address: true } },
+  table: { select: { id: true, number: true } },
+};
+
+// Unlike a tournament match, a casual game is scored by anyone actually involved:
+// its creator or either of the two players. There is no separate judge here.
+// NOTE: games never touch User.rating - that is the point of them. Do not add an
+// applyEloUpdate call to any of the /api/games routes.
+async function loadPlayableGame(res: any, gameId: string, userId: string) {
+  const game = await db().game.findUnique({ where: { id: gameId } });
+  if (!game) { res.status(404).json({ error: "Not found" }); return null; }
+  if (game.organizerId !== userId && game.player1Id !== userId && game.player2Id !== userId) {
+    res.status(403).json({ error: "Only the players or the game's creator can score it" });
+    return null;
+  }
+  return game;
+}
+
 // Loads the match and confirms the caller manages its tournament.
 async function loadOwnedMatch(res: any, matchId: string, userId: string) {
   const match = await db().match.findUnique({ where: { id: matchId }, include: { tournament: { select: { organizerId: true } } } });
@@ -185,7 +207,7 @@ app.get("/api/setup", async (_req, res) => {
     await d.$executeRawUnsafe(doBlock(`CREATE TYPE "MatchStatus" AS ENUM ('NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED')`));
 
     const tables = [
-      `CREATE TABLE IF NOT EXISTS "User" ("id" TEXT NOT NULL, "email" TEXT NOT NULL, "password" TEXT NOT NULL, "firstName" TEXT NOT NULL, "lastName" TEXT NOT NULL, "role" "Role" NOT NULL DEFAULT 'PLAYER', "club" TEXT, "rating" INTEGER NOT NULL DEFAULT 300, "dateOfBirth" TIMESTAMP(3), "phone" TEXT, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "User_pkey" PRIMARY KEY ("id"))`,
+      `CREATE TABLE IF NOT EXISTS "User" ("id" TEXT NOT NULL, "email" TEXT NOT NULL, "password" TEXT NOT NULL, "firstName" TEXT NOT NULL, "lastName" TEXT NOT NULL, "role" "Role" NOT NULL DEFAULT 'PLAYER', "club" TEXT, "rating" INTEGER NOT NULL DEFAULT 100, "dateOfBirth" TIMESTAMP(3), "phone" TEXT, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "User_pkey" PRIMARY KEY ("id"))`,
       `CREATE UNIQUE INDEX IF NOT EXISTS "User_email_key" ON "User"("email")`,
       `CREATE TABLE IF NOT EXISTS "Tournament" ("id" TEXT NOT NULL, "name" TEXT NOT NULL, "tablesCount" INTEGER NOT NULL DEFAULT 4, "status" TEXT NOT NULL DEFAULT 'DRAFT', "startTime" TIMESTAMP(3), "endTime" TIMESTAMP(3), "minRating" INTEGER, "maxRating" INTEGER, "organizerId" TEXT NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "Tournament_pkey" PRIMARY KEY ("id"))`,
       `CREATE TABLE IF NOT EXISTS "TournamentUser" ("id" TEXT NOT NULL, "tournamentId" TEXT NOT NULL, "userId" TEXT NOT NULL, "seed" INTEGER, "status" "PlayerStatus" NOT NULL DEFAULT 'REGISTERED', "joinedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "TournamentUser_pkey" PRIMARY KEY ("id"))`,
@@ -203,10 +225,14 @@ app.get("/api/setup", async (_req, res) => {
       `CREATE INDEX IF NOT EXISTS "Club_city_idx" ON "Club"("city")`,
       `CREATE TABLE IF NOT EXISTS "ClubTable" ("id" TEXT NOT NULL, "clubId" TEXT NOT NULL, "number" INTEGER NOT NULL, "indoor" BOOLEAN NOT NULL DEFAULT true, CONSTRAINT "ClubTable_pkey" PRIMARY KEY ("id"))`,
       `CREATE UNIQUE INDEX IF NOT EXISTS "ClubTable_clubId_number_key" ON "ClubTable"("clubId", "number")`,
+      `CREATE TABLE IF NOT EXISTS "Game" ("id" TEXT NOT NULL, "title" TEXT, "clubId" TEXT, "tableId" TEXT, "startTime" TIMESTAMP(3), "pointsToWin" INTEGER NOT NULL DEFAULT 11, "organizerId" TEXT NOT NULL, "player1Id" TEXT, "player2Id" TEXT, "score1" INTEGER NOT NULL DEFAULT 0, "score2" INTEGER NOT NULL DEFAULT 0, "serverSide" INTEGER NOT NULL DEFAULT 1, "lastScorer" INTEGER, "prevServerSide" INTEGER, "letCount" INTEGER NOT NULL DEFAULT 0, "status" "MatchStatus" NOT NULL DEFAULT 'NOT_STARTED', "startedAt" TIMESTAMP(3), "endedAt" TIMESTAMP(3), "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "Game_pkey" PRIMARY KEY ("id"))`,
+      `CREATE INDEX IF NOT EXISTS "Game_status_idx" ON "Game"("status")`,
+      `CREATE INDEX IF NOT EXISTS "Game_startTime_idx" ON "Game"("startTime")`,
+      `CREATE INDEX IF NOT EXISTS "Game_clubId_idx" ON "Game"("clubId")`,
     ];
     for (const t of tables) await d.$executeRawUnsafe(t);
     await d.$executeRawUnsafe(`ALTER TABLE "Match" ADD COLUMN IF NOT EXISTS "round" INTEGER NOT NULL DEFAULT 1`);
-    await d.$executeRawUnsafe(`ALTER TABLE "User" ALTER COLUMN "rating" SET DEFAULT 300`);
+    await d.$executeRawUnsafe(`ALTER TABLE "User" ALTER COLUMN "rating" SET DEFAULT 100`);
     await d.$executeRawUnsafe(`ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "minRating" INTEGER`);
     await d.$executeRawUnsafe(`ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "maxRating" INTEGER`);
     await d.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "city" TEXT`);
@@ -265,20 +291,42 @@ app.get("/api/auth/me", authMiddleware, async (req: any, res) => {
   } catch { res.status(401).json({ error: "Invalid token" }); }
 });
 
+// Counts wins and splits the same rows by point target, so the profile can show
+// "how much do I play short (11) vs long (21), and how do I do in each".
+function summarisePlayed(rows: any[], userId: string) {
+  const byTarget: any = { 11: { played: 0, wins: 0 }, 21: { played: 0, wins: 0 } };
+  let wins = 0;
+  for (const r of rows) {
+    const won = r.player1Id === userId ? r.score1 > r.score2 : r.score2 > r.score1;
+    if (won) wins++;
+    if (!byTarget[String(r.pointsToWin)]) byTarget[String(r.pointsToWin)] = { played: 0, wins: 0 };
+    byTarget[String(r.pointsToWin)].played++;
+    if (won) byTarget[String(r.pointsToWin)].wins++;
+  }
+  return { played: rows.length, wins, losses: rows.length - wins, byTarget };
+}
+
 app.get("/api/profile/stats", authMiddleware, async (req: any, res) => {
   const d = db();
   const userId = req.user.userId;
-  const [tournamentsCount, matches] = await Promise.all([
+  const played = { status: "COMPLETED" as const, OR: [{ player1Id: userId }, { player2Id: userId }] };
+  const select = { player1Id: true, score1: true, score2: true, pointsToWin: true };
+
+  const [tournamentsCount, matches, games] = await Promise.all([
     d.tournamentUser.count({ where: { userId, status: "REGISTERED" } }),
-    d.match.findMany({ where: { OR: [{ player1Id: userId }, { player2Id: userId }], status: "COMPLETED" }, select: { player1Id: true, score1: true, score2: true } }),
+    d.match.findMany({ where: played, select }),
+    d.game.findMany({ where: played, select }),
   ]);
-  let wins = 0;
-  for (const m of matches) {
-    const isPlayer1 = m.player1Id === userId;
-    const won = isPlayer1 ? m.score1 > m.score2 : m.score2 > m.score1;
-    if (won) wins++;
-  }
-  res.json({ tournaments: tournamentsCount, matches: matches.length, wins, losses: matches.length - wins });
+
+  const m = summarisePlayed(matches, userId);
+  const g = summarisePlayed(games, userId);
+
+  res.json({
+    tournaments: tournamentsCount,
+    matches: m.played, wins: m.wins, losses: m.losses,
+    games: g.played, gameWins: g.wins, gameLosses: g.losses,
+    byTarget: { matches: m.byTarget, games: g.byTarget },
+  });
 });
 
 // ─── PLAYERS ────────────────────────────────────────────────────────────────────
@@ -922,6 +970,213 @@ app.get("/api/public/tournament/:id/standings", async (req, res) => {
 app.get("/api/rating", async (_req, res) => {
   const players = await db().user.findMany({ select: { id: true, firstName: true, lastName: true, club: true, rating: true }, orderBy: { rating: "desc" }, take: 100 });
   res.json(players);
+});
+
+// --- GAMES (casual, unrated) ----------------------------------------------------
+
+app.get("/api/games", async (req, res) => {
+  const { city, clubId, status, from, to } = req.query as Record<string, string | undefined>;
+  const games = await db().game.findMany({
+    where: {
+      ...(clubId ? { clubId } : {}),
+      ...(city ? { club: { city } } : {}),
+      ...(status ? { status: { in: status.split(",") as any } } : {}),
+      ...(from || to ? { startTime: { ...(from ? { gte: new Date(from) } : {}), ...(to ? { lte: new Date(to) } : {}) } } : {}),
+    },
+    include: gameInclude,
+    orderBy: [{ startTime: "asc" }, { createdAt: "desc" }],
+  });
+  res.json(games);
+});
+
+// "My games" - anything the caller created or plays in. Must stay above "/:id".
+app.get("/api/games/mine", authMiddleware, async (req: any, res) => {
+  const userId = req.user.userId;
+  const games = await db().game.findMany({
+    where: { OR: [{ organizerId: userId }, { player1Id: userId }, { player2Id: userId }] },
+    include: gameInclude,
+    orderBy: [{ startTime: "asc" }, { createdAt: "desc" }],
+  });
+  res.json(games);
+});
+
+app.get("/api/games/:id", async (req, res) => {
+  const game = await db().game.findUnique({ where: { id: req.params.id }, include: gameInclude });
+  if (!game) { res.status(404).json({ error: "Not found" }); return; }
+  res.json(game);
+});
+
+// The creator takes the first slot; the second is left open for someone to join.
+app.post("/api/games", authMiddleware, async (req: any, res) => {
+  try {
+    const { title, clubId, tableId, startTime, pointsToWin, player2Id } = req.body;
+    const userId = req.user.userId;
+    const game = await db().game.create({
+      data: {
+        title, clubId, tableId,
+        startTime: startTime ? new Date(startTime) : undefined,
+        pointsToWin: pointsToWin || 11,
+        organizerId: userId, player1Id: userId, player2Id,
+      },
+      include: gameInclude,
+    });
+    res.status(201).json(game);
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.post("/api/games/:id/join", authMiddleware, async (req: any, res) => {
+  try {
+    const d = db();
+    const userId = req.user.userId;
+    const game = await d.game.findUnique({ where: { id: req.params.id } });
+    if (!game) { res.status(404).json({ error: "Not found" }); return; }
+    if (game.status !== "NOT_STARTED") { res.status(400).json({ error: "This game has already started" }); return; }
+    if (game.player1Id === userId || game.player2Id === userId) { res.status(400).json({ error: "You are already in this game" }); return; }
+    const slot = !game.player1Id ? "player1Id" : !game.player2Id ? "player2Id" : null;
+    if (!slot) { res.status(400).json({ error: "This game is full" }); return; }
+    const updated = await d.game.update({ where: { id: game.id }, data: { [slot]: userId }, include: gameInclude });
+    res.json(updated);
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.post("/api/games/:id/leave", authMiddleware, async (req: any, res) => {
+  try {
+    const d = db();
+    const userId = req.user.userId;
+    const game = await d.game.findUnique({ where: { id: req.params.id } });
+    if (!game) { res.status(404).json({ error: "Not found" }); return; }
+    if (game.status !== "NOT_STARTED") { res.status(400).json({ error: "This game has already started" }); return; }
+    const slot = game.player1Id === userId ? "player1Id" : game.player2Id === userId ? "player2Id" : null;
+    if (!slot) { res.status(400).json({ error: "You are not in this game" }); return; }
+    const updated = await d.game.update({ where: { id: game.id }, data: { [slot]: null }, include: gameInclude });
+    res.json(updated);
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.put("/api/games/:id", authMiddleware, async (req: any, res) => {
+  try {
+    const game = await loadPlayableGame(res, req.params.id, req.user.userId);
+    if (!game) return;
+    const { title, pointsToWin, clubId, tableId, startTime } = req.body;
+    if (pointsToWin && game.status !== "NOT_STARTED") {
+      res.status(400).json({ error: "Can't change the target score once the game has started" });
+      return;
+    }
+    const updated = await db().game.update({
+      where: { id: game.id },
+      data: { title, pointsToWin, clubId, tableId, startTime: startTime ? new Date(startTime) : undefined },
+      include: gameInclude,
+    });
+    res.json(updated);
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.post("/api/games/:id/start", authMiddleware, async (req: any, res) => {
+  try {
+    const game = await loadPlayableGame(res, req.params.id, req.user.userId);
+    if (!game) return;
+    if (!game.player1Id || !game.player2Id) { res.status(400).json({ error: "The game needs two players" }); return; }
+    const updated = await db().game.update({ where: { id: game.id }, data: { status: "IN_PROGRESS", startedAt: new Date() }, include: gameInclude });
+    res.json(updated);
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.post("/api/games/:id/score", authMiddleware, async (req: any, res) => {
+  try {
+    const game = await loadPlayableGame(res, req.params.id, req.user.userId);
+    if (!game) return;
+    if (game.status !== "IN_PROGRESS") { res.status(400).json({ error: "Game is not in progress" }); return; }
+
+    const { side } = req.body;
+    if (side !== 1 && side !== 2) { res.status(400).json({ error: "side must be 1 or 2" }); return; }
+    const score1 = side === 1 ? game.score1 + 1 : game.score1;
+    const score2 = side === 2 ? game.score2 + 1 : game.score2;
+    const deuce = isDeuce(score1, score2, game.pointsToWin);
+    const server = nextServerSide(score1 + score2, game.serverSide, deuce);
+    const winner = getMatchWinner(score1, score2, game.pointsToWin);
+
+    const updated = await db().game.update({
+      where: { id: game.id },
+      data: {
+        score1, score2, serverSide: server, lastScorer: side, prevServerSide: game.serverSide,
+        status: winner ? "COMPLETED" : "IN_PROGRESS",
+        endedAt: winner ? new Date() : undefined,
+      },
+      include: gameInclude,
+    });
+
+    // No Elo update, no tournament to complete - a finished game is just a record.
+    res.json({ game: updated, deuce, winner });
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.post("/api/games/:id/undo", authMiddleware, async (req: any, res) => {
+  try {
+    const game = await loadPlayableGame(res, req.params.id, req.user.userId);
+    if (!game) return;
+    if (game.lastScorer == null) { res.status(400).json({ error: "Nothing to undo" }); return; }
+    const updated = await db().game.update({
+      where: { id: game.id },
+      data: {
+        score1: game.lastScorer === 1 ? Math.max(0, game.score1 - 1) : game.score1,
+        score2: game.lastScorer === 2 ? Math.max(0, game.score2 - 1) : game.score2,
+        serverSide: game.prevServerSide ?? game.serverSide,
+        lastScorer: null, prevServerSide: null,
+        status: "IN_PROGRESS", endedAt: null,
+      },
+      include: gameInclude,
+    });
+    res.json({ game: updated });
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.post("/api/games/:id/let", authMiddleware, async (req: any, res) => {
+  try {
+    const game = await loadPlayableGame(res, req.params.id, req.user.userId);
+    if (!game) return;
+    const updated = await db().game.update({ where: { id: game.id }, data: { letCount: game.letCount + 1 }, include: gameInclude });
+    res.json({ game: updated });
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.post("/api/games/:id/end", authMiddleware, async (req: any, res) => {
+  try {
+    const game = await loadPlayableGame(res, req.params.id, req.user.userId);
+    if (!game) return;
+    const updated = await db().game.update({ where: { id: game.id }, data: { status: "COMPLETED", endedAt: new Date() }, include: gameInclude });
+    res.json(updated);
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.post("/api/games/:id/forfeit", authMiddleware, async (req: any, res) => {
+  try {
+    const game = await loadPlayableGame(res, req.params.id, req.user.userId);
+    if (!game) return;
+    if (game.status === "COMPLETED") { res.status(400).json({ error: "Game is already finished" }); return; }
+    const { loserSide } = req.body;
+    if (loserSide !== 1 && loserSide !== 2) { res.status(400).json({ error: "loserSide must be 1 or 2" }); return; }
+    const updated = await db().game.update({
+      where: { id: game.id },
+      data: {
+        score1: loserSide === 1 ? 0 : game.pointsToWin,
+        score2: loserSide === 2 ? 0 : game.pointsToWin,
+        status: "COMPLETED", endedAt: new Date(),
+      },
+      include: gameInclude,
+    });
+    res.json(updated);
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+app.delete("/api/games/:id", authMiddleware, async (req: any, res) => {
+  try {
+    const d = db();
+    const game = await d.game.findUnique({ where: { id: req.params.id } });
+    if (!game) { res.status(404).json({ error: "Not found" }); return; }
+    if (game.organizerId !== req.user.userId) { res.status(403).json({ error: "Only the game's creator can delete it" }); return; }
+    await d.game.delete({ where: { id: game.id } });
+    res.json({ ok: true });
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
 export default app;

@@ -29,6 +29,7 @@ BEGIN;
 -- ---------------------------------------------------------------------------
 
 DROP TABLE IF EXISTS "ChatMessage" CASCADE;
+DROP TABLE IF EXISTS "Game" CASCADE;
 DROP TABLE IF EXISTS "Match" CASCADE;
 DROP TABLE IF EXISTS "TournamentUser" CASCADE;
 DROP TABLE IF EXISTS "Tournament" CASCADE;
@@ -40,8 +41,8 @@ DROP TABLE IF EXISTS "AuditLog" CASCADE;
 DROP TABLE IF EXISTS "Session" CASCADE;
 DROP TABLE IF EXISTS "User" CASCADE;
 
--- Tables from the old round-robin/bracket model, gone from the schema.
-DROP TABLE IF EXISTS "Game" CASCADE;
+-- Tables from the old round-robin/bracket model, gone from the schema. (The
+-- current "Game" is a different, unrelated model and is dropped above.)
 DROP TABLE IF EXISTS "Rating" CASCADE;
 DROP TABLE IF EXISTS "GroupPlayer" CASCADE;
 DROP TABLE IF EXISTS "Group" CASCADE;
@@ -85,7 +86,7 @@ CREATE TABLE "User" (
     "role" "Role" NOT NULL DEFAULT 'PLAYER',
     "club" TEXT,
     "city" TEXT,
-    "rating" INTEGER NOT NULL DEFAULT 300,
+    "rating" INTEGER NOT NULL DEFAULT 100,
     "dateOfBirth" TIMESTAMP(3),
     "phone" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -203,6 +204,42 @@ ALTER TABLE "Match" ADD CONSTRAINT "Match_tournamentId_fkey" FOREIGN KEY ("tourn
 ALTER TABLE "Match" ADD CONSTRAINT "Match_player1Id_fkey" FOREIGN KEY ("player1Id") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 ALTER TABLE "Match" ADD CONSTRAINT "Match_player2Id_fkey" FOREIGN KEY ("player2Id") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 ALTER TABLE "Match" ADD CONSTRAINT "Match_judgeId_fkey" FOREIGN KEY ("judgeId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- A casual game: two players, one game to the target score. Scored exactly like a
+-- Match, but deliberately UNRATED — Elo never moves for these, which is the whole
+-- reason it is a separate table rather than a Match without a tournament.
+CREATE TABLE "Game" (
+    "id" TEXT NOT NULL,
+    "title" TEXT,
+    "clubId" TEXT,
+    "tableId" TEXT,
+    "startTime" TIMESTAMP(3),
+    "pointsToWin" INTEGER NOT NULL DEFAULT 11,
+    "organizerId" TEXT NOT NULL,
+    "player1Id" TEXT,
+    "player2Id" TEXT,
+    "score1" INTEGER NOT NULL DEFAULT 0,
+    "score2" INTEGER NOT NULL DEFAULT 0,
+    "serverSide" INTEGER NOT NULL DEFAULT 1,
+    "lastScorer" INTEGER,
+    "prevServerSide" INTEGER,
+    "letCount" INTEGER NOT NULL DEFAULT 0,
+    "status" "MatchStatus" NOT NULL DEFAULT 'NOT_STARTED',
+    "startedAt" TIMESTAMP(3),
+    "endedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "Game_pkey" PRIMARY KEY ("id")
+);
+CREATE INDEX "Game_status_idx" ON "Game"("status");
+CREATE INDEX "Game_startTime_idx" ON "Game"("startTime");
+CREATE INDEX "Game_clubId_idx" ON "Game"("clubId");
+ALTER TABLE "Game" ADD CONSTRAINT "Game_clubId_fkey" FOREIGN KEY ("clubId") REFERENCES "Club"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "Game" ADD CONSTRAINT "Game_tableId_fkey" FOREIGN KEY ("tableId") REFERENCES "ClubTable"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "Game" ADD CONSTRAINT "Game_organizerId_fkey" FOREIGN KEY ("organizerId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Game" ADD CONSTRAINT "Game_player1Id_fkey" FOREIGN KEY ("player1Id") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "Game" ADD CONSTRAINT "Game_player2Id_fkey" FOREIGN KEY ("player2Id") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- A table reservation. No payment processing — this is just a record.
 CREATE TABLE "Booking" (
