@@ -13,6 +13,8 @@ export const CreateTournamentSchema = z.object({
   // Target score the event's matches are created with; a judge can still change
   // it on a match that hasn't started.
   pointsToWin: z.union([z.literal(11), z.literal(21)]).optional(),
+  // Sets needed to take a match here; matches finish themselves on reaching it.
+  setsToWin: z.number().int().min(1).max(7).optional(),
   // False keeps the event out of the public feed; its participants still see it.
   isPublic: z.boolean().optional(),
   clubId: z.string().optional(),
@@ -28,6 +30,7 @@ export const UpdateTournamentSchema = z.object({
   tablesCount: z.number().int().min(1).max(50).optional(),
   maxPlayers: z.number().int().min(2).max(500).nullable().optional(),
   pointsToWin: z.union([z.literal(11), z.literal(21)]).optional(),
+  setsToWin: z.number().int().min(1).max(7).optional(),
   isPublic: z.boolean().optional(),
   clubId: z.string().nullable().optional(),
   status: z.enum(["DRAFT", "ACTIVE", "COMPLETED", "CANCELLED"]).optional(),
@@ -64,6 +67,7 @@ export const CreateBookingSchema = z.object({
   // Carried onto the event that the booking creates, so the "11 / 21" choice on
   // the booking screen is what its matches are actually played to.
   pointsToWin: z.union([z.literal(11), z.literal(21)]).optional(),
+  setsToWin: z.number().int().min(1).max(7).optional(),
   // A table held for a private knockabout doesn't belong in the city feed.
   isPublic: z.boolean().optional(),
 });
@@ -90,6 +94,7 @@ export const AddPlayersSchema = z.object({
 
 export const MatchSettingsSchema = z.object({
   pointsToWin: z.union([z.literal(11), z.literal(21)]).optional(),
+  setsToWin: z.number().int().min(1).max(7).optional(),
   tableNumber: z.number().int().min(1).optional(),
   judgeId: z.string().optional(),
 });

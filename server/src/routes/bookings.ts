@@ -53,6 +53,7 @@ bookingRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, res: R
           // The "11 / 21" choice on the booking screen is the target its matches
           // get created with; tournaments keep the 11 default and set it per match.
           ...(data.pointsToWin ? { pointsToWin: data.pointsToWin } : {}),
+          ...(data.setsToWin ? { setsToWin: data.setsToWin } : {}),
           ...(data.isPublic === undefined ? {} : { isPublic: data.isPublic }),
         },
       });

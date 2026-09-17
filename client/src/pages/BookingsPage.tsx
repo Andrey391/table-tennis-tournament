@@ -18,7 +18,7 @@ export default function BookingsPage() {
   const [availability, setAvailability] = useState<any[]>([]);
   const [form, setForm] = useState({
     clubId: "", tableId: "", date: "", startTime: "", durationHours: 1,
-    eventType: "GAME" as "GAME" | "TOURNAMENT", eventTitle: "", pointsToWin: 11 as 11 | 21, isPublic: true,
+    eventType: "GAME" as "GAME" | "TOURNAMENT", eventTitle: "", pointsToWin: 11 as 11 | 21, setsToWin: 1, isPublic: true,
   });
   const [newClub, setNewClub] = useState({ name: "", city: "", address: "", phone: "" });
   const [club, setClub] = useState<any>(null);
@@ -67,6 +67,7 @@ export default function BookingsPage() {
         eventType: form.eventType,
         eventTitle: form.eventTitle || undefined,
         pointsToWin: form.pointsToWin,
+        setsToWin: form.setsToWin,
         isPublic: form.isPublic,
       });
       setForm({ ...form, tableId: "", date: "", startTime: "", durationHours: 1, eventTitle: "" });
@@ -262,6 +263,18 @@ export default function BookingsPage() {
                     className={`flex-1 py-2 rounded-lg text-sm font-medium border ${
                       form.pointsToWin === pts ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00]" : "bg-[#0a1628] text-[#93a8c2] border-[#1c3350]"
                     }`}>{t("match.pts", { n: pts })}</button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("create.setsToWin")}</label>
+              <div className="flex gap-2">
+                {[1, 2, 3].map(n => (
+                  <button key={n} type="button" onClick={() => set("setsToWin", n)}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium border ${
+                      form.setsToWin === n ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00]" : "bg-[#0a1628] text-[#93a8c2] border-[#1c3350]"
+                    }`}>{n}</button>
                 ))}
               </div>
             </div>

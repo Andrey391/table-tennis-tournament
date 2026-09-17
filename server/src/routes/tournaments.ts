@@ -358,6 +358,7 @@ tournamentRouter.post("/:id/pair", authMiddleware, async (req: AuthenticatedRequ
             player2Id: p.player2Id,
             matchIndex: idx,
             pointsToWin: tournament.pointsToWin,
+            setsToWin: tournament.setsToWin,
             tableNumber: (idx % tablesCount) + 1,
           },
         })
