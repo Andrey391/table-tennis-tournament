@@ -377,9 +377,10 @@ app.get("/api/players", authMiddleware, async (_req, res) => {
 
 // A player edits their own profile. Rating is never client-settable — it only moves
 // through Elo after a match — and admins are the only ones who can edit someone else.
-// Anyone signed in can open anyone's profile: who they are, how they are doing,
-// and the matches behind it — "who did I play last Thursday" had no answer before.
-app.get("/api/players/:id", authMiddleware, async (req: any, res) => {
+// Anyone can open anyone's profile, signed in or not. Unauthenticated because a
+// guest browsing the rating table must be able to tap through to a player — the
+// select below is the public shape (no email, no phone), unlike GET /players.
+app.get("/api/players/:id", async (req: any, res) => {
   const d = db();
   const player = await d.user.findUnique({
     where: { id: req.params.id },
