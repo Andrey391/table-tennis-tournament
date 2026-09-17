@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { apiService } from "../services/api";
 import Layout from "../components/Layout";
 import { useT } from "../i18n";
+import { playerName } from "../lib/format";
 
 export default function ResultsPage() {
   const { t } = useT();
@@ -32,9 +33,9 @@ export default function ResultsPage() {
             {live.map((m: any) => (
               <Link key={m.id} to={`/tournament/${selected}/match/${m.id}`}
                 className="flex items-center justify-between bg-[#101f36] border border-yellow-500/20 p-3 rounded-lg">
-                <span className="text-sm flex-1 min-w-0 text-right truncate pr-2">{m.player1?.firstName || "TBD"}</span>
+                <span className="text-sm flex-1 min-w-0 text-right truncate pr-2">{playerName(m.player1)}</span>
                 <span className="px-3 font-mono font-bold text-sm text-yellow-400 shrink-0">{m.score1} - {m.score2}</span>
-                <span className="text-sm flex-1 min-w-0 truncate pl-2">{m.player2?.firstName || "TBD"}</span>
+                <span className="text-sm flex-1 min-w-0 truncate pl-2">{playerName(m.player2)}</span>
               </Link>
             ))}
           </div>
@@ -47,9 +48,9 @@ export default function ResultsPage() {
           <div className="space-y-2">
             {completed.map((m: any) => (
               <div key={m.id} className="flex items-center justify-between bg-[#101f36] p-3 rounded-lg border border-[#1c3350]">
-                <span className="text-sm flex-1 min-w-0 text-right truncate pr-2 text-[#93a8c2]">{m.player1?.firstName || "TBD"}</span>
+                <span className="text-sm flex-1 min-w-0 text-right truncate pr-2 text-[#93a8c2]">{playerName(m.player1)}</span>
                 <span className="px-3 font-mono font-bold text-sm shrink-0">{m.score1} - {m.score2}</span>
-                <span className="text-sm flex-1 min-w-0 truncate pl-2 text-[#93a8c2]">{m.player2?.firstName || "TBD"}</span>
+                <span className="text-sm flex-1 min-w-0 truncate pl-2 text-[#93a8c2]">{playerName(m.player2)}</span>
               </div>
             ))}
           </div>

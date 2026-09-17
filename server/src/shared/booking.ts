@@ -26,3 +26,13 @@ export function startOfUtcDay(date: Date | string): Date {
   const d = new Date(date);
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }
+
+// A booking stores the day and the wall-clock start separately. The event it
+// creates needs one timestamp, so combine them (and add the duration for the end).
+export function bookingStartsAt(day: Date, startTime: string): Date {
+  return new Date(day.getTime() + timeToMinutes(startTime) * 60_000);
+}
+
+export function bookingEndsAt(day: Date, startTime: string, durationHours: number): Date {
+  return new Date(bookingStartsAt(day, startTime).getTime() + Math.round(durationHours * 60) * 60_000);
+}

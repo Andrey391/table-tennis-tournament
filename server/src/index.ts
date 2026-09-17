@@ -13,6 +13,7 @@ import { bookingRouter } from "./routes/bookings.js";
 import { subscriptionRouter } from "./routes/subscriptions.js";
 import { profileRouter } from "./routes/profile.js";
 import { clubRouter } from "./routes/clubs.js";
+import { gameRouter } from "./routes/games.js";
 import { playerRouter, ratingRouter } from "./routes/players.js";
 import { liveRouter, publicRouter } from "./routes/public.js";
 
@@ -32,6 +33,7 @@ app.use("/api/bookings", bookingRouter);
 app.use("/api/subscriptions", subscriptionRouter);
 app.use("/api/profile", profileRouter);
 app.use("/api/clubs", clubRouter);
+app.use("/api/games", gameRouter);
 app.use("/api/players", playerRouter);
 app.use("/api/rating", ratingRouter);
 app.use("/api/live", liveRouter);

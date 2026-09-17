@@ -36,3 +36,16 @@ export function formatSlot(startTime: string, durationHours: number): string {
   const em = endMinutes % 60;
   return `${startTime} - ${String(eh).padStart(2, "0")}:${String(em).padStart(2, "0")}`;
 }
+
+// Everywhere a player is shown, the surname's initial comes with the first name:
+// "Иван П.". Scoreboards and match rows used to print the bare first name, which
+// made two Ivans indistinguishable.
+export function playerName(
+  p?: { firstName?: string | null; lastName?: string | null } | null,
+  fallback = "—",
+): string {
+  const first = p?.firstName?.trim();
+  if (!first) return fallback;
+  const initial = p?.lastName?.trim()?.[0];
+  return initial ? `${first} ${initial.toUpperCase()}.` : first;
+}

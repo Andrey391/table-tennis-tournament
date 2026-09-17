@@ -44,6 +44,23 @@ export const apiService = {
     end: (id: string) => api.post(`/matches/${id}/end`),
     forfeit: (id: string, d: { loserSide: 1 | 2 }) => api.post(`/matches/${id}/forfeit`, d),
   },
+  // Casual games: scored like matches, but they never move anyone's rating.
+  games: {
+    getAll: (params?: { city?: string; clubId?: string; status?: string; from?: string; to?: string }) => api.get("/games", { params }),
+    getMine: () => api.get("/games/mine"),
+    getById: (id: string) => api.get(`/games/${id}`),
+    create: (d: { title?: string; clubId?: string; tableId?: string; startTime?: string; pointsToWin?: 11 | 21 }) => api.post("/games", d),
+    update: (id: string, d: { title?: string; pointsToWin?: 11 | 21 }) => api.put(`/games/${id}`, d),
+    join: (id: string) => api.post(`/games/${id}/join`),
+    leave: (id: string) => api.post(`/games/${id}/leave`),
+    start: (id: string) => api.post(`/games/${id}/start`),
+    score: (id: string, d: { side: 1 | 2 }) => api.post(`/games/${id}/score`, d),
+    undo: (id: string) => api.post(`/games/${id}/undo`),
+    recordLet: (id: string) => api.post(`/games/${id}/let`),
+    end: (id: string) => api.post(`/games/${id}/end`),
+    forfeit: (id: string, d: { loserSide: 1 | 2 }) => api.post(`/games/${id}/forfeit`, d),
+    remove: (id: string) => api.delete(`/games/${id}`),
+  },
   live: {
     get: (tournamentId: string) => api.get(`/live/${tournamentId}`),
   },
@@ -66,7 +83,7 @@ export const apiService = {
   },
   bookings: {
     getMine: () => api.get("/bookings/mine"),
-    create: (d: { clubId: string; tableId?: string; date: string; startTime: string; durationHours: number }) => api.post("/bookings", d),
+    create: (d: { clubId: string; tableId?: string; date: string; startTime: string; durationHours: number; eventType: "GAME" | "TOURNAMENT"; eventTitle?: string; pointsToWin?: 11 | 21 }) => api.post("/bookings", d),
     remove: (id: string) => api.delete(`/bookings/${id}`),
   },
   subscriptions: {
