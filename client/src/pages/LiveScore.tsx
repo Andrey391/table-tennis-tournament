@@ -2,7 +2,7 @@ import { useParams } from "react-router-dom";
 import { useEffect, useState, useCallback } from "react";
 import { apiService } from "../services/api";
 import { useT } from "../i18n";
-import { playerName, liveSet, setScores } from "../lib/format";
+import { playerName, setsPlayed } from "../lib/format";
 
 export default function LiveScore() {
   const { tournamentId } = useParams<{ tournamentId: string }>();
@@ -33,21 +33,20 @@ export default function LiveScore() {
               <div key={m.id} className="bg-[#101f36] p-5 rounded-lg text-center border border-yellow-500/30">
                 <p className="text-[11px] text-[#4d6480] uppercase tracking-wider mb-1">{t("tournament.table")} {m.tableNumber || "?"}</p>
                 <p className="text-sm text-[#93a8c2] mb-3">
-                  {t("match.setsScore")} {m.setsWon1}:{m.setsWon2}
-                  {setScores(m) && <span className="text-[#4d6480] font-mono"> ({setScores(m)})</span>}
+                  {t("match.setsPlayed", { n: setsPlayed(m) })}
                 </p>
                 <div className="flex justify-around items-center">
                   <div className="text-center flex-1">
                     <p className="text-sm font-medium text-[#3b82f6] truncate px-1">{playerName(m.player1, t("common.none"))}</p>
-                    <p className="text-5xl font-bold mt-2 text-[#3b82f6]">{liveSet(m)?.score1 ?? 0}</p>
+                    <p className="text-5xl font-bold mt-2 text-[#3b82f6]">{m.setsWon1}</p>
                   </div>
                   <p className="text-xl text-[#333] px-2">:</p>
                   <div className="text-center flex-1">
                     <p className="text-sm font-medium text-[#ef4444] truncate px-1">{playerName(m.player2, t("common.none"))}</p>
-                    <p className="text-5xl font-bold mt-2 text-[#ef4444]">{liveSet(m)?.score2 ?? 0}</p>
+                    <p className="text-5xl font-bold mt-2 text-[#ef4444]">{m.setsWon2}</p>
                   </div>
                 </div>
-                <p className="text-[11px] text-[#4d6480] mt-3">{t("match.raceTo", { n: m.pointsToWin })}</p>
+                <p className="text-[11px] text-[#4d6480] mt-3">{t("match.upTo", { n: m.setsToWin ?? 1 })}</p>
               </div>
             ))}
           </div>

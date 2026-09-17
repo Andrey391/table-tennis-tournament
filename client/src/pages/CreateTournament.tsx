@@ -8,7 +8,7 @@ export default function CreateTournament() {
   const navigate = useNavigate();
   const { t } = useT();
   const [clubs, setClubs] = React.useState<any[]>([]);
-  const [form, setForm] = React.useState({ name: "", description: "", clubId: "", startTime: "", endTime: "", tablesCount: 4, maxPlayers: "", minRating: "", maxRating: "", pointsToWin: 11 as 11 | 21, setsToWin: 1 });
+  const [form, setForm] = React.useState({ name: "", description: "", clubId: "", startTime: "", endTime: "", tablesCount: 4, maxPlayers: "", minRating: "", maxRating: "", setsToWin: 1 });
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
 
@@ -26,7 +26,6 @@ export default function CreateTournament() {
       startTime: form.startTime ? new Date(form.startTime).toISOString() : undefined,
       endTime: form.endTime ? new Date(form.endTime).toISOString() : undefined,
       tablesCount: form.tablesCount,
-      pointsToWin: form.pointsToWin,
       setsToWin: form.setsToWin,
       maxPlayers: form.maxPlayers ? +form.maxPlayers : undefined,
       minRating: form.minRating ? +form.minRating : undefined,
@@ -82,27 +81,9 @@ export default function CreateTournament() {
         </div>
         <p className="text-xs text-[#4d6480] -mt-2">{t("create.maxPlayersHint")}</p>
         <div>
-          <label className={label}>{t("create.pointsToWin")}</label>
-          <div className="flex gap-2">
-            {([11, 21] as const).map(pts => (
-              <button key={pts} type="button" onClick={() => set("pointsToWin", pts)}
-                className={`flex-1 py-2.5 rounded-lg text-sm font-medium border ${
-                  form.pointsToWin === pts ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00]" : "bg-[#0a1628] text-[#93a8c2] border-[#1c3350]"
-                }`}>{t("match.pts", { n: pts })}</button>
-            ))}
-          </div>
-          <p className="text-xs text-[#4d6480] mt-1.5">{t("create.pointsToWinHint")}</p>
-        </div>
-        <div>
           <label className={label}>{t("create.setsToWin")}</label>
-          <div className="flex gap-2">
-            {[1, 2, 3].map(n => (
-              <button key={n} type="button" onClick={() => set("setsToWin", n)}
-                className={`flex-1 py-2.5 rounded-lg text-sm font-medium border ${
-                  form.setsToWin === n ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00]" : "bg-[#0a1628] text-[#93a8c2] border-[#1c3350]"
-                }`}>{n}</button>
-            ))}
-          </div>
+          <input type="number" min={1} value={form.setsToWin}
+            onChange={e => set("setsToWin", Math.max(1, +e.target.value || 1))} className={field} />
           <p className="text-xs text-[#4d6480] mt-1.5">{t("create.setsToWinHint")}</p>
         </div>
         <div>

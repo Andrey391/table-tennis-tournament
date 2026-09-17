@@ -39,32 +39,28 @@ publicRouter.get("/tournament/:id/standings", async (req, res: Response) => {
     include: {
       // A player who left mid-event keeps the matches they already played.
       players: { where: { status: { in: ["REGISTERED", "WITHDRAWN"] } }, include: { user: { select: playerSelect } } },
-      matches: { where: { status: "COMPLETED" }, select: { player1Id: true, player2Id: true, setsWon1: true, setsWon2: true, sets: { select: { score1: true, score2: true, status: true } } } },
+      matches: { where: { status: "COMPLETED" }, select: { player1Id: true, player2Id: true, setsWon1: true, setsWon2: true } },
     },
   });
   if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
 
-  const stats = new Map<string, { userId: string; firstName: string; lastName: string; club: string | null; rating: number; wins: number; losses: number; setsWon: number; setsLost: number; pointsFor: number; pointsAgainst: number }>();
+  const stats = new Map<string, { userId: string; firstName: string; lastName: string; club: string | null; rating: number; wins: number; losses: number; setsWon: number; setsLost: number }>();
   for (const p of tournament.players) {
     if (!p.user) continue;
-    stats.set(p.userId, { userId: p.userId, firstName: p.user.firstName, lastName: p.user.lastName, club: p.user.club, rating: p.user.rating, wins: 0, losses: 0, setsWon: 0, setsLost: 0, pointsFor: 0, pointsAgainst: 0 });
+    stats.set(p.userId, { userId: p.userId, firstName: p.user.firstName, lastName: p.user.lastName, club: p.user.club, rating: p.user.rating, wins: 0, losses: 0, setsWon: 0, setsLost: 0 });
   }
-  // Matches are won on sets; points aggregate across every set actually played.
+  // Matches are won on sets, and sets are all there is to aggregate — the
+  // rally-by-rally score is not recorded any more.
   for (const m of tournament.matches) {
     if (!m.player1Id || !m.player2Id) continue;
     const s1 = stats.get(m.player1Id);
     const s2 = stats.get(m.player2Id);
     if (!s1 || !s2) continue;
-    for (const set of m.sets) {
-      if (set.status !== "COMPLETED") continue;
-      s1.pointsFor += set.score1; s1.pointsAgainst += set.score2;
-      s2.pointsFor += set.score2; s2.pointsAgainst += set.score1;
-    }
     s1.setsWon += m.setsWon1; s1.setsLost += m.setsWon2;
     s2.setsWon += m.setsWon2; s2.setsLost += m.setsWon1;
     if (m.setsWon1 > m.setsWon2) { s1.wins++; s2.losses++; }
     else if (m.setsWon2 > m.setsWon1) { s2.wins++; s1.losses++; }
   }
   res.json(Array.from(stats.values()).sort((a, b) =>
-    b.wins - a.wins || (b.setsWon - b.setsLost) - (a.setsWon - a.setsLost) || (b.pointsFor - b.pointsAgainst) - (a.pointsFor - a.pointsAgainst)));
+    b.wins - a.wins || (b.setsWon - b.setsLost) - (a.setsWon - a.setsLost)));
 });

@@ -50,9 +50,7 @@ bookingRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, res: R
       const event = await tx.tournament.create({
         data: {
           kind: data.eventType, name: title, clubId: club.id, startTime: startsAt, endTime: endsAt, organizerId: userId,
-          // The "11 / 21" choice on the booking screen is the target its matches
-          // get created with; tournaments keep the 11 default and set it per match.
-          ...(data.pointsToWin ? { pointsToWin: data.pointsToWin } : {}),
+          // How many sets its matches are played to, chosen on the booking screen.
           ...(data.setsToWin ? { setsToWin: data.setsToWin } : {}),
           ...(data.isPublic === undefined ? {} : { isPublic: data.isPublic }),
         },

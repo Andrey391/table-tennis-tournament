@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { apiService } from "../services/api";
 import Layout from "../components/Layout";
 import { useT } from "../i18n";
-import { playerName, matchScoreLine, setScores, liveSet } from "../lib/format";
+import { playerName, matchScoreLine } from "../lib/format";
 
 export default function ResultsPage() {
   const { t } = useT();
@@ -46,7 +46,6 @@ export default function ResultsPage() {
                 <span className="text-sm flex-1 min-w-0 text-right truncate pr-2">{playerName(m.player1)}</span>
                 <span className="px-3 shrink-0 text-center text-yellow-400">
                   <span className="block font-mono font-bold text-sm">{matchScoreLine(m)}</span>
-                  {liveSet(m) && <span className="block text-[10px] font-mono">{liveSet(m)!.score1}:{liveSet(m)!.score2}</span>}
                 </span>
                 <span className="text-sm flex-1 min-w-0 truncate pl-2">{playerName(m.player2)}</span>
               </Link>
@@ -64,7 +63,6 @@ export default function ResultsPage() {
                 <span className="text-sm flex-1 min-w-0 text-right truncate pr-2 text-[#93a8c2]">{playerName(m.player1)}</span>
                 <span className="px-3 shrink-0 text-center">
                   <span className="block font-mono font-bold text-sm">{matchScoreLine(m)}</span>
-                  {setScores(m) && <span className="block text-[10px] text-[#4d6480] font-mono">{setScores(m)}</span>}
                 </span>
                 <span className="text-sm flex-1 min-w-0 truncate pl-2 text-[#93a8c2]">{playerName(m.player2)}</span>
               </div>

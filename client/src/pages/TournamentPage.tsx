@@ -5,7 +5,7 @@ import { useAuth } from "../context/AuthContext";
 import Layout from "../components/Layout";
 import Avatar from "../components/Avatar";
 import { useT } from "../i18n";
-import { formatEventDay, formatTimeRange, playerName, matchScoreLine, setScores } from "../lib/format";
+import { formatEventDay, formatTimeRange, playerName, matchScoreLine } from "../lib/format";
 
 export default function TournamentPage() {
   const { id } = useParams<{ id: string }>();
@@ -129,7 +129,6 @@ export default function TournamentPage() {
     maxPlayers: tournament.maxPlayers ?? "",
     minRating: tournament.minRating ?? "",
     maxRating: tournament.maxRating ?? "",
-    pointsToWin: tournament.pointsToWin ?? 11,
     setsToWin: tournament.setsToWin ?? 1,
     isPublic: tournament.isPublic !== false,
   });
@@ -149,7 +148,6 @@ export default function TournamentPage() {
         maxPlayers: edit.maxPlayers === "" ? null : +edit.maxPlayers,
         minRating: edit.minRating === "" ? null : +edit.minRating,
         maxRating: edit.maxRating === "" ? null : +edit.maxRating,
-        pointsToWin: edit.pointsToWin,
         setsToWin: edit.setsToWin,
         isPublic: edit.isPublic,
       });
@@ -270,26 +268,10 @@ export default function TournamentPage() {
             <input type="number" value={edit.maxRating} onChange={e => setEdit({ ...edit, maxRating: e.target.value })} placeholder={t("create.max")} className={editField} />
           </div>
           <div>
-            <label className="block text-xs text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("create.pointsToWin")}</label>
-            <div className="flex gap-2">
-              {([11, 21] as const).map(pts => (
-                <button key={pts} type="button" onClick={() => setEdit({ ...edit, pointsToWin: pts })}
-                  className={`flex-1 py-2 rounded-lg text-sm font-medium border ${
-                    edit.pointsToWin === pts ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00]" : "bg-[#0a1628] text-[#93a8c2] border-[#1c3350]"
-                  }`}>{t("match.pts", { n: pts })}</button>
-              ))}
-            </div>
-          </div>
-          <div>
             <label className="block text-xs text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("create.setsToWin")}</label>
-            <div className="flex gap-2">
-              {[1, 2, 3].map(n => (
-                <button key={n} type="button" onClick={() => setEdit({ ...edit, setsToWin: n })}
-                  className={`flex-1 py-2 rounded-lg text-sm font-medium border ${
-                    edit.setsToWin === n ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00]" : "bg-[#0a1628] text-[#93a8c2] border-[#1c3350]"
-                  }`}>{n}</button>
-              ))}
-            </div>
+            <input type="number" min={1} value={edit.setsToWin}
+              onChange={e => setEdit({ ...edit, setsToWin: Math.max(1, +e.target.value || 1) })} className={editField} />
+            <p className="text-xs text-[#4d6480] mt-1.5">{t("create.setsToWinHint")}</p>
           </div>
           <label className="flex items-center gap-2 text-sm text-[#93a8c2]">
             <input type="checkbox" checked={!edit.isPublic} onChange={e => setEdit({ ...edit, isPublic: !e.target.checked })} className="w-4 h-4" />
@@ -511,7 +493,6 @@ function MatchRow({ m, tournamentId, tableLabel }: { m: any; tournamentId: strin
       <span className="flex-1 min-w-0 text-right text-sm truncate pr-2">{playerName(m.player1)}</span>
       <span className={`px-3 shrink-0 text-center ${m.status === "IN_PROGRESS" ? "text-yellow-400" : "text-[#93a8c2]"}`}>
         <span className="block font-mono font-bold text-sm">{matchScoreLine(m)}</span>
-        {setScores(m) && <span className="block text-[10px] text-[#4d6480] font-mono">{setScores(m)}</span>}
       </span>
       <span className="flex-1 min-w-0 text-sm truncate pl-2">{playerName(m.player2)}</span>
       {m.tableNumber && <span className="ml-2 text-[10px] text-[#4d6480] shrink-0">{tableLabel} {m.tableNumber}</span>}

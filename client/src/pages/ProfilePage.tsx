@@ -8,8 +8,7 @@ import { useT, type Lang } from "../i18n";
 import { playerName } from "../lib/format";
 
 type Tally = { played: number; wins: number; losses: number };
-type Bucket = { played: number; wins: number };
-type Level = { matches: Tally; sets: Tally; byTarget: Record<string, Bucket> };
+type Level = { matches: Tally; sets: Tally };
 type Stats = {
   events: { tournaments: number; games: number };
   tournaments: Level;
@@ -65,21 +64,6 @@ export default function ProfilePage() {
         ))}
       </div>
 
-      <p className={`${label} mt-4 mb-2`}>{t("stats.byLength")}</p>
-      <div className="grid grid-cols-2 gap-2">
-        {([["11", "stats.short11"], ["21", "stats.long21"]] as const).map(([key, labelKey]) => {
-          const b = level?.byTarget?.[key];
-          return (
-            <div key={key} className="bg-[#0a1628] rounded-lg border border-[#1c3350] p-2.5">
-              <p className="text-[11px] text-[#6b84a0] uppercase tracking-wider">{t(labelKey)}</p>
-              <p className="text-lg font-bold mt-0.5">{b?.played ?? 0}</p>
-              <p className="text-[11px] text-[#4d6480]">
-                {b && b.played > 0 ? t("stats.winsOf", { wins: b.wins, played: b.played }) : t("stats.noneYet")}
-              </p>
-            </div>
-          );
-        })}
-      </div>
     </div>
   );
 

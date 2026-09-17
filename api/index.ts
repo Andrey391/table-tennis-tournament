@@ -158,19 +158,6 @@ function generateRoundPairings(candidates: RoundCandidate[], isFirstRound: boole
   return { pairs, byeUserId };
 }
 
-function isDeuce(score1: number, score2: number, pointsToWin: number) {
-  return score1 >= pointsToWin - 1 && score2 >= pointsToWin - 1;
-}
-function getMatchWinner(score1: number, score2: number, pointsToWin: number) {
-  if (score1 >= pointsToWin && score1 - score2 >= 2) return 1;
-  if (score2 >= pointsToWin && score2 - score1 >= 2) return 2;
-  return null;
-}
-function nextServerSide(totalPoints: number, currentServer: number, deuceMode: boolean) {
-  const shouldSwitch = deuceMode ? totalPoints % 2 !== 0 : Math.floor(totalPoints / 2) % 2 !== 0;
-  return shouldSwitch ? (currentServer === 1 ? 2 : 1) : currentServer;
-}
-
 const ELO_K = 32;
 function computeEloDelta(winnerRating: number, loserRating: number, k: number = ELO_K) {
   const expectedWinner = 1 / (1 + Math.pow(10, (loserRating - winnerRating) / 400));
@@ -329,12 +316,12 @@ app.get("/api/auth/me", authMiddleware, async (req: any, res) => {
 
 // Play has three levels and the profile reports all three:
 //   event (tournament or game) -> match -> set ("партия")
-// A match is won on sets; a set is the thing actually played to 11 or 21, which
-// is why the short/long split lives at set level.
+// A set is the unit of scoring, so both tallies come straight off the match's set
+// counters. There is no split by target score any more: the rally-by-rally score
+// is not recorded, so there is nothing to split by.
 function summariseMatches(matches: any[], userId: string) {
   const matchTally = { played: 0, wins: 0, losses: 0 };
   const setTally = { played: 0, wins: 0, losses: 0 };
-  const byTarget: any = { 11: { played: 0, wins: 0 }, 21: { played: 0, wins: 0 } };
 
   for (const m of matches) {
     const isP1 = m.player1Id === userId;
@@ -345,17 +332,11 @@ function summariseMatches(matches: any[], userId: string) {
     if (mine > theirs) matchTally.wins++;
     else if (theirs > mine) matchTally.losses++;
 
-    for (const set of m.sets || []) {
-      if (set.status !== "COMPLETED") continue;
-      const won = set.winner === (isP1 ? 1 : 2);
-      setTally.played++;
-      if (won) setTally.wins++; else setTally.losses++;
-      if (!byTarget[String(set.pointsToWin)]) byTarget[String(set.pointsToWin)] = { played: 0, wins: 0 };
-      byTarget[String(set.pointsToWin)].played++;
-      if (won) byTarget[String(set.pointsToWin)].wins++;
-    }
+    setTally.played += mine + theirs;
+    setTally.wins += mine;
+    setTally.losses += theirs;
   }
-  return { matches: matchTally, sets: setTally, byTarget };
+  return { matches: matchTally, sets: setTally };
 }
 
 app.get("/api/profile/stats", authMiddleware, async (req: any, res) => {
@@ -370,7 +351,6 @@ app.get("/api/profile/stats", authMiddleware, async (req: any, res) => {
       select: {
         player1Id: true, setsWon1: true, setsWon2: true,
         tournament: { select: { kind: true } },
-        sets: { select: { score1: true, score2: true, pointsToWin: true, status: true, winner: true } },
       },
     }),
   ]);
@@ -413,7 +393,7 @@ app.get("/api/players/:id", authMiddleware, async (req: any, res) => {
       player1: { select: { id: true, firstName: true, lastName: true, rating: true } },
       player2: { select: { id: true, firstName: true, lastName: true, rating: true } },
       tournament: { select: { id: true, name: true, kind: true } },
-      sets: { select: { score1: true, score2: true, status: true }, orderBy: { index: "asc" } },
+      sets: { select: { index: true, winner: true, status: true }, orderBy: { index: "asc" } },
     },
     orderBy: { endedAt: "desc" },
     take: 25,
@@ -509,8 +489,8 @@ app.put("/api/tournaments/:id", authMiddleware, async (req: any, res) => {
   try {
     const tournament = await loadOwnedTournament(res, req.params.id, req.user.userId);
     if (!tournament) return;
-    const { name, description, status, startTime, endTime, tablesCount, maxPlayers, clubId, minRating, maxRating, pointsToWin, setsToWin, isPublic } = req.body;
-    const updated = await db().tournament.update({ where: { id: tournament.id }, data: { name, description, status, startTime, endTime, tablesCount, maxPlayers, clubId, minRating, maxRating, pointsToWin, setsToWin, isPublic } });
+    const { name, description, status, startTime, endTime, tablesCount, maxPlayers, clubId, minRating, maxRating, setsToWin, isPublic } = req.body;
+    const updated = await db().tournament.update({ where: { id: tournament.id }, data: { name, description, status, startTime, endTime, tablesCount, maxPlayers, clubId, minRating, maxRating, setsToWin, isPublic } });
     res.json(updated);
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
@@ -710,7 +690,7 @@ app.post("/api/tournaments/:id/pair", authMiddleware, async (req: any, res) => {
 
     const tablesCount = tournament.tablesCount || 1;
     await d.$transaction([
-      ...pairs.map((p, idx) => d.match.create({ data: { tournamentId: tournament.id, round: newRound, player1Id: p.player1Id, player2Id: p.player2Id, matchIndex: idx, pointsToWin: tournament.pointsToWin, setsToWin: tournament.setsToWin, tableNumber: (idx % tablesCount) + 1 } })),
+      ...pairs.map((p, idx) => d.match.create({ data: { tournamentId: tournament.id, round: newRound, player1Id: p.player1Id, player2Id: p.player2Id, matchIndex: idx, setsToWin: tournament.setsToWin, tableNumber: (idx % tablesCount) + 1 } })),
       d.tournament.update({ where: { id: tournament.id }, data: { status: "ACTIVE" } }),
       // Who sat this one out, so the round can say so rather than the client
       // inferring it from "has no match here".
@@ -733,7 +713,7 @@ app.get("/api/tournaments/:id/standings", async (req, res) => {
       include: {
         // Someone who left mid-event keeps the matches they already played.
         players: { where: { status: { in: ["REGISTERED", "WITHDRAWN"] } }, include: { user: { select: playerSelect } } },
-        matches: { where: { status: "COMPLETED" }, select: { player1Id: true, player2Id: true, setsWon1: true, setsWon2: true, sets: { select: { score1: true, score2: true, status: true } } } },
+        matches: { where: { status: "COMPLETED" }, select: { player1Id: true, player2Id: true, setsWon1: true, setsWon2: true } },
       },
     });
     if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
@@ -741,26 +721,22 @@ app.get("/api/tournaments/:id/standings", async (req, res) => {
     const stats = new Map<string, any>();
     for (const pl of tournament.players) {
       if (!pl.user) continue;
-      stats.set(pl.userId, { userId: pl.userId, firstName: pl.user.firstName, lastName: pl.user.lastName, club: pl.user.club, rating: pl.user.rating, wins: 0, losses: 0, setsWon: 0, setsLost: 0, pointsFor: 0, pointsAgainst: 0 });
+      stats.set(pl.userId, { userId: pl.userId, firstName: pl.user.firstName, lastName: pl.user.lastName, club: pl.user.club, rating: pl.user.rating, wins: 0, losses: 0, setsWon: 0, setsLost: 0 });
     }
-    // Matches are won on sets; points aggregate across every set actually played.
+    // Matches are won on sets, and sets are all there is to aggregate - the
+    // rally-by-rally score is not recorded any more.
     for (const m of tournament.matches) {
       if (!m.player1Id || !m.player2Id) continue;
       const s1 = stats.get(m.player1Id);
       const s2 = stats.get(m.player2Id);
       if (!s1 || !s2) continue;
-      for (const set of m.sets) {
-        if (set.status !== "COMPLETED") continue;
-        s1.pointsFor += set.score1; s1.pointsAgainst += set.score2;
-        s2.pointsFor += set.score2; s2.pointsAgainst += set.score1;
-      }
       s1.setsWon += m.setsWon1; s1.setsLost += m.setsWon2;
       s2.setsWon += m.setsWon2; s2.setsLost += m.setsWon1;
       if (m.setsWon1 > m.setsWon2) { s1.wins++; s2.losses++; }
       else if (m.setsWon2 > m.setsWon1) { s2.wins++; s1.losses++; }
     }
     const result = Array.from(stats.values()).sort((a: any, b: any) =>
-      b.wins - a.wins || (b.setsWon - b.setsLost) - (a.setsWon - a.setsLost) || (b.pointsFor - b.pointsAgainst) - (a.pointsFor - a.pointsAgainst));
+      b.wins - a.wins || (b.setsWon - b.setsLost) - (a.setsWon - a.setsLost));
     res.json(result);
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
@@ -832,16 +808,15 @@ app.post("/api/bookings", authMiddleware, async (req: any, res) => {
     const startsAt = bookingStartsAt(day, startTime);
     const endsAt = bookingEndsAt(day, startTime, hours);
     const title = (req.body.eventTitle || "").trim() || club.name;
-    const { pointsToWin, setsToWin, isPublic } = req.body;
+    const { setsToWin, isPublic } = req.body;
 
     const booking = await d.$transaction(async (tx: any) => {
       // A game and a tournament are the same row; `kind` is the only difference.
       const event = await tx.tournament.create({
         data: {
           kind: isTournament ? "TOURNAMENT" : "GAME", name: title, clubId, startTime: startsAt, endTime: endsAt, organizerId: userId,
-          // The "11 / 21" choice on the booking screen is the target its matches
-          // get created with, and a private slot stays out of the city feed.
-          ...(pointsToWin === 11 || pointsToWin === 21 ? { pointsToWin } : {}),
+          // How many sets its matches are played to, chosen on the booking screen;
+          // a private slot stays out of the city feed.
           ...(setsToWin ? { setsToWin: Number(setsToWin) } : {}),
           ...(isPublic === undefined ? {} : { isPublic: !!isPublic }),
         },
@@ -1038,8 +1013,8 @@ app.put("/api/matches/:id", authMiddleware, async (req: any, res) => {
     const match = await loadOwnedMatch(res, req.params.id, req.user.userId);
     if (!match) return;
     if (match.status !== "NOT_STARTED") { res.status(400).json({ error: "Can only change settings before the match starts" }); return; }
-    const { pointsToWin, tableNumber, judgeId, setsToWin } = req.body;
-    await db().match.update({ where: { id: match.id }, data: { pointsToWin, tableNumber, judgeId, setsToWin } });
+    const { tableNumber, judgeId, setsToWin } = req.body;
+    await db().match.update({ where: { id: match.id }, data: { tableNumber, judgeId, setsToWin } });
     res.json(await reloadMatch(match.id));
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
@@ -1050,88 +1025,57 @@ app.post("/api/matches/:id/start", authMiddleware, async (req: any, res) => {
     const d = db();
     const match = await loadOwnedMatch(res, req.params.id, req.user.userId);
     if (!match) return;
-    await d.$transaction([
-      d.match.update({
-        where: { id: match.id },
-        data: { status: "IN_PROGRESS", startedAt: match.startedAt || new Date(), judgeId: req.user.userId },
-      }),
-      ...(match.sets.length === 0
-        ? [d.matchSet.create({ data: { matchId: match.id, index: 1, pointsToWin: match.pointsToWin } })]
-        : []),
-    ]);
+    // A set is not created up front any more: a set only exists once someone has
+    // won it, because a set is recorded as a result rather than played out.
+    await d.match.update({
+      where: { id: match.id },
+      data: { status: "IN_PROGRESS", startedAt: match.startedAt || new Date(), judgeId: req.user.userId },
+    });
     res.json(await reloadMatch(match.id));
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
-// Scores a point in the current set. Finishing a set does NOT finish the match —
-// the next set opens straight away and the judge decides when to stop.
+// Records one set for a side. The unit of scoring is the set ("partiya"), not the
+// point: the judge marks who took the set and nothing tracks the rally-by-rally
+// score, so there is no deuce, no service rotation and no target score to reach.
+// A match runs for as many sets as the pair choose to play and is settled by /end.
 app.post("/api/matches/:id/score", authMiddleware, async (req: any, res) => {
   try {
     const d = db();
     const match = await loadOwnedMatch(res, req.params.id, req.user.userId);
     if (!match) return;
     if (match.status !== "IN_PROGRESS") { res.status(400).json({ error: "Match is not in progress" }); return; }
-    const set = currentSet(match);
-    if (!set) { res.status(400).json({ error: "No set in progress" }); return; }
 
     const { side } = req.body;
     if (side !== 1 && side !== 2) { res.status(400).json({ error: "side must be 1 or 2" }); return; }
-    const score1 = side === 1 ? set.score1 + 1 : set.score1;
-    const score2 = side === 2 ? set.score2 + 1 : set.score2;
-    const deuce = isDeuce(score1, score2, set.pointsToWin);
-    const server = nextServerSide(score1 + score2, set.serverSide, deuce);
-    const setWinner = getMatchWinner(score1, score2, set.pointsToWin);
 
-    await d.matchSet.update({
-      where: { id: set.id },
-      data: {
-        score1, score2, serverSide: server, lastScorer: side, prevServerSide: set.serverSide,
-        status: setWinner ? "COMPLETED" : "IN_PROGRESS",
-        winner: setWinner,
-        endedAt: setWinner ? new Date() : null,
-      },
-    });
+    const nextIndex = match.sets.length ? Math.max(...match.sets.map((x: any) => x.index)) + 1 : 1;
+    const setsWon1 = side === 1 ? match.setsWon1 + 1 : match.setsWon1;
+    const setsWon2 = side === 2 ? match.setsWon2 + 1 : match.setsWon2;
 
-    let matchOver = false;
-    if (setWinner) {
-      // Credit the set, then decide whether that was the match. Everything that
-      // counts - the profile tallies, the standings, Elo - reads COMPLETED matches
-      // only, so a match that waits for someone to remember a button is a match
-      // that never happened. `setsToWin` defaults to 1: one set to 11 and done.
-      const setsWon1 = setWinner === 1 ? match.setsWon1 + 1 : match.setsWon1;
-      const setsWon2 = setWinner === 2 ? match.setsWon2 + 1 : match.setsWon2;
-      matchOver = Math.max(setsWon1, setsWon2) >= match.setsToWin;
+    await d.$transaction([
+      // The set row is the per-set history the match keeps; who took it is the
+      // whole content of a set.
+      d.matchSet.create({ data: { matchId: match.id, index: nextIndex, status: "COMPLETED", winner: side, endedAt: new Date() } }),
+      d.match.update({ where: { id: match.id }, data: { setsWon1, setsWon2 } }),
+    ]);
 
-      await d.$transaction([
-        d.match.update({ where: { id: match.id }, data: { setsWon1, setsWon2 } }),
-        // Only open the next set if there is still a match to play.
-        ...(matchOver ? [] : [d.matchSet.create({ data: { matchId: match.id, index: set.index + 1, pointsToWin: match.pointsToWin } })]),
-      ]);
-
-      if (matchOver) await finishMatch({ ...match, setsWon1, setsWon2 });
-    }
-
-    res.json({ match: await reloadMatch(match.id), deuce, setWinner, matchOver });
+    res.json({ match: await reloadMatch(match.id), setWinner: side });
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
-// Reverses exactly one point in the current set. If that set only exists because
-// the previous one just ended, step back into the previous set and reopen it.
+// Takes back the last recorded set. One step, no history beyond that.
 app.post("/api/matches/:id/undo", authMiddleware, async (req: any, res) => {
   try {
     const d = db();
     const match = await loadOwnedMatch(res, req.params.id, req.user.userId);
     if (!match) return;
 
-    const open = currentSet(match);
-    const target = open && open.lastScorer != null
-      ? open
-      : [...match.sets].reverse().find((x: any) => x.status === "COMPLETED" && x.lastScorer != null) || null;
-    if (!target) { res.status(400).json({ error: "Nothing to undo" }); return; }
+    const last = [...match.sets].sort((a: any, b: any) => a.index - b.index).pop() || null;
+    if (!last || !last.winner) { res.status(400).json({ error: "Nothing to undo" }); return; }
 
-    // A match now ends on the point that wins its last set, so undoing that point
-    // has to reopen the match and hand the rating back - otherwise a mis-tap on
-    // match point would be unfixable.
+    // A settled match can be taken back too: reopen it and hand the rating back,
+    // otherwise a match ended by mistake would be unfixable.
     if (match.status === "COMPLETED") {
       await revertEloUpdate(match);
       await d.match.update({ where: { id: match.id }, data: { status: "IN_PROGRESS", endedAt: null, eloDelta: null } });
@@ -1139,40 +1083,13 @@ app.post("/api/matches/:id/undo", authMiddleware, async (req: any, res) => {
       await d.tournament.updateMany({ where: { id: match.tournamentId, status: "COMPLETED" }, data: { status: "ACTIVE" } });
     }
 
-    const reopening = target.status === "COMPLETED";
-    const ops: any[] = [
-      d.matchSet.update({
-        where: { id: target.id },
-        data: {
-          score1: target.lastScorer === 1 ? Math.max(target.score1 - 1, 0) : target.score1,
-          score2: target.lastScorer === 2 ? Math.max(target.score2 - 1, 0) : target.score2,
-          serverSide: target.prevServerSide ?? target.serverSide,
-          lastScorer: null, prevServerSide: null,
-          status: "IN_PROGRESS", winner: null, endedAt: null,
-        },
-      }),
-    ];
-    if (reopening) {
-      ops.push(d.match.update({
+    await d.$transaction([
+      d.matchSet.delete({ where: { id: last.id } }),
+      d.match.update({
         where: { id: match.id },
-        data: target.winner === 1 ? { setsWon1: { decrement: 1 } } : { setsWon2: { decrement: 1 } },
-      }));
-      if (open && open.id !== target.id && open.score1 === 0 && open.score2 === 0) {
-        ops.push(d.matchSet.delete({ where: { id: open.id } }));
-      }
-    }
-    await d.$transaction(ops);
-    res.json({ match: await reloadMatch(match.id) });
-  } catch (e: any) { res.status(400).json({ error: e.message }); }
-});
-
-app.post("/api/matches/:id/let", authMiddleware, async (req: any, res) => {
-  try {
-    const match = await loadOwnedMatch(res, req.params.id, req.user.userId);
-    if (!match) return;
-    const set = currentSet(match);
-    if (!set) { res.status(400).json({ error: "No set in progress" }); return; }
-    await db().matchSet.update({ where: { id: set.id }, data: { letCount: { increment: 1 } } });
+        data: last.winner === 1 ? { setsWon1: { decrement: 1 } } : { setsWon2: { decrement: 1 } },
+      }),
+    ]);
     res.json({ match: await reloadMatch(match.id) });
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
@@ -1198,19 +1115,14 @@ app.post("/api/matches/:id/forfeit", authMiddleware, async (req: any, res) => {
     const { loserSide } = req.body;
     if (loserSide !== 1 && loserSide !== 2) { res.status(400).json({ error: "loserSide must be 1 or 2" }); return; }
 
-    // A walkover is recorded as a single set to the target score, so the sets
-    // tally and the per-set stats stay consistent with a played match.
+    // A walkover is recorded as a single set for whoever turned up, so the sets
+    // tally reads the same as a played match.
     const nextIndex = match.sets.length ? Math.max(...match.sets.map((x: any) => x.index)) + 1 : 1;
-    const open = currentSet(match);
     await d.$transaction([
-      ...(open ? [d.matchSet.delete({ where: { id: open.id } })] : []),
       d.matchSet.create({
         data: {
           matchId: match.id,
-          index: open ? open.index : nextIndex,
-          pointsToWin: match.pointsToWin,
-          score1: loserSide === 1 ? 0 : match.pointsToWin,
-          score2: loserSide === 2 ? 0 : match.pointsToWin,
+          index: nextIndex,
           status: "COMPLETED",
           winner: loserSide === 1 ? 2 : 1,
           endedAt: new Date(),
@@ -1258,33 +1170,29 @@ app.get("/api/public/tournament/:id/standings", async (req, res) => {
       include: {
         // Someone who left mid-event keeps the matches they already played.
         players: { where: { status: { in: ["REGISTERED", "WITHDRAWN"] } }, include: { user: { select: playerSelect } } },
-        matches: { where: { status: "COMPLETED" }, select: { player1Id: true, player2Id: true, setsWon1: true, setsWon2: true, sets: { select: { score1: true, score2: true, status: true } } } },
+        matches: { where: { status: "COMPLETED" }, select: { player1Id: true, player2Id: true, setsWon1: true, setsWon2: true } },
       },
     });
     if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
     const stats = new Map<string, any>();
     for (const pl of tournament.players) {
       if (!pl.user) continue;
-      stats.set(pl.userId, { userId: pl.userId, firstName: pl.user.firstName, lastName: pl.user.lastName, club: pl.user.club, rating: pl.user.rating, wins: 0, losses: 0, setsWon: 0, setsLost: 0, pointsFor: 0, pointsAgainst: 0 });
+      stats.set(pl.userId, { userId: pl.userId, firstName: pl.user.firstName, lastName: pl.user.lastName, club: pl.user.club, rating: pl.user.rating, wins: 0, losses: 0, setsWon: 0, setsLost: 0 });
     }
-    // Matches are won on sets; points aggregate across every set actually played.
+    // Matches are won on sets, and sets are all there is to aggregate - the
+    // rally-by-rally score is not recorded any more.
     for (const m of tournament.matches) {
       if (!m.player1Id || !m.player2Id) continue;
       const s1 = stats.get(m.player1Id);
       const s2 = stats.get(m.player2Id);
       if (!s1 || !s2) continue;
-      for (const set of m.sets) {
-        if (set.status !== "COMPLETED") continue;
-        s1.pointsFor += set.score1; s1.pointsAgainst += set.score2;
-        s2.pointsFor += set.score2; s2.pointsAgainst += set.score1;
-      }
       s1.setsWon += m.setsWon1; s1.setsLost += m.setsWon2;
       s2.setsWon += m.setsWon2; s2.setsLost += m.setsWon1;
       if (m.setsWon1 > m.setsWon2) { s1.wins++; s2.losses++; }
       else if (m.setsWon2 > m.setsWon1) { s2.wins++; s1.losses++; }
     }
     const result = Array.from(stats.values()).sort((a: any, b: any) =>
-      b.wins - a.wins || (b.setsWon - b.setsLost) - (a.setsWon - a.setsLost) || (b.pointsFor - b.pointsAgainst) - (a.pointsFor - a.pointsAgainst));
+      b.wins - a.wins || (b.setsWon - b.setsLost) - (a.setsWon - a.setsLost));
     res.json(result);
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });

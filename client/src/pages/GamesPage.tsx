@@ -14,7 +14,7 @@ export default function GamesPage() {
   const [clubs, setClubs] = useState<any[]>([]);
   const [scope, setScope] = useState<"all" | "mine">("all");
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ name: "", clubId: "", startTime: "", tablesCount: 1, pointsToWin: 11 as 11 | 21, setsToWin: 1 });
+  const [form, setForm] = useState({ name: "", clubId: "", startTime: "", tablesCount: 1, setsToWin: 1 });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -38,10 +38,9 @@ export default function GamesPage() {
         clubId: form.clubId || undefined,
         startTime: form.startTime ? new Date(form.startTime).toISOString() : undefined,
         tablesCount: form.tablesCount,
-        pointsToWin: form.pointsToWin,
         setsToWin: form.setsToWin,
       });
-      setForm({ name: "", clubId: "", startTime: "", tablesCount: 1, pointsToWin: 11, setsToWin: 1 });
+      setForm({ name: "", clubId: "", startTime: "", tablesCount: 1, setsToWin: 1 });
       setShowCreate(false);
       load();
     } catch (err: any) { setError(err.response?.data?.error || t("common.failed")); }
@@ -75,26 +74,9 @@ export default function GamesPage() {
             <input type="number" min={1} value={form.tablesCount} onChange={e => setForm({ ...form, tablesCount: +e.target.value })} className={field} />
           </div>
           <div>
-            <label className="block text-xs text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("create.pointsToWin")}</label>
-            <div className="flex gap-2">
-              {([11, 21] as const).map(pts => (
-                <button key={pts} type="button" onClick={() => setForm({ ...form, pointsToWin: pts })}
-                  className={`flex-1 py-2 rounded-lg text-sm font-medium border ${
-                    form.pointsToWin === pts ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00]" : "bg-[#0a1628] text-[#93a8c2] border-[#1c3350]"
-                  }`}>{t("match.pts", { n: pts })}</button>
-              ))}
-            </div>
-          </div>
-          <div>
             <label className="block text-xs text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("create.setsToWin")}</label>
-            <div className="flex gap-2">
-              {[1, 2, 3].map(n => (
-                <button key={n} type="button" onClick={() => setForm({ ...form, setsToWin: n })}
-                  className={`flex-1 py-2 rounded-lg text-sm font-medium border ${
-                    form.setsToWin === n ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00]" : "bg-[#0a1628] text-[#93a8c2] border-[#1c3350]"
-                  }`}>{n}</button>
-              ))}
-            </div>
+            <input type="number" min={1} value={form.setsToWin}
+              onChange={e => setForm({ ...form, setsToWin: Math.max(1, +e.target.value || 1) })} className={field} />
           </div>
           <button type="submit" disabled={busy} className="w-full bg-[#ccff00] text-[#0a1628] py-2.5 rounded-lg text-sm font-bold disabled:opacity-50">
             {busy ? t("games.creating") : t("games.create")}
