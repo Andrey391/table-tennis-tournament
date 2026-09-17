@@ -256,7 +256,11 @@ app.post("/api/auth/login", async (req, res) => {
 
 app.get("/api/auth/me", authMiddleware, async (req: any, res) => {
   try {
-    const user = await db().user.findUnique({ where: { id: req.user.userId }, select: { id: true, email: true, firstName: true, lastName: true, role: true, club: true, rating: true, phone: true, dateOfBirth: true } });
+    const user = await db().user.findUnique({ where: { id: req.user.userId }, select: { id: true, email: true, firstName: true, lastName: true, role: true, club: true, city: true, rating: true, phone: true, dateOfBirth: true } });
+    // A self-contained JWT outlives the account it was issued for (e.g. after a
+    // database reset). 200 with a null body would leave the client "signed in" as
+    // nobody until a later write failed on a foreign key.
+    if (!user) { res.status(401).json({ error: "Account no longer exists" }); return; }
     res.json(user);
   } catch { res.status(401).json({ error: "Invalid token" }); }
 });

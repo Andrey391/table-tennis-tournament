@@ -40,7 +40,12 @@ authRouter.get("/me", authMiddleware, async (req: AuthenticatedRequest, res: Res
   if (!req.user) { res.status(401).json({ error: "Unauthorized" }); return; }
   const user = await prisma.user.findUnique({
     where: { id: req.user.userId },
-    select: { id: true, email: true, firstName: true, lastName: true, role: true, club: true, rating: true, dateOfBirth: true, phone: true },
+    select: { id: true, email: true, firstName: true, lastName: true, role: true, club: true, city: true, rating: true, dateOfBirth: true, phone: true },
   });
+  // The JWT is self-contained, so a token outlives the account it was issued for
+  // (e.g. after the database is reset). Answering 200 with a null body would leave
+  // the client "signed in" as nobody until some later write blew up on a foreign
+  // key — 401 makes it drop the token and send the user back to the login screen.
+  if (!user) { res.status(401).json({ error: "Account no longer exists" }); return; }
   res.json(user);
 });
