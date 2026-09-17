@@ -12,9 +12,9 @@ export const CreateTournamentSchema = z.object({
   maxPlayers: z.number().int().min(2).max(500).optional(),
   // Target score the event's matches are created with; a judge can still change
   // it on a match that hasn't started.
-  pointsToWin: z.union([z.literal(11), z.literal(21)]).optional(),
-  // Sets needed to take a match here; matches finish themselves on reaching it.
-  setsToWin: z.number().int().min(1).max(7).optional(),
+  // How many sets the matches of this event are played to. It is a target the
+  // scoring screen prompts at, not a cap: a match runs as long as the pair play.
+  setsToWin: z.number().int().min(1).optional(),
   // False keeps the event out of the public feed; its participants still see it.
   isPublic: z.boolean().optional(),
   clubId: z.string().optional(),
@@ -29,8 +29,7 @@ export const UpdateTournamentSchema = z.object({
   description: z.string().max(2000).nullable().optional(),
   tablesCount: z.number().int().min(1).max(50).optional(),
   maxPlayers: z.number().int().min(2).max(500).nullable().optional(),
-  pointsToWin: z.union([z.literal(11), z.literal(21)]).optional(),
-  setsToWin: z.number().int().min(1).max(7).optional(),
+  setsToWin: z.number().int().min(1).optional(),
   isPublic: z.boolean().optional(),
   clubId: z.string().nullable().optional(),
   status: z.enum(["DRAFT", "ACTIVE", "COMPLETED", "CANCELLED"]).optional(),
@@ -64,10 +63,7 @@ export const CreateBookingSchema = z.object({
   durationHours: z.number().min(0.5).max(8).default(1),
   eventType: z.enum(["GAME", "TOURNAMENT"]).default("GAME"),
   eventTitle: z.string().max(200).optional(),
-  // Carried onto the event that the booking creates, so the "11 / 21" choice on
-  // the booking screen is what its matches are actually played to.
-  pointsToWin: z.union([z.literal(11), z.literal(21)]).optional(),
-  setsToWin: z.number().int().min(1).max(7).optional(),
+  setsToWin: z.number().int().min(1).optional(),
   // A table held for a private knockabout doesn't belong in the city feed.
   isPublic: z.boolean().optional(),
 });
@@ -93,13 +89,13 @@ export const AddPlayersSchema = z.object({
 });
 
 export const MatchSettingsSchema = z.object({
-  pointsToWin: z.union([z.literal(11), z.literal(21)]).optional(),
-  setsToWin: z.number().int().min(1).max(7).optional(),
+  setsToWin: z.number().int().min(1).optional(),
   tableNumber: z.number().int().min(1).optional(),
   judgeId: z.string().optional(),
 });
 
-export const ScorePointSchema = z.object({
+// Which side took a set. Scoring records whole sets, not points.
+export const SetResultSchema = z.object({
   side: z.union([z.literal(1), z.literal(2)]),
 });
 

@@ -56,12 +56,8 @@ export function matchScoreLine(m: { status?: string; setsWon1?: number; setsWon2
   return `${m.setsWon1 ?? 0} : ${m.setsWon2 ?? 0}`;
 }
 
-// "11:9, 8:11" — the points of each finished set, for a detail line.
-export function setScores(m: { sets?: { score1: number; score2: number; status: string }[] }): string {
-  return (m?.sets ?? []).filter(s => s.status === "COMPLETED").map(s => `${s.score1}:${s.score2}`).join(", ");
-}
-
-// The set being played right now, if any.
-export function liveSet(m: { sets?: { score1: number; score2: number; status: string; index: number }[] }) {
-  return (m?.sets ?? []).find(s => s.status !== "COMPLETED") ?? null;
+// How many sets each side has taken so far, as a plain count. The rally-by-rally
+// score is not recorded, so the set tally is the whole result of a match.
+export function setsPlayed(m: { setsWon1?: number; setsWon2?: number }): number {
+  return (m?.setsWon1 ?? 0) + (m?.setsWon2 ?? 0);
 }

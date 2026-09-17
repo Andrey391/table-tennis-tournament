@@ -104,11 +104,9 @@ model Tournament {
   description String?
   tablesCount Int       @default(4)
   maxPlayers  Int?
-  // The target score matches of this event are created with (11 or 21). A judge
-  // can still override it per match while that match hasn't started.
-  pointsToWin Int       @default(11)
-  // How many sets win a match here. 1 is the club-night default: one set to 11
-  // and the pair is done. Matches inherit it and finish themselves on reaching it.
+  // How many sets a match here is played to. It is the target the scoring screen
+  // prompts at, not a cap: a match runs for as many sets as the pair play, and the
+  // judge settles it. Matches inherit it and can override it before they start.
   setsToWin   Int       @default(1)
   status      String    @default("DRAFT")
   startTime   DateTime?
@@ -233,12 +231,9 @@ model Match {
   player2      User?       @relation("player2", fields: [player2Id], references: [id])
   judgeId      String?
   judge        User?       @relation("judgeMatches", fields: [judgeId], references: [id])
-  // The target score every set in this match is played to (11 or 21). Each set
-  // records its own copy so historical stats stay accurate if it ever changes.
-  pointsToWin  Int         @default(11)
-  // Sets needed to take this match. Reaching it completes the match on the spot:
-  // the statistics, the standings and Elo all read COMPLETED matches only, so a
-  // match nobody remembered to end was a match that never happened.
+  // Sets this match is played to — a target the scoring screen prompts at, not a
+  // cap. Only COMPLETED matches reach the statistics, the standings and Elo, and
+  // a match is completed by /end, /forfeit or a walkover.
   setsToWin    Int         @default(1)
   // The rating points the winner gained when this match was settled, kept so that
   // undoing the point that ended it can hand them back exactly.
@@ -259,25 +254,25 @@ model Match {
   @@index([status])
 }
 
-// One set ("партия") inside a match — the thing that is actually played to 11 or
-// 21 with deuce and server rotation. Point-by-point state lives here, not on the
-// match: undo reverses a point within the current set.
+// One set ("партия") inside a match. A set is the unit of scoring: the judge marks
+// who took it and that is all that is recorded. The rally-by-rally score is not
+// tracked, so `winner` is the whole content of a set and undo simply removes the
+// last row.
+//
+// The database still carries the old point-by-point columns (score1/score2,
+// serverSide, lastScorer, prevServerSide, letCount, pointsToWin). They are left in
+// place rather than dropped — dropping columns costs data — but nothing reads or
+// writes them any more, so they are not mapped here. Every one of them has a
+// default, which is why inserts that omit them still work.
 model MatchSet {
-  id             String      @id @default(uuid())
-  matchId        String
-  match          Match       @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  index          Int
-  pointsToWin    Int         @default(11)
-  score1         Int         @default(0)
-  score2         Int         @default(0)
-  serverSide     Int         @default(1)
-  lastScorer     Int?
-  prevServerSide Int?
-  letCount       Int         @default(0)
-  status         MatchStatus @default(IN_PROGRESS)
-  winner         Int?
-  startedAt      DateTime    @default(now())
-  endedAt        DateTime?
+  id        String      @id @default(uuid())
+  matchId   String
+  match     Match       @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  index     Int
+  status    MatchStatus @default(IN_PROGRESS)
+  winner    Int?
+  startedAt DateTime    @default(now())
+  endedAt   DateTime?
 
   @@unique([matchId, index])
   @@index([matchId])

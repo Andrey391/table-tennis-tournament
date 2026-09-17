@@ -1,8 +1,8 @@
 import { Router, Response } from "express";
 import { prisma } from "../config/db.js";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth.js";
-import { MatchSettingsSchema, ScorePointSchema, ForfeitSchema } from "../shared/schemas.js";
-import { isDeuce, getMatchWinner, nextServerSide, computeEloDelta } from "../shared/scoring.js";
+import { MatchSettingsSchema, SetResultSchema, ForfeitSchema } from "../shared/schemas.js";
+import { computeEloDelta } from "../shared/scoring.js";
 import AuditLog from "../models/AuditLog.js";
 
 export const matchRouter = Router();
@@ -26,11 +26,6 @@ async function loadOwnedMatch(res: Response, matchId: string, userId: string) {
   if (!match) { res.status(404).json({ error: "Not found" }); return null; }
   if (!match.tournament || match.tournament.organizerId !== userId) { res.status(403).json({ error: "Only the tournament manager can record this match" }); return null; }
   return match;
-}
-
-// The set currently being played: the last one that hasn't finished.
-function currentSet<T extends { status: string }>(match: { sets: T[] }): T | null {
-  return match.sets.find(s => s.status !== "COMPLETED") ?? null;
 }
 
 const reload = (id: string) => prisma.match.findUnique({ where: { id }, include: matchInclude });
@@ -143,98 +138,66 @@ matchRouter.put("/:id", authMiddleware, async (req: AuthenticatedRequest, res: R
   }
 });
 
-// Starting a match opens its first set.
+// Starting a match just opens it. A set is not created up front any more: a set
+// only exists once someone has won it, because a set is now recorded as a result
+// rather than played out point by point.
 matchRouter.post("/:id/start", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const match = await loadOwnedMatch(res, req.params.id, req.user!.userId);
     if (!match) return;
-    await prisma.$transaction([
-      prisma.match.update({
-        where: { id: match.id },
-        data: { status: "IN_PROGRESS", startedAt: match.startedAt ?? new Date(), judgeId: req.user!.userId },
-      }),
-      ...(match.sets.length === 0
-        ? [prisma.matchSet.create({ data: { matchId: match.id, index: 1, pointsToWin: match.pointsToWin } })]
-        : []),
-    ]);
+    await prisma.match.update({
+      where: { id: match.id },
+      data: { status: "IN_PROGRESS", startedAt: match.startedAt ?? new Date(), judgeId: req.user!.userId },
+    });
     res.json(await reload(match.id));
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
 });
 
-// Scores a point in the current set. Finishing a set does NOT finish the match —
-// the next set opens straight away and the judge decides when to stop.
+// Records one set for a side. The unit of scoring is the set ("партия"), not the
+// point: the judge marks who took the set and nothing tracks the rally-by-rally
+// score, so there is no deuce, no service rotation and no target score to reach.
+// A match runs for as many sets as the pair choose to play and is settled by
+// /end — see `setsToWin`, which is only the target the screen prompts at.
 matchRouter.post("/:id/score", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const match = await loadOwnedMatch(res, req.params.id, req.user!.userId);
     if (!match) return;
     if (match.status !== "IN_PROGRESS") { res.status(400).json({ error: "Match is not in progress" }); return; }
-    const set = currentSet(match);
-    if (!set) { res.status(400).json({ error: "No set in progress" }); return; }
 
-    const { side } = ScorePointSchema.parse(req.body);
-    const score1 = side === 1 ? set.score1 + 1 : set.score1;
-    const score2 = side === 2 ? set.score2 + 1 : set.score2;
-    const deuce = isDeuce(score1, score2, set.pointsToWin);
-    const server = nextServerSide(score1 + score2, set.serverSide, deuce);
-    const setWinner = getMatchWinner(score1, score2, set.pointsToWin);
+    const { side } = SetResultSchema.parse(req.body);
+    const nextIndex = match.sets.length ? Math.max(...match.sets.map(x => x.index)) + 1 : 1;
+    const setsWon1 = side === 1 ? match.setsWon1 + 1 : match.setsWon1;
+    const setsWon2 = side === 2 ? match.setsWon2 + 1 : match.setsWon2;
 
-    await prisma.matchSet.update({
-      where: { id: set.id },
-      data: {
-        score1, score2, serverSide: server, lastScorer: side, prevServerSide: set.serverSide,
-        status: setWinner ? "COMPLETED" : "IN_PROGRESS",
-        winner: setWinner,
-        endedAt: setWinner ? new Date() : null,
-      },
-    });
+    await prisma.$transaction([
+      // The set row is the per-set history the match keeps; who took it is the
+      // whole content of a set.
+      prisma.matchSet.create({
+        data: { matchId: match.id, index: nextIndex, status: "COMPLETED", winner: side, endedAt: new Date() },
+      }),
+      prisma.match.update({ where: { id: match.id }, data: { setsWon1, setsWon2 } }),
+    ]);
+    await AuditLog.create({ userId: req.user!.userId, action: "SET_COMPLETE", entity: "Match", entityId: match.id, newValue: { winner: side, setsWon1, setsWon2 } });
 
-    let matchOver = false;
-    if (setWinner) {
-      // Credit the set, then decide whether that was the match. Everything that
-      // counts — the profile tallies, the standings, Elo — reads COMPLETED matches
-      // only, so a match that waits for someone to remember a button is a match
-      // that never happened. `setsToWin` defaults to 1: one set to 11 and done.
-      const setsWon1 = setWinner === 1 ? match.setsWon1 + 1 : match.setsWon1;
-      const setsWon2 = setWinner === 2 ? match.setsWon2 + 1 : match.setsWon2;
-      matchOver = Math.max(setsWon1, setsWon2) >= match.setsToWin;
-
-      await prisma.$transaction([
-        prisma.match.update({ where: { id: match.id }, data: { setsWon1, setsWon2 } }),
-        // Only open the next set if there is still a match to play.
-        ...(matchOver ? [] : [prisma.matchSet.create({ data: { matchId: match.id, index: set.index + 1, pointsToWin: match.pointsToWin } })]),
-      ]);
-      await AuditLog.create({ userId: req.user!.userId, action: "SET_COMPLETE", entity: "MatchSet", entityId: set.id, newValue: { score1, score2 } });
-
-      if (matchOver) {
-        await finishMatch({ ...match, setsWon1, setsWon2 });
-        await AuditLog.create({ userId: req.user!.userId, action: "MATCH_END", entity: "Match", entityId: match.id, newValue: { setsWon1, setsWon2, auto: true } });
-      }
-    }
-
-    res.json({ match: await reload(match.id), deuce, setWinner, matchOver });
+    res.json({ match: await reload(match.id), setWinner: side });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
 });
 
-// Reverses exactly one point in the current set. If that set only exists because
-// the previous one just ended, step back into the previous set and reopen it.
+// Takes back the last recorded set. One step, no history beyond that.
 matchRouter.post("/:id/undo", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const match = await loadOwnedMatch(res, req.params.id, req.user!.userId);
     if (!match) return;
 
-    const open = currentSet(match);
-    const target = open && open.lastScorer != null
-      ? open
-      : [...match.sets].reverse().find(s => s.status === "COMPLETED" && s.lastScorer != null) ?? null;
-    if (!target) { res.status(400).json({ error: "Nothing to undo" }); return; }
+    const last = [...match.sets].sort((a, b) => a.index - b.index).pop() ?? null;
+    if (!last || !last.winner) { res.status(400).json({ error: "Nothing to undo" }); return; }
 
-    // A match now ends on the point that wins its last set, so undoing that point
-    // has to reopen the match and hand the rating back — otherwise a mis-tap on
-    // match point would be unfixable.
+    // A settled match can be taken back too: reopen it and hand the rating back,
+    // otherwise a match ended by mistake would be unfixable.
     if (match.status === "COMPLETED") {
       await revertEloUpdate(match);
       await prisma.match.update({ where: { id: match.id }, data: { status: "IN_PROGRESS", endedAt: null, eloDelta: null } });
@@ -242,44 +205,13 @@ matchRouter.post("/:id/undo", authMiddleware, async (req: AuthenticatedRequest, 
       await prisma.tournament.updateMany({ where: { id: match.tournamentId, status: "COMPLETED" }, data: { status: "ACTIVE" } });
     }
 
-    const reopening = target.status === "COMPLETED";
-    const ops: any[] = [
-      prisma.matchSet.update({
-        where: { id: target.id },
-        data: {
-          score1: target.lastScorer === 1 ? Math.max(target.score1 - 1, 0) : target.score1,
-          score2: target.lastScorer === 2 ? Math.max(target.score2 - 1, 0) : target.score2,
-          serverSide: target.prevServerSide ?? target.serverSide,
-          lastScorer: null, prevServerSide: null,
-          status: "IN_PROGRESS", winner: null, endedAt: null,
-        },
-      }),
-    ];
-    if (reopening) {
-      // Take back the set win it had been credited with, and drop the empty set
-      // that was opened after it.
-      ops.push(prisma.match.update({
+    await prisma.$transaction([
+      prisma.matchSet.delete({ where: { id: last.id } }),
+      prisma.match.update({
         where: { id: match.id },
-        data: target.winner === 1 ? { setsWon1: { decrement: 1 } } : { setsWon2: { decrement: 1 } },
-      }));
-      if (open && open.id !== target.id && open.score1 === 0 && open.score2 === 0) {
-        ops.push(prisma.matchSet.delete({ where: { id: open.id } }));
-      }
-    }
-    await prisma.$transaction(ops);
-    res.json({ match: await reload(match.id) });
-  } catch (err: any) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-matchRouter.post("/:id/let", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const match = await loadOwnedMatch(res, req.params.id, req.user!.userId);
-    if (!match) return;
-    const set = currentSet(match);
-    if (!set) { res.status(400).json({ error: "No set in progress" }); return; }
-    await prisma.matchSet.update({ where: { id: set.id }, data: { letCount: { increment: 1 } } });
+        data: last.winner === 1 ? { setsWon1: { decrement: 1 } } : { setsWon2: { decrement: 1 } },
+      }),
+    ]);
     res.json({ match: await reload(match.id) });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -307,19 +239,14 @@ matchRouter.post("/:id/forfeit", authMiddleware, async (req: AuthenticatedReques
     if (match.status === "COMPLETED") { res.status(400).json({ error: "Match is already completed" }); return; }
 
     const { loserSide } = ForfeitSchema.parse(req.body);
-    // A walkover is recorded as a single set to the target score, so the sets
-    // tally and the per-set stats stay consistent with a played match.
+    // A walkover is recorded as a single set for whoever turned up, so the sets
+    // tally reads the same as a played match.
     const nextIndex = match.sets.length ? Math.max(...match.sets.map(s => s.index)) + 1 : 1;
-    const open = currentSet(match);
     await prisma.$transaction([
-      ...(open ? [prisma.matchSet.delete({ where: { id: open.id } })] : []),
       prisma.matchSet.create({
         data: {
           matchId: match.id,
-          index: open ? open.index : nextIndex,
-          pointsToWin: match.pointsToWin,
-          score1: loserSide === 1 ? 0 : match.pointsToWin,
-          score2: loserSide === 2 ? 0 : match.pointsToWin,
+          index: nextIndex,
           status: "COMPLETED",
           winner: loserSide === 1 ? 2 : 1,
           endedAt: new Date(),

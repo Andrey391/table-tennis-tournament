@@ -4,7 +4,7 @@ import { apiService } from "../services/api";
 import Layout from "../components/Layout";
 import Avatar from "../components/Avatar";
 import { useT } from "../i18n";
-import { playerName, setScores } from "../lib/format";
+import { playerName } from "../lib/format";
 
 // Anyone's profile: who they are, and the matches behind the rating. Reached by
 // tapping a player anywhere they are listed — the rating table, the roster, the
@@ -64,7 +64,6 @@ export default function PlayerPage() {
                     {t("player.inEvent")} {m.tournament?.name}
                     {m.tournament?.kind === "GAME" && ` · ${t("games.unrated")}`}
                   </span>
-                  {setScores(m) && <span className="text-[10px] text-[#4d6480] font-mono shrink-0">{setScores(m)}</span>}
                 </div>
               </Link>
             );

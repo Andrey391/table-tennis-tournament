@@ -41,12 +41,11 @@ export const apiService = {
   matches: {
     getByTournament: (id: string) => api.get(`/matches/tournament/${id}`),
     getById: (id: string) => api.get(`/matches/${id}`),
-    updateSettings: (id: string, d: { pointsToWin?: number; tableNumber?: number; setsToWin?: number }) => api.put(`/matches/${id}`, d),
-    // Scoring acts on the match's current set; the response carries the whole match.
+    updateSettings: (id: string, d: { tableNumber?: number; setsToWin?: number }) => api.put(`/matches/${id}`, d),
+    // Scoring records one whole set for a side; the response carries the whole match.
     start: (id: string) => api.post(`/matches/${id}/start`),
     score: (id: string, d: { side: 1 | 2 }) => api.post(`/matches/${id}/score`, d),
     undo: (id: string) => api.post(`/matches/${id}/undo`),
-    recordLet: (id: string) => api.post(`/matches/${id}/let`),
     end: (id: string) => api.post(`/matches/${id}/end`),
     forfeit: (id: string, d: { loserSide: 1 | 2 }) => api.post(`/matches/${id}/forfeit`, d),
   },
@@ -72,7 +71,7 @@ export const apiService = {
   },
   bookings: {
     getMine: () => api.get("/bookings/mine"),
-    create: (d: { clubId: string; tableId?: string; date: string; startTime: string; durationHours: number; eventType: "GAME" | "TOURNAMENT"; eventTitle?: string; pointsToWin?: 11 | 21; setsToWin?: number; isPublic?: boolean }) => api.post("/bookings", d),
+    create: (d: { clubId: string; tableId?: string; date: string; startTime: string; durationHours: number; eventType: "GAME" | "TOURNAMENT"; eventTitle?: string; setsToWin?: number; isPublic?: boolean }) => api.post("/bookings", d),
     remove: (id: string) => api.delete(`/bookings/${id}`),
   },
   subscriptions: {

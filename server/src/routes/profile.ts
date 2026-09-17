@@ -9,20 +9,18 @@ type PlayedMatch = {
   setsWon1: number;
   setsWon2: number;
   tournament: { kind: string };
-  sets: { score1: number; score2: number; pointsToWin: number; status: string; winner: number | null }[];
 };
 
 const emptyTally = () => ({ played: 0, wins: 0, losses: 0 });
-const emptySplit = () => ({ 11: { played: 0, wins: 0 }, 21: { played: 0, wins: 0 } } as Record<string, { played: number; wins: number }>);
 
 // Play has three levels and the profile reports all three:
 //   event (tournament or game) -> match -> set ("партия")
-// A match is won on sets; a set is the thing actually played to 11 or 21, which
-// is why the short/long split lives at set level.
+// A set is the unit of scoring, so both tallies come straight off the match's set
+// counters. There is no split by target score any more: the rally-by-rally score
+// is not recorded, so there is nothing to split by.
 function summarise(matches: PlayedMatch[], userId: string) {
   const matchTally = emptyTally();
   const setTally = emptyTally();
-  const byTarget = emptySplit();
 
   for (const m of matches) {
     const isP1 = m.player1Id === userId;
@@ -33,19 +31,12 @@ function summarise(matches: PlayedMatch[], userId: string) {
     if (mine > theirs) matchTally.wins++;
     else if (theirs > mine) matchTally.losses++;
 
-    for (const set of m.sets) {
-      if (set.status !== "COMPLETED") continue;
-      const won = set.winner === (isP1 ? 1 : 2);
-      setTally.played++;
-      if (won) setTally.wins++; else setTally.losses++;
-
-      const bucket = (byTarget[String(set.pointsToWin)] ??= { played: 0, wins: 0 });
-      bucket.played++;
-      if (won) bucket.wins++;
-    }
+    setTally.played += mine + theirs;
+    setTally.wins += mine;
+    setTally.losses += theirs;
   }
 
-  return { matches: matchTally, sets: setTally, byTarget };
+  return { matches: matchTally, sets: setTally };
 }
 
 profileRouter.get("/stats", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
@@ -62,7 +53,6 @@ profileRouter.get("/stats", authMiddleware, async (req: AuthenticatedRequest, re
       select: {
         player1Id: true, setsWon1: true, setsWon2: true,
         tournament: { select: { kind: true } },
-        sets: { select: { score1: true, score2: true, pointsToWin: true, status: true, winner: true } },
       },
     }),
   ]);

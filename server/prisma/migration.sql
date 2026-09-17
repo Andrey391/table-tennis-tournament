@@ -378,6 +378,15 @@ ALTER TABLE "Match" ADD COLUMN IF NOT EXISTS "setsToWin" INTEGER NOT NULL DEFAUL
 ALTER TABLE "Match" ADD COLUMN IF NOT EXISTS "eloDelta" INTEGER;
 
 
+-- 15. Scoring is per set, not per point: the judge records who took each set and
+-- nothing tracks the rally-by-rally score. The point-by-point columns on MatchSet
+-- (score1, score2, serverSide, lastScorer, prevServerSide, letCount, pointsToWin)
+-- and the pointsToWin columns on Tournament and Match are no longer read or
+-- written. They are deliberately NOT dropped here: this file never costs data, and
+-- every one of them has a default so inserts that omit them keep working. Drop
+-- them by hand once you have checked you want the history gone.
+
+
 -- NOTE: an earlier iteration of this branch had a standalone "Game" table and a
 -- "Booking"."gameId" column. Games are Tournament rows now, so neither is used
 -- any more. They are deliberately left in place rather than dropped: nothing
