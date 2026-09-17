@@ -2,12 +2,17 @@ import { Router, Response } from "express";
 import { prisma } from "../config/db.js";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth.js";
 import { CreateBookingSchema } from "../shared/schemas.js";
-import { startOfUtcDay } from "../shared/booking.js";
+import { startOfUtcDay, bookingStartsAt, bookingEndsAt } from "../shared/booking.js";
 import { findBookingConflict } from "./clubs.js";
 
 export const bookingRouter = Router();
 
-const bookingInclude = { club: { select: { id: true, name: true, city: true, address: true, phone: true } }, table: { select: { id: true, number: true, indoor: true } } };
+const bookingInclude = {
+  club: { select: { id: true, name: true, city: true, address: true, phone: true } },
+  table: { select: { id: true, number: true, indoor: true } },
+  game: { select: { id: true, title: true, pointsToWin: true, status: true } },
+  tournament: { select: { id: true, name: true, status: true } },
+};
 
 // Table reservations — no payment processing, this just records who booked what/when.
 bookingRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
@@ -33,10 +38,36 @@ bookingRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, res: R
       }
     }
 
-    const booking = await prisma.booking.create({
-      data: { clubId: club.id, tableId: data.tableId, date, startTime: data.startTime, durationHours: data.durationHours, userId: req.user!.userId },
-      include: bookingInclude,
+    // The booking and the event it exists for are created together: a half-created
+    // pair (a table held for nothing, or an event nobody has a table for) is never
+    // a state worth persisting.
+    const userId = req.user!.userId;
+    const startsAt = bookingStartsAt(date, data.startTime);
+    const endsAt = bookingEndsAt(date, data.startTime, data.durationHours);
+    const title = data.eventTitle?.trim() || club.name;
+
+    const booking = await prisma.$transaction(async (tx) => {
+      const event = data.eventType === "TOURNAMENT"
+        ? await tx.tournament.create({
+            data: { name: title, clubId: club.id, startTime: startsAt, endTime: endsAt, organizerId: userId },
+          })
+        : await tx.game.create({
+            data: {
+              title, clubId: club.id, tableId: data.tableId, startTime: startsAt,
+              pointsToWin: data.pointsToWin ?? 11, organizerId: userId, player1Id: userId,
+            },
+          });
+
+      return tx.booking.create({
+        data: {
+          clubId: club.id, tableId: data.tableId, date, startTime: data.startTime,
+          durationHours: data.durationHours, userId,
+          ...(data.eventType === "TOURNAMENT" ? { tournamentId: event.id } : { gameId: event.id }),
+        },
+        include: bookingInclude,
+      });
     });
+
     res.status(201).json(booking);
   } catch (err: any) {
     res.status(400).json({ error: err.message });

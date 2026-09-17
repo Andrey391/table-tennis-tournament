@@ -43,7 +43,12 @@ const feedInclude = {
   club: { select: clubSelect },
   _count: { select: { matches: true, players: { where: { status: "REGISTERED" as const } } } },
 };
-const bookingInclude = { club: { select: clubSelect }, table: { select: { id: true, number: true, indoor: true } } };
+const bookingInclude = {
+  club: { select: clubSelect },
+  table: { select: { id: true, number: true, indoor: true } },
+  game: { select: { id: true, title: true, pointsToWin: true, status: true } },
+  tournament: { select: { id: true, name: true, status: true } },
+};
 
 // Booking times are "HH:MM" plus a duration in hours, so overlap checks work in
 // minutes-since-midnight within a single calendar day.
@@ -62,6 +67,15 @@ function startOfUtcDay(date: any) {
   const d = new Date(date);
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }
+// A booking stores the day and the wall-clock start separately. The event it
+// creates needs one timestamp, so combine them (and add the duration for the end).
+function bookingStartsAt(day: Date, startTime: string) {
+  return new Date(day.getTime() + timeToMinutes(startTime) * 60000);
+}
+function bookingEndsAt(day: Date, startTime: string, durationHours: number) {
+  return new Date(bookingStartsAt(day, startTime).getTime() + Math.round(durationHours * 60) * 60000);
+}
+
 async function findBookingConflict(tableId: string, date: Date, startTime: string, durationHours: number) {
   const sameDay = await db().booking.findMany({ where: { tableId, date } });
   return sameDay.find((b: any) => bookingsOverlap(startTime, durationHours, b.startTime, b.durationHours)) || null;
@@ -244,6 +258,8 @@ app.get("/api/setup", async (_req, res) => {
     await d.$executeRawUnsafe(`ALTER TABLE "Booking" ADD COLUMN IF NOT EXISTS "clubId" TEXT`);
     await d.$executeRawUnsafe(`ALTER TABLE "Booking" ADD COLUMN IF NOT EXISTS "tableId" TEXT`);
     await d.$executeRawUnsafe(`ALTER TABLE "Subscription" ADD COLUMN IF NOT EXISTS "clubId" TEXT`);
+    await d.$executeRawUnsafe(`ALTER TABLE "Booking" ADD COLUMN IF NOT EXISTS "gameId" TEXT`);
+    await d.$executeRawUnsafe(`ALTER TABLE "Booking" ADD COLUMN IF NOT EXISTS "tournamentId" TEXT`);
     await d.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "Subscription_userId_clubId_key" ON "Subscription"("userId", "clubId")`);
     res.json({ status: "ok", message: "Schema created" });
   } catch (e: any) {
@@ -651,10 +667,36 @@ app.post("/api/bookings", authMiddleware, async (req: any, res) => {
       if (conflict) { res.status(409).json({ error: `Table is already booked from ${conflict.startTime} for ${conflict.durationHours}h` }); return; }
     }
 
-    const booking = await d.booking.create({
-      data: { userId: req.user.userId, clubId, tableId: tableId || null, date: day, startTime, durationHours: hours },
-      include: bookingInclude,
+    // The booking and the event it exists for are created together: a half-created
+    // pair (a table held for nothing, or an event nobody has a table for) is never
+    // a state worth persisting.
+    const userId = req.user.userId;
+    const isTournament = req.body.eventType === "TOURNAMENT";
+    const startsAt = bookingStartsAt(day, startTime);
+    const endsAt = bookingEndsAt(day, startTime, hours);
+    const title = (req.body.eventTitle || "").trim() || club.name;
+
+    const booking = await d.$transaction(async (tx: any) => {
+      const event = isTournament
+        ? await tx.tournament.create({
+            data: { name: title, clubId, startTime: startsAt, endTime: endsAt, organizerId: userId },
+          })
+        : await tx.game.create({
+            data: {
+              title, clubId, tableId: tableId || null, startTime: startsAt,
+              pointsToWin: req.body.pointsToWin || 11, organizerId: userId, player1Id: userId,
+            },
+          });
+
+      return tx.booking.create({
+        data: {
+          userId, clubId, tableId: tableId || null, date: day, startTime, durationHours: hours,
+          ...(isTournament ? { tournamentId: event.id } : { gameId: event.id }),
+        },
+        include: bookingInclude,
+      });
     });
+
     res.status(201).json(booking);
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });

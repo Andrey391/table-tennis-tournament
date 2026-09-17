@@ -115,6 +115,7 @@ model Tournament {
   players     TournamentUser[]
   matches     Match[]
   chatMessages ChatMessage[]
+  bookings    Booking[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
@@ -135,6 +136,13 @@ model Booking {
   date          DateTime
   startTime     String
   durationHours Float      @default(1)
+  // What the table was booked for. A booking always creates exactly one of
+  // these; cancelling the booking leaves the event alone (people may already
+  // have joined it), so both sides are nullable.
+  gameId        String?
+  game          Game?       @relation(fields: [gameId], references: [id])
+  tournamentId  String?
+  tournament    Tournament? @relation(fields: [tournamentId], references: [id])
   createdAt     DateTime   @default(now())
 
   @@index([userId])
@@ -195,6 +203,7 @@ model Game {
   status         MatchStatus @default(NOT_STARTED)
   startedAt      DateTime?
   endedAt        DateTime?
+  bookings       Booking[]
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 

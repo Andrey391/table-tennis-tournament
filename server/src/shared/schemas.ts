@@ -42,12 +42,17 @@ export const CreateClubTableSchema = z.object({
   indoor: z.boolean().default(true),
 });
 
+// Booking a table always books it *for* something: either a casual game or a
+// tournament. The booking row then points at whichever one it created.
 export const CreateBookingSchema = z.object({
   clubId: z.string().min(1),
   tableId: z.string().optional(),
   date: z.string().datetime(),
   startTime: TimeOfDay,
   durationHours: z.number().min(0.5).max(8).default(1),
+  eventType: z.enum(["GAME", "TOURNAMENT"]).default("GAME"),
+  eventTitle: z.string().max(200).optional(),
+  pointsToWin: z.union([z.literal(11), z.literal(21)]).optional(),
 });
 
 export const SubscribeSchema = z.object({

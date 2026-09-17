@@ -250,6 +250,8 @@ CREATE TABLE "Booking" (
     "date" TIMESTAMP(3) NOT NULL,
     "startTime" TEXT NOT NULL,
     "durationHours" DOUBLE PRECISION NOT NULL DEFAULT 1,
+    "gameId" TEXT,
+    "tournamentId" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "Booking_pkey" PRIMARY KEY ("id")
@@ -260,6 +262,10 @@ CREATE INDEX "Booking_tableId_date_idx" ON "Booking"("tableId", "date");
 ALTER TABLE "Booking" ADD CONSTRAINT "Booking_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "Booking" ADD CONSTRAINT "Booking_clubId_fkey" FOREIGN KEY ("clubId") REFERENCES "Club"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "Booking" ADD CONSTRAINT "Booking_tableId_fkey" FOREIGN KEY ("tableId") REFERENCES "ClubTable"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+-- What the table was booked for. Cancelling a booking leaves the event alone,
+-- and deleting an event just detaches it from the booking.
+ALTER TABLE "Booking" ADD CONSTRAINT "Booking_gameId_fkey" FOREIGN KEY ("gameId") REFERENCES "Game"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "Booking" ADD CONSTRAINT "Booking_tournamentId_fkey" FOREIGN KEY ("tournamentId") REFERENCES "Tournament"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- "Follow a club" list — no billing, just a saved list.
 CREATE TABLE "Subscription" (

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { apiService } from "../services/api";
 import Layout from "../components/Layout";
 import { useT } from "../i18n";
@@ -12,7 +13,10 @@ export default function BookingsPage() {
   const [bookings, setBookings] = useState<any[]>([]);
   const [subscriptions, setSubscriptions] = useState<any[]>([]);
   const [availability, setAvailability] = useState<any[]>([]);
-  const [form, setForm] = useState({ clubId: "", tableId: "", date: "", startTime: "", durationHours: 1 });
+  const [form, setForm] = useState({
+    clubId: "", tableId: "", date: "", startTime: "", durationHours: 1,
+    eventType: "GAME" as "GAME" | "TOURNAMENT", eventTitle: "", pointsToWin: 11 as 11 | 21,
+  });
   const [newClub, setNewClub] = useState({ name: "", city: "", address: "", phone: "" });
   const [showAddClub, setShowAddClub] = useState(false);
   const [subClubId, setSubClubId] = useState("");
@@ -46,8 +50,11 @@ export default function BookingsPage() {
         date: new Date(form.date).toISOString(),
         startTime: form.startTime,
         durationHours: form.durationHours,
+        eventType: form.eventType,
+        eventTitle: form.eventTitle || undefined,
+        pointsToWin: form.eventType === "GAME" ? form.pointsToWin : undefined,
       });
-      setForm({ clubId: form.clubId, tableId: "", date: "", startTime: "", durationHours: 1 });
+      setForm({ ...form, tableId: "", date: "", startTime: "", durationHours: 1, eventTitle: "" });
       load();
     } catch (err: any) { setError(err.response?.data?.error || t("common.failed")); }
     finally { setBusy(false); }
@@ -154,6 +161,38 @@ export default function BookingsPage() {
               </div>
             )}
 
+            <div>
+              <label className="block text-xs text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("play.bookingFor")}</label>
+              <div className="flex gap-2">
+                {(["GAME", "TOURNAMENT"] as const).map(kind => (
+                  <button key={kind} type="button" onClick={() => set("eventType", kind)}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium border ${
+                      form.eventType === kind ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00]" : "bg-[#0a1628] text-[#93a8c2] border-[#1c3350]"
+                    }`}>{t(kind === "GAME" ? "play.asGame" : "play.asTournament")}</button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <input type="text" placeholder={t("play.eventTitle")} value={form.eventTitle}
+                onChange={e => set("eventTitle", e.target.value)} className={field} />
+              <p className="text-xs text-[#4d6480] mt-1.5">{t("play.eventTitleHint")}</p>
+            </div>
+
+            {form.eventType === "GAME" && (
+              <div>
+                <label className="block text-xs text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("match.pointsToWin")}</label>
+                <div className="flex gap-2">
+                  {([11, 21] as const).map(pts => (
+                    <button key={pts} type="button" onClick={() => set("pointsToWin", pts)}
+                      className={`flex-1 py-2 rounded-lg text-sm font-medium border ${
+                        form.pointsToWin === pts ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00]" : "bg-[#0a1628] text-[#93a8c2] border-[#1c3350]"
+                      }`}>{t("match.pts", { n: pts })}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <button type="submit" disabled={busy} className="w-full bg-[#ccff00] text-[#0a1628] py-2.5 rounded-lg text-sm font-bold disabled:opacity-50">
               {busy ? t("play.booking") : t("play.bookAction")}
             </button>
@@ -173,6 +212,8 @@ export default function BookingsPage() {
                   <p className="text-sm font-medium truncate">{b.club?.name}</p>
                   <p className="text-xs text-[#93a8c2]">{formatShortDate(b.date, lang)} &middot; {formatSlot(b.startTime, b.durationHours)}{b.table ? ` · ${t("common.table")} №${b.table.number}` : ""}</p>
                   {b.club?.address && <p className="text-xs text-[#4d6480] truncate">{b.club.address}</p>}
+                  {b.game && <Link to={`/game/${b.game.id}`} className="text-xs text-[#ccff00] font-medium">{t("play.opensGame")}: {b.game.title}</Link>}
+                  {b.tournament && <Link to={`/tournament/${b.tournament.id}`} className="text-xs text-[#ccff00] font-medium">{t("play.opensTournament")}: {b.tournament.name}</Link>}
                 </div>
                 <button onClick={() => removeBooking(b.id)} className="text-red-400 text-xs px-2 py-1 shrink-0">{t("common.cancel")}</button>
               </div>
