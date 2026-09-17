@@ -17,11 +17,19 @@ type Stats = {
 };
 
 export default function ProfilePage() {
-  const { user } = useAuth();
+  const { user, refreshUser, setUser } = useAuth();
   const { t, lang, setLang } = useT();
   const [stats, setStats] = useState<Stats | null>(null);
-
   const [history, setHistory] = useState<any[]>([]);
+  const [edit, setEdit] = useState<any>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  // The session user is loaded once when the app starts, so the rating shown here
+  // was whatever it happened to be then — and Elo moves it after every settled
+  // match. Re-read it when the screen that displays it opens.
+  useEffect(() => { refreshUser(); }, [refreshUser]);
 
   useEffect(() => { apiService.profile.stats().then(r => setStats(r.data)).catch(console.error); }, []);
   // The tallies say how much was played; this says what. "Who did I play last
@@ -31,7 +39,57 @@ export default function ProfilePage() {
     apiService.players.getById(user.id).then(r => setHistory(r.data.matches || [])).catch(console.error);
   }, [user?.id]);
 
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(""), 2500);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
+  // A date input wants "YYYY-MM-DD"; the API hands back an ISO timestamp.
+  const toDateInput = (iso?: string | null) => (iso ? new Date(iso).toISOString().slice(0, 10) : "");
+
+  const openEdit = () => {
+    setError(""); setNotice("");
+    setEdit({
+      firstName: user?.firstName ?? "",
+      lastName: user?.lastName ?? "",
+      email: user?.email ?? "",
+      club: user?.club ?? "",
+      city: user?.city ?? "",
+      phone: user?.phone ?? "",
+      dateOfBirth: toDateInput(user?.dateOfBirth),
+      currentPassword: "",
+      newPassword: "",
+    });
+  };
+
+  const saveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user?.id || !edit) return;
+    setBusy(true); setError("");
+    try {
+      const r = await apiService.players.update(user.id, {
+        firstName: edit.firstName,
+        lastName: edit.lastName,
+        email: edit.email,
+        club: edit.club || null,
+        city: edit.city || null,
+        phone: edit.phone || null,
+        // A date input gives a bare day; the API takes an ISO timestamp.
+        dateOfBirth: edit.dateOfBirth ? new Date(edit.dateOfBirth).toISOString() : null,
+        ...(edit.newPassword ? { currentPassword: edit.currentPassword, newPassword: edit.newPassword } : {}),
+      });
+      // The response is the same shape as /auth/me, so the header avatar and the
+      // rating tile update without another round trip.
+      setUser(r.data);
+      setEdit(null);
+      setNotice(t("profile.saved"));
+    } catch (err: any) { setError(err.response?.data?.error || t("common.failed")); }
+    finally { setBusy(false); }
+  };
+
   const card = "bg-[#101f36] rounded-lg border border-[#1c3350]";
+  const field = "w-full px-3 py-2.5 bg-[#0a1628] rounded border border-[#1c3350] text-sm focus:border-[#ccff00] focus:outline-none";
   const label = "text-xs font-medium text-[#6b84a0] uppercase tracking-wider";
   const rate = (t2: Tally | undefined) => (t2 && t2.played > 0 ? Math.round((t2.wins / t2.played) * 100) : 0);
 
@@ -76,7 +134,76 @@ export default function ProfilePage() {
         <h1 className="text-xl font-bold">{user?.firstName} {user?.lastName}</h1>
         <p className="text-sm text-[#6b84a0] mt-1">{user?.email}</p>
         {user?.club && <p className="text-xs text-[#4d6480] mt-0.5">{user.club}</p>}
+        <button onClick={() => (edit ? setEdit(null) : openEdit())} className="text-xs text-[#ccff00] font-medium mt-2">
+          {edit ? t("common.cancel") : t("profile.edit")}
+        </button>
       </div>
+
+      {notice && <div className="bg-[#ccff00]/10 text-[#ccff00] p-2.5 rounded text-sm border border-[#ccff00]/20 mb-3 text-center">{notice}</div>}
+      {error && <div className="bg-red-500/10 text-red-400 p-3 rounded text-sm border border-red-500/20 mb-3">{error}</div>}
+
+      {edit && (
+        <form onSubmit={saveProfile} className={`${card} p-4 mb-5 space-y-3`}>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className={label}>{t("auth.firstName")}</label>
+              <input type="text" value={edit.firstName} onChange={e => setEdit({ ...edit, firstName: e.target.value })} className={field} required />
+            </div>
+            <div>
+              <label className={label}>{t("auth.lastName")}</label>
+              <input type="text" value={edit.lastName} onChange={e => setEdit({ ...edit, lastName: e.target.value })} className={field} required />
+            </div>
+          </div>
+          <div>
+            <label className={label}>{t("auth.email")}</label>
+            <input type="email" value={edit.email} onChange={e => setEdit({ ...edit, email: e.target.value })} className={field} required />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className={label}>{t("auth.club")}</label>
+              <input type="text" value={edit.club} onChange={e => setEdit({ ...edit, club: e.target.value })} className={field} />
+            </div>
+            <div>
+              <label className={label}>{t("auth.city")}</label>
+              <input type="text" value={edit.city} onChange={e => setEdit({ ...edit, city: e.target.value })} className={field} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className={label}>{t("profile.phone")}</label>
+              <input type="tel" value={edit.phone} onChange={e => setEdit({ ...edit, phone: e.target.value })} className={field} />
+            </div>
+            <div>
+              <label className={label}>{t("profile.birthday")}</label>
+              <input type="date" value={edit.dateOfBirth} onChange={e => setEdit({ ...edit, dateOfBirth: e.target.value })} className={field} />
+            </div>
+          </div>
+
+          {/* The rating is Elo, computed from settled matches — showing it here as
+              a read-only line is more honest than leaving people to wonder why it
+              is the one thing they cannot type over. */}
+          <div className="bg-[#0a1628] rounded border border-[#1c3350] p-3 flex items-center justify-between">
+            <div className="min-w-0">
+              <p className={label}>{t("profile.rating")}</p>
+              <p className="text-[11px] text-[#4d6480] mt-0.5">{t("profile.ratingReadOnly")}</p>
+            </div>
+            <span className="text-lg font-bold text-[#ccff00] shrink-0 ml-3">{user?.rating}</span>
+          </div>
+
+          <div className="border-t border-[#1c3350] pt-3 space-y-2">
+            <p className={label}>{t("profile.changePassword")}</p>
+            <input type="password" placeholder={t("profile.currentPassword")} value={edit.currentPassword}
+              onChange={e => setEdit({ ...edit, currentPassword: e.target.value })} className={field} autoComplete="current-password" />
+            <input type="password" placeholder={t("profile.newPassword")} value={edit.newPassword} minLength={6}
+              onChange={e => setEdit({ ...edit, newPassword: e.target.value })} className={field} autoComplete="new-password" />
+            <p className="text-[11px] text-[#4d6480]">{t("profile.passwordHint")}</p>
+          </div>
+
+          <button type="submit" disabled={busy} className="w-full bg-[#ccff00] text-[#0a1628] py-2.5 rounded-lg text-sm font-bold disabled:opacity-50">
+            {busy ? t("common.creating") : t("common.save")}
+          </button>
+        </form>
+      )}
 
       {/* Level 1: the events themselves. */}
       <h2 className={`${label} mb-2`}>{t("stats.events")}</h2>

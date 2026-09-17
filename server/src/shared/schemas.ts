@@ -72,12 +72,22 @@ export const SubscribeSchema = z.object({
   clubId: z.string().min(1),
 });
 
+// Everything a person can change about themselves. `rating` is deliberately
+// absent: it is Elo, computed from settled matches, and letting it be posted
+// would make the whole ladder meaningless. `role` is absent for the same reason
+// as at signup — it would be a free promotion to ADMIN.
 export const UpdateProfileSchema = z.object({
   firstName: z.string().min(1).max(100).optional(),
   lastName: z.string().min(1).max(100).optional(),
+  email: z.string().email().optional(),
   club: z.string().max(100).nullable().optional(),
   city: z.string().max(120).nullable().optional(),
   phone: z.string().max(40).nullable().optional(),
+  dateOfBirth: z.string().datetime().nullable().optional(),
+  // A new password is only accepted together with the current one, so a borrowed
+  // unlocked phone can't be used to take the account over.
+  currentPassword: z.string().optional(),
+  newPassword: z.string().min(6).max(200).optional(),
 });
 
 export const ChatMessageSchema = z.object({

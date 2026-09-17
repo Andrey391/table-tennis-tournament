@@ -2,10 +2,14 @@ import { Router, Response } from "express";
 import { prisma } from "../config/db.js";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth.js";
 import { UpdateProfileSchema } from "../shared/schemas.js";
+import bcrypt from "bcryptjs";
 
 export const playerRouter = Router();
 
 const listSelect = { id: true, email: true, firstName: true, lastName: true, role: true, club: true, city: true, rating: true, createdAt: true };
+// What the owner gets back after editing — the same shape `/auth/me` returns, so
+// the client can drop it straight into its session user.
+const selfSelect = { ...listSelect, phone: true, dateOfBirth: true };
 
 playerRouter.get("/", authMiddleware, async (_req, res: Response) => {
   const players = await prisma.user.findMany({ select: listSelect, orderBy: { rating: "desc" } });
@@ -53,10 +57,30 @@ playerRouter.put("/:id", authMiddleware, async (req: AuthenticatedRequest, res: 
       res.status(403).json({ error: "You can only edit your own profile" });
       return;
     }
-    const data = UpdateProfileSchema.parse(req.body);
-    const user = await prisma.user.update({ where: { id: req.params.id }, data, select: listSelect });
+    const { currentPassword, newPassword, dateOfBirth, ...rest } = UpdateProfileSchema.parse(req.body);
+
+    // Only the fields that were actually sent are written, so a form that submits
+    // one changed field doesn't blank the rest.
+    const data: Record<string, unknown> = { ...rest };
+    if (dateOfBirth !== undefined) data.dateOfBirth = dateOfBirth ? new Date(dateOfBirth) : null;
+
+    if (newPassword) {
+      const current = await prisma.user.findUnique({ where: { id: req.params.id }, select: { password: true } });
+      if (!current) { res.status(404).json({ error: "Not found" }); return; }
+      // An admin editing someone else has no current password to offer; the owner does.
+      if (req.params.id === req.user!.userId) {
+        if (!currentPassword || !(await bcrypt.compare(currentPassword, current.password))) {
+          res.status(400).json({ error: "Current password is wrong" });
+          return;
+        }
+      }
+      data.password = await bcrypt.hash(newPassword, 10);
+    }
+
+    const user = await prisma.user.update({ where: { id: req.params.id }, data, select: selfSelect });
     res.json(user);
   } catch (err: any) {
+    if (err.code === "P2002") { res.status(400).json({ error: "An account with this email already exists" }); return; }
     res.status(400).json({ error: err.message });
   }
 });
