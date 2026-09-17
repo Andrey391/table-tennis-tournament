@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect } from "react";
 import { apiService } from "../services/api";
 
-interface User { id: string; email: string; role: string; firstName: string; lastName: string; rating: number; club?: string; }
+interface User { id: string; email: string; role: string; firstName: string; lastName: string; rating: number; club?: string; city?: string; }
 
 interface AuthContextType { token: string | null; user: User | null; login: (email: string, password: string) => Promise<void>; register: (data: any) => Promise<void>; logout: () => void; }
 
@@ -13,7 +13,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (token) {
-      apiService.auth.me().then(r => setUser(r.data)).catch(() => { setToken(null); localStorage.removeItem("token"); });
+      apiService.auth.me()
+        .then(r => {
+          // Belt and braces: an older deployment may still answer 200 with a null
+          // body for a token whose account is gone.
+          if (r.data?.id) setUser(r.data);
+          else { setToken(null); localStorage.removeItem("token"); }
+        })
+        .catch(() => { setToken(null); localStorage.removeItem("token"); });
     }
   }, [token]);
 
