@@ -8,9 +8,9 @@
 --
 -- It does not care how far behind the database is. Applying it to a schema
 -- from any earlier point brings it to the current one:
---   * Club / ClubTable / Game tables
+--   * Club / ClubTable tables, Tournament.kind, MatchSet (sets within a match)
 --   * User.city, Tournament.description/maxPlayers/clubId
---   * Booking.clubId/tableId/gameId/tournamentId, Subscription.clubId
+--   * Booking.clubId/tableId/tournamentId, Subscription.clubId
 --   * starting rating default of 100
 --
 -- For a deliberate clean slate instead, use migration-reset.sql — that one
@@ -106,54 +106,7 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 -- ---------------------------------------------------------------------------
--- 5. Casual games: two players, one game to the target score, never rated.
--- ---------------------------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS "Game" (
-    "id" TEXT NOT NULL,
-    "title" TEXT,
-    "clubId" TEXT,
-    "tableId" TEXT,
-    "startTime" TIMESTAMP(3),
-    "pointsToWin" INTEGER NOT NULL DEFAULT 11,
-    "organizerId" TEXT NOT NULL,
-    "player1Id" TEXT,
-    "player2Id" TEXT,
-    "score1" INTEGER NOT NULL DEFAULT 0,
-    "score2" INTEGER NOT NULL DEFAULT 0,
-    "serverSide" INTEGER NOT NULL DEFAULT 1,
-    "lastScorer" INTEGER,
-    "prevServerSide" INTEGER,
-    "letCount" INTEGER NOT NULL DEFAULT 0,
-    "status" "MatchStatus" NOT NULL DEFAULT 'NOT_STARTED',
-    "startedAt" TIMESTAMP(3),
-    "endedAt" TIMESTAMP(3),
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "Game_pkey" PRIMARY KEY ("id")
-);
-CREATE INDEX IF NOT EXISTS "Game_status_idx" ON "Game"("status");
-CREATE INDEX IF NOT EXISTS "Game_startTime_idx" ON "Game"("startTime");
-CREATE INDEX IF NOT EXISTS "Game_clubId_idx" ON "Game"("clubId");
-DO $$ BEGIN
-  ALTER TABLE "Game" ADD CONSTRAINT "Game_clubId_fkey" FOREIGN KEY ("clubId") REFERENCES "Club"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-EXCEPTION WHEN duplicate_object THEN null; END $$;
-DO $$ BEGIN
-  ALTER TABLE "Game" ADD CONSTRAINT "Game_tableId_fkey" FOREIGN KEY ("tableId") REFERENCES "ClubTable"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-EXCEPTION WHEN duplicate_object THEN null; END $$;
-DO $$ BEGIN
-  ALTER TABLE "Game" ADD CONSTRAINT "Game_organizerId_fkey" FOREIGN KEY ("organizerId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-EXCEPTION WHEN duplicate_object THEN null; END $$;
-DO $$ BEGIN
-  ALTER TABLE "Game" ADD CONSTRAINT "Game_player1Id_fkey" FOREIGN KEY ("player1Id") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-EXCEPTION WHEN duplicate_object THEN null; END $$;
-DO $$ BEGIN
-  ALTER TABLE "Game" ADD CONSTRAINT "Game_player2Id_fkey" FOREIGN KEY ("player2Id") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-EXCEPTION WHEN duplicate_object THEN null; END $$;
-
--- ---------------------------------------------------------------------------
--- 6. Bookings and subscriptions: point at a Club row, and record the event the
+-- 5. Bookings and subscriptions: point at a Club row, and record the event the
 --    booking was made for.
 -- ---------------------------------------------------------------------------
 
@@ -173,7 +126,6 @@ CREATE TABLE IF NOT EXISTS "Booking" (
 );
 ALTER TABLE "Booking" ADD COLUMN IF NOT EXISTS "clubId" TEXT;
 ALTER TABLE "Booking" ADD COLUMN IF NOT EXISTS "tableId" TEXT;
-ALTER TABLE "Booking" ADD COLUMN IF NOT EXISTS "gameId" TEXT;
 ALTER TABLE "Booking" ADD COLUMN IF NOT EXISTS "tournamentId" TEXT;
 
 CREATE TABLE IF NOT EXISTS "Subscription" (
@@ -261,9 +213,6 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN null; END $$;
 -- Cancelling a booking leaves its event alone; deleting an event just detaches it.
 DO $$ BEGIN
-  ALTER TABLE "Booking" ADD CONSTRAINT "Booking_gameId_fkey" FOREIGN KEY ("gameId") REFERENCES "Game"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-EXCEPTION WHEN duplicate_object THEN null; END $$;
-DO $$ BEGIN
   ALTER TABLE "Booking" ADD CONSTRAINT "Booking_tournamentId_fkey" FOREIGN KEY ("tournamentId") REFERENCES "Tournament"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 EXCEPTION WHEN duplicate_object THEN null; END $$;
 DO $$ BEGIN
@@ -274,7 +223,7 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 -- ---------------------------------------------------------------------------
--- 7. Per-tournament chat, created here for databases that predate it.
+-- 6. Per-tournament chat, created here for databases that predate it.
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS "ChatMessage" (
@@ -297,5 +246,89 @@ EXCEPTION WHEN duplicate_object THEN null; END $$;
 DO $$ BEGIN
   ALTER TABLE "ChatMessage" ADD CONSTRAINT "ChatMessage_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+-- ---------------------------------------------------------------------------
+-- 7. Three levels of play: event (tournament or game) -> match -> set.
+--
+--    A "game" is a tournament that isn't rated, so it is the same table with a
+--    different `kind`. A match is no longer a single game to 11/21: it holds a
+--    run of sets, and whoever won more of them takes the match.
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "kind" TEXT NOT NULL DEFAULT 'TOURNAMENT';
+CREATE INDEX IF NOT EXISTS "Tournament_kind_status_idx" ON "Tournament"("kind", "status");
+
+ALTER TABLE "Match" ADD COLUMN IF NOT EXISTS "setsWon1" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "Match" ADD COLUMN IF NOT EXISTS "setsWon2" INTEGER NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS "MatchSet" (
+    "id" TEXT NOT NULL,
+    "matchId" TEXT NOT NULL,
+    "index" INTEGER NOT NULL,
+    "pointsToWin" INTEGER NOT NULL DEFAULT 11,
+    "score1" INTEGER NOT NULL DEFAULT 0,
+    "score2" INTEGER NOT NULL DEFAULT 0,
+    "serverSide" INTEGER NOT NULL DEFAULT 1,
+    "lastScorer" INTEGER,
+    "prevServerSide" INTEGER,
+    "letCount" INTEGER NOT NULL DEFAULT 0,
+    "status" "MatchStatus" NOT NULL DEFAULT 'IN_PROGRESS',
+    "winner" INTEGER,
+    "startedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "endedAt" TIMESTAMP(3),
+
+    CONSTRAINT "MatchSet_pkey" PRIMARY KEY ("id")
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "MatchSet_matchId_index_key" ON "MatchSet"("matchId", "index");
+CREATE INDEX IF NOT EXISTS "MatchSet_matchId_idx" ON "MatchSet"("matchId");
+DO $$ BEGIN
+  ALTER TABLE "MatchSet" ADD CONSTRAINT "MatchSet_matchId_fkey" FOREIGN KEY ("matchId") REFERENCES "Match"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+-- Every match played under the old model was exactly one set. Move its score
+-- into a MatchSet row so nothing is lost, then drop the per-point columns that
+-- now live on the set. Skipped on a database that never had them.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Match' AND column_name = 'score1') THEN
+
+    EXECUTE $sets$
+      INSERT INTO "MatchSet" ("id", "matchId", "index", "pointsToWin", "score1", "score2", "serverSide", "lastScorer", "prevServerSide", "letCount", "status", "winner", "startedAt", "endedAt")
+      SELECT
+        gen_random_uuid()::text, m."id", 1, m."pointsToWin", m."score1", m."score2", m."serverSide",
+        m."lastScorer", m."prevServerSide", m."letCount",
+        CASE WHEN m."status" = 'COMPLETED' THEN 'COMPLETED'::"MatchStatus" ELSE 'IN_PROGRESS'::"MatchStatus" END,
+        CASE WHEN m."status" = 'COMPLETED' AND m."score1" > m."score2" THEN 1
+             WHEN m."status" = 'COMPLETED' AND m."score2" > m."score1" THEN 2
+             ELSE NULL END,
+        COALESCE(m."startedAt", m."createdAt"), m."endedAt"
+      FROM "Match" m
+      WHERE m."status" <> 'NOT_STARTED'
+        AND NOT EXISTS (SELECT 1 FROM "MatchSet" s WHERE s."matchId" = m."id")
+    $sets$;
+
+    EXECUTE $tally$
+      UPDATE "Match" m SET
+        "setsWon1" = CASE WHEN m."status" = 'COMPLETED' AND m."score1" > m."score2" THEN 1 ELSE 0 END,
+        "setsWon2" = CASE WHEN m."status" = 'COMPLETED' AND m."score2" > m."score1" THEN 1 ELSE 0 END
+      WHERE m."status" = 'COMPLETED'
+    $tally$;
+
+    EXECUTE 'ALTER TABLE "Match" DROP COLUMN IF EXISTS "score1"';
+    EXECUTE 'ALTER TABLE "Match" DROP COLUMN IF EXISTS "score2"';
+    EXECUTE 'ALTER TABLE "Match" DROP COLUMN IF EXISTS "serverSide"';
+    EXECUTE 'ALTER TABLE "Match" DROP COLUMN IF EXISTS "lastScorer"';
+    EXECUTE 'ALTER TABLE "Match" DROP COLUMN IF EXISTS "prevServerSide"';
+    EXECUTE 'ALTER TABLE "Match" DROP COLUMN IF EXISTS "letCount"';
+  END IF;
+END $$;
+
+-- NOTE: an earlier iteration of this branch had a standalone "Game" table and a
+-- "Booking"."gameId" column. Games are Tournament rows now, so neither is used
+-- any more. They are deliberately left in place rather than dropped: nothing
+-- reads them, and dropping a table is not something a data-preserving migration
+-- should do behind your back. Remove them by hand once you have checked they
+-- hold nothing you want.
+
 
 COMMIT;

@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { apiService } from "../services/api";
 import Layout from "../components/Layout";
 import { useT } from "../i18n";
-import { playerName } from "../lib/format";
+import { playerName, matchScoreLine, setScores, liveSet } from "../lib/format";
 
 export default function ResultsPage() {
   const { t } = useT();
@@ -34,7 +34,10 @@ export default function ResultsPage() {
               <Link key={m.id} to={`/tournament/${selected}/match/${m.id}`}
                 className="flex items-center justify-between bg-[#101f36] border border-yellow-500/20 p-3 rounded-lg">
                 <span className="text-sm flex-1 min-w-0 text-right truncate pr-2">{playerName(m.player1)}</span>
-                <span className="px-3 font-mono font-bold text-sm text-yellow-400 shrink-0">{m.score1} - {m.score2}</span>
+                <span className="px-3 shrink-0 text-center text-yellow-400">
+                  <span className="block font-mono font-bold text-sm">{matchScoreLine(m)}</span>
+                  {liveSet(m) && <span className="block text-[10px] font-mono">{liveSet(m)!.score1}:{liveSet(m)!.score2}</span>}
+                </span>
                 <span className="text-sm flex-1 min-w-0 truncate pl-2">{playerName(m.player2)}</span>
               </Link>
             ))}
@@ -49,7 +52,10 @@ export default function ResultsPage() {
             {completed.map((m: any) => (
               <div key={m.id} className="flex items-center justify-between bg-[#101f36] p-3 rounded-lg border border-[#1c3350]">
                 <span className="text-sm flex-1 min-w-0 text-right truncate pr-2 text-[#93a8c2]">{playerName(m.player1)}</span>
-                <span className="px-3 font-mono font-bold text-sm shrink-0">{m.score1} - {m.score2}</span>
+                <span className="px-3 shrink-0 text-center">
+                  <span className="block font-mono font-bold text-sm">{matchScoreLine(m)}</span>
+                  {setScores(m) && <span className="block text-[10px] text-[#4d6480] font-mono">{setScores(m)}</span>}
+                </span>
                 <span className="text-sm flex-1 min-w-0 truncate pl-2 text-[#93a8c2]">{playerName(m.player2)}</span>
               </div>
             ))}

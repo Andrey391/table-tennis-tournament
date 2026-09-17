@@ -48,9 +48,6 @@ model User {
   matchesAsPlayer2 Match[]   @relation("player2")
   judgedMatches    Match[]   @relation("judgeMatches")
   organizedTournaments Tournament[] @relation("tournamentOrganizer")
-  organizedGames   Game[]    @relation("gameOrganizer")
-  gamesAsPlayer1   Game[]    @relation("gamePlayer1")
-  gamesAsPlayer2   Game[]    @relation("gamePlayer2")
   auditLogs        AuditLog[]
   bookings         Booking[]
   subscriptions    Subscription[]
@@ -78,7 +75,6 @@ model Club {
   bookings      Booking[]
   subscriptions Subscription[]
   tournaments   Tournament[]
-  games         Game[]
 
   @@unique([name, city])
   @@index([city])
@@ -91,14 +87,18 @@ model ClubTable {
   number   Int
   indoor   Boolean   @default(true)
   bookings Booking[]
-  games    Game[]
 
   @@unique([clubId, number])
   @@index([clubId])
 }
 
+// A tournament and a casual "game" are the same container — roster, rounds,
+// pairing, standings — and differ only in `kind`: a GAME never touches anyone's
+// Elo. Keeping one model means one pairing engine and one standings computation rather
+// than two that drift apart.
 model Tournament {
   id          String    @id @default(uuid())
+  kind        String    @default("TOURNAMENT")
   name        String
   description String?
   tablesCount Int       @default(4)
@@ -120,6 +120,7 @@ model Tournament {
   updatedAt   DateTime  @updatedAt
 
   @@index([status])
+  @@index([kind, status])
   @@index([startTime])
   @@index([clubId])
 }
@@ -136,11 +137,9 @@ model Booking {
   date          DateTime
   startTime     String
   durationHours Float      @default(1)
-  // What the table was booked for. A booking always creates exactly one of
-  // these; cancelling the booking leaves the event alone (people may already
-  // have joined it), so both sides are nullable.
-  gameId        String?
-  game          Game?       @relation(fields: [gameId], references: [id])
+  // What the table was booked for — a tournament or a game, which are the same
+  // model. Cancelling the booking leaves the event alone (people may already have
+  // joined it), so this is nullable.
   tournamentId  String?
   tournament    Tournament? @relation(fields: [tournamentId], references: [id])
   createdAt     DateTime   @default(now())
@@ -176,42 +175,6 @@ model ChatMessage {
   @@index([tournamentId])
 }
 
-// A casual game: two players, one game to the target score, scored exactly like a
-// tournament match but deliberately UNRATED — Elo never moves for these, which is
-// the whole point of having them separate from Match.
-model Game {
-  id             String      @id @default(uuid())
-  title          String?
-  clubId         String?
-  club           Club?       @relation(fields: [clubId], references: [id])
-  tableId        String?
-  table          ClubTable?  @relation(fields: [tableId], references: [id])
-  startTime      DateTime?
-  pointsToWin    Int         @default(11)
-  organizerId    String
-  organizer      User        @relation("gameOrganizer", fields: [organizerId], references: [id])
-  player1Id      String?
-  player1        User?       @relation("gamePlayer1", fields: [player1Id], references: [id])
-  player2Id      String?
-  player2        User?       @relation("gamePlayer2", fields: [player2Id], references: [id])
-  score1         Int         @default(0)
-  score2         Int         @default(0)
-  serverSide     Int         @default(1)
-  lastScorer     Int?
-  prevServerSide Int?
-  letCount       Int         @default(0)
-  status         MatchStatus @default(NOT_STARTED)
-  startedAt      DateTime?
-  endedAt        DateTime?
-  bookings       Booking[]
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
-
-  @@index([status])
-  @@index([startTime])
-  @@index([clubId])
-}
-
 model TournamentUser {
   id           String       @id @default(uuid())
   tournamentId String
@@ -240,13 +203,14 @@ model Match {
   player2      User?       @relation("player2", fields: [player2Id], references: [id])
   judgeId      String?
   judge        User?       @relation("judgeMatches", fields: [judgeId], references: [id])
+  // The target score every set in this match is played to (11 or 21). Each set
+  // records its own copy so historical stats stay accurate if it ever changes.
   pointsToWin  Int         @default(11)
-  score1       Int         @default(0)
-  score2       Int         @default(0)
-  serverSide   Int         @default(1)
-  lastScorer   Int?
-  prevServerSide Int?
-  letCount     Int         @default(0)
+  sets         MatchSet[]
+  // Running tally of sets won. There is no fixed "best of N": sets are played
+  // one after another and the judge ends the match, whoever leads takes it.
+  setsWon1     Int         @default(0)
+  setsWon2     Int         @default(0)
   status       MatchStatus @default(NOT_STARTED)
   startedAt    DateTime?
   endedAt      DateTime?
@@ -256,6 +220,30 @@ model Match {
   @@index([tournamentId])
   @@index([tournamentId, round])
   @@index([status])
+}
+
+// One set ("партия") inside a match — the thing that is actually played to 11 or
+// 21 with deuce and server rotation. Point-by-point state lives here, not on the
+// match: undo reverses a point within the current set.
+model MatchSet {
+  id             String      @id @default(uuid())
+  matchId        String
+  match          Match       @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  index          Int
+  pointsToWin    Int         @default(11)
+  score1         Int         @default(0)
+  score2         Int         @default(0)
+  serverSide     Int         @default(1)
+  lastScorer     Int?
+  prevServerSide Int?
+  letCount       Int         @default(0)
+  status         MatchStatus @default(IN_PROGRESS)
+  winner         Int?
+  startedAt      DateTime    @default(now())
+  endedAt        DateTime?
+
+  @@unique([matchId, index])
+  @@index([matchId])
 }
 
 model AuditLog {

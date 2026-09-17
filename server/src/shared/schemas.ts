@@ -3,7 +3,9 @@ import { z } from "zod";
 // Booking start times are "HH:MM" — the overlap check parses them as minutes.
 const TimeOfDay = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Expected HH:MM");
 
+// A "game" is a tournament that isn't rated — same roster, rounds and pairing.
 export const CreateTournamentSchema = z.object({
+  kind: z.enum(["TOURNAMENT", "GAME"]).default("TOURNAMENT"),
   name: z.string().min(1).max(200),
   description: z.string().max(2000).optional(),
   tablesCount: z.number().int().min(1).max(50).default(4),
@@ -52,7 +54,6 @@ export const CreateBookingSchema = z.object({
   durationHours: z.number().min(0.5).max(8).default(1),
   eventType: z.enum(["GAME", "TOURNAMENT"]).default("GAME"),
   eventTitle: z.string().max(200).optional(),
-  pointsToWin: z.union([z.literal(11), z.literal(21)]).optional(),
 });
 
 export const SubscribeSchema = z.object({
@@ -79,23 +80,6 @@ export const MatchSettingsSchema = z.object({
   pointsToWin: z.union([z.literal(11), z.literal(21)]).optional(),
   tableNumber: z.number().int().min(1).optional(),
   judgeId: z.string().optional(),
-});
-
-export const CreateGameSchema = z.object({
-  title: z.string().max(200).optional(),
-  clubId: z.string().optional(),
-  tableId: z.string().optional(),
-  startTime: z.string().datetime().optional(),
-  pointsToWin: z.union([z.literal(11), z.literal(21)]).optional(),
-  player2Id: z.string().optional(),
-});
-
-export const GameSettingsSchema = z.object({
-  title: z.string().max(200).optional(),
-  pointsToWin: z.union([z.literal(11), z.literal(21)]).optional(),
-  clubId: z.string().nullable().optional(),
-  tableId: z.string().nullable().optional(),
-  startTime: z.string().datetime().nullable().optional(),
 });
 
 export const ScorePointSchema = z.object({

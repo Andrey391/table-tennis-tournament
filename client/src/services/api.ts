@@ -19,8 +19,9 @@ export const apiService = {
     update: (id: string, d: any) => api.put(`/players/${id}`, d),
   },
   tournaments: {
-    getAll: (params?: { city?: string; clubId?: string; status?: string; from?: string; to?: string; q?: string }) => api.get("/tournaments", { params }),
-    getMine: () => api.get("/tournaments/mine"),
+    // `kind` picks rated tournaments ("TOURNAMENT") or unrated games ("GAME").
+    getAll: (params?: { kind?: string; city?: string; clubId?: string; status?: string; from?: string; to?: string; q?: string }) => api.get("/tournaments", { params }),
+    getMine: (params?: { kind?: string }) => api.get("/tournaments/mine", { params }),
     getById: (id: string) => api.get(`/tournaments/${id}`),
     create: (d: any) => api.post("/tournaments", d),
     update: (id: string, d: any) => api.put(`/tournaments/${id}`, d),
@@ -37,29 +38,13 @@ export const apiService = {
     getByTournament: (id: string) => api.get(`/matches/tournament/${id}`),
     getById: (id: string) => api.get(`/matches/${id}`),
     updateSettings: (id: string, d: { pointsToWin?: number; tableNumber?: number }) => api.put(`/matches/${id}`, d),
+    // Scoring acts on the match's current set; the response carries the whole match.
     start: (id: string) => api.post(`/matches/${id}/start`),
     score: (id: string, d: { side: 1 | 2 }) => api.post(`/matches/${id}/score`, d),
     undo: (id: string) => api.post(`/matches/${id}/undo`),
     recordLet: (id: string) => api.post(`/matches/${id}/let`),
     end: (id: string) => api.post(`/matches/${id}/end`),
     forfeit: (id: string, d: { loserSide: 1 | 2 }) => api.post(`/matches/${id}/forfeit`, d),
-  },
-  // Casual games: scored like matches, but they never move anyone's rating.
-  games: {
-    getAll: (params?: { city?: string; clubId?: string; status?: string; from?: string; to?: string }) => api.get("/games", { params }),
-    getMine: () => api.get("/games/mine"),
-    getById: (id: string) => api.get(`/games/${id}`),
-    create: (d: { title?: string; clubId?: string; tableId?: string; startTime?: string; pointsToWin?: 11 | 21 }) => api.post("/games", d),
-    update: (id: string, d: { title?: string; pointsToWin?: 11 | 21 }) => api.put(`/games/${id}`, d),
-    join: (id: string) => api.post(`/games/${id}/join`),
-    leave: (id: string) => api.post(`/games/${id}/leave`),
-    start: (id: string) => api.post(`/games/${id}/start`),
-    score: (id: string, d: { side: 1 | 2 }) => api.post(`/games/${id}/score`, d),
-    undo: (id: string) => api.post(`/games/${id}/undo`),
-    recordLet: (id: string) => api.post(`/games/${id}/let`),
-    end: (id: string) => api.post(`/games/${id}/end`),
-    forfeit: (id: string, d: { loserSide: 1 | 2 }) => api.post(`/games/${id}/forfeit`, d),
-    remove: (id: string) => api.delete(`/games/${id}`),
   },
   live: {
     get: (tournamentId: string) => api.get(`/live/${tournamentId}`),

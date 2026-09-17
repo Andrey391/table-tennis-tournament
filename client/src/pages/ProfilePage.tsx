@@ -5,12 +5,14 @@ import Avatar from "../components/Avatar";
 import Layout from "../components/Layout";
 import { useT, type Lang } from "../i18n";
 
+type Tally = { played: number; wins: number; losses: number };
 type Bucket = { played: number; wins: number };
+type Level = { matches: Tally; sets: Tally; byTarget: Record<string, Bucket> };
 type Stats = {
-  tournaments: number;
-  matches: number; wins: number; losses: number;
-  games: number; gameWins: number; gameLosses: number;
-  byTarget: { matches: Record<string, Bucket>; games: Record<string, Bucket> };
+  events: { tournaments: number; games: number };
+  tournaments: Level;
+  games: Level;
+  total: Level;
 };
 
 export default function ProfilePage() {
@@ -20,25 +22,54 @@ export default function ProfilePage() {
 
   useEffect(() => { apiService.profile.stats().then(r => setStats(r.data)).catch(console.error); }, []);
 
-  const rate = (wins: number, played: number) => (played > 0 ? Math.round((wins / played) * 100) : 0);
   const card = "bg-[#101f36] rounded-lg border border-[#1c3350]";
   const label = "text-xs font-medium text-[#6b84a0] uppercase tracking-wider";
+  const rate = (t2: Tally | undefined) => (t2 && t2.played > 0 ? Math.round((t2.wins / t2.played) * 100) : 0);
 
-  // Short (11) vs long (21) split for one kind of play.
-  const TargetSplit = ({ buckets }: { buckets?: Record<string, Bucket> }) => (
-    <div className="grid grid-cols-2 gap-2 mt-3">
-      {([["11", "profile.short11"], ["21", "profile.long21"]] as const).map(([key, labelKey]) => {
-        const b = buckets?.[key];
-        return (
-          <div key={key} className="bg-[#0a1628] rounded-lg border border-[#1c3350] p-2.5">
-            <p className="text-[11px] text-[#6b84a0] uppercase tracking-wider">{t(labelKey)}</p>
-            <p className="text-lg font-bold mt-0.5">{b?.played ?? 0}</p>
+  const Tile = ({ value, caption }: { value: number | string; caption: string }) => (
+    <div className={`${card} p-3 text-center`}>
+      <p className="text-xl font-bold">{value}</p>
+      <p className="text-[11px] text-[#6b84a0] uppercase tracking-wider mt-0.5">{caption}</p>
+    </div>
+  );
+
+  // Matches and the sets inside them, for one kind of event.
+  const LevelCard = ({ titleKey, level, accent }: { titleKey: string; level?: Level; accent: string }) => (
+    <div className={`${card} p-4 mb-4`}>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className={label}>{titleKey === "stats.inTournaments" ? t("stats.inTournaments") : t("stats.inGames")}</h2>
+        <span className="text-xs text-[#4d6480]">{rate(level?.matches)}%</span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        {([["stats.matches", level?.matches], ["stats.sets", level?.sets]] as const).map(([key, tally]) => (
+          <div key={key} className="bg-[#0a1628] rounded-lg border border-[#1c3350] p-3">
+            <p className="text-[11px] text-[#6b84a0] uppercase tracking-wider">{t(key)}</p>
+            <p className="text-2xl font-bold mt-0.5" style={{ color: accent }}>{tally?.played ?? 0}</p>
             <p className="text-[11px] text-[#4d6480]">
-              {b && b.played > 0 ? t("profile.winsOf", { wins: b.wins, played: b.played }) : t("profile.noneYet")}
+              <span className="text-green-400">{tally?.wins ?? 0}</span> {t("stats.won").toLowerCase()}
+              {" · "}
+              <span className="text-red-400">{tally?.losses ?? 0}</span> {t("stats.lost").toLowerCase()}
             </p>
           </div>
-        );
-      })}
+        ))}
+      </div>
+
+      <p className={`${label} mt-4 mb-2`}>{t("stats.byLength")}</p>
+      <div className="grid grid-cols-2 gap-2">
+        {([["11", "stats.short11"], ["21", "stats.long21"]] as const).map(([key, labelKey]) => {
+          const b = level?.byTarget?.[key];
+          return (
+            <div key={key} className="bg-[#0a1628] rounded-lg border border-[#1c3350] p-2.5">
+              <p className="text-[11px] text-[#6b84a0] uppercase tracking-wider">{t(labelKey)}</p>
+              <p className="text-lg font-bold mt-0.5">{b?.played ?? 0}</p>
+              <p className="text-[11px] text-[#4d6480]">
+                {b && b.played > 0 ? t("stats.winsOf", { wins: b.wins, played: b.played }) : t("stats.noneYet")}
+              </p>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 
@@ -53,79 +84,21 @@ export default function ProfilePage() {
         {user?.club && <p className="text-xs text-[#4d6480] mt-0.5">{user.club}</p>}
       </div>
 
-      <div className="grid grid-cols-3 gap-2 mb-6">
-        <div className={`${card} p-3 text-center`}>
-          <p className="text-xl font-bold">{stats?.tournaments ?? "—"}</p>
-          <p className="text-[11px] text-[#6b84a0] uppercase tracking-wider mt-0.5">{t("profile.tournaments")}</p>
-        </div>
-        <div className={`${card} p-3 text-center`}>
-          <p className="text-xl font-bold">{stats?.games ?? "—"}</p>
-          <p className="text-[11px] text-[#6b84a0] uppercase tracking-wider mt-0.5">{t("profile.gamesSection")}</p>
-        </div>
+      {/* Level 1: the events themselves. */}
+      <h2 className={`${label} mb-2`}>{t("stats.events")}</h2>
+      <div className="grid grid-cols-3 gap-2 mb-5">
+        <Tile value={stats?.events.tournaments ?? "—"} caption={t("stats.tournaments")} />
+        <Tile value={stats?.events.games ?? "—"} caption={t("stats.games")} />
         <div className={`${card} p-3 text-center`}>
           <p className="text-xl font-bold text-[#ccff00]">{user?.rating}</p>
           <p className="text-[11px] text-[#6b84a0] uppercase tracking-wider mt-0.5">{t("profile.rating")}</p>
         </div>
       </div>
 
-      <div className={`${card} p-4 mb-4`}>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className={label}>{t("profile.matchesSection")}</h2>
-          <span className="text-xs text-[#4d6480]">{stats?.matches ?? 0} {t("profile.played")}</span>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="relative w-16 h-16 shrink-0">
-            <svg viewBox="0 0 36 36" className="w-16 h-16 -rotate-90">
-              <circle cx="18" cy="18" r="15.5" fill="none" stroke="#1c3350" strokeWidth="3" />
-              <circle cx="18" cy="18" r="15.5" fill="none" stroke="#ccff00" strokeWidth="3"
-                strokeDasharray={`${rate(stats?.wins ?? 0, stats?.matches ?? 0)} ${100 - rate(stats?.wins ?? 0, stats?.matches ?? 0)}`} strokeLinecap="round" />
-            </svg>
-            <span className="absolute inset-0 flex items-center justify-center text-sm font-bold">{rate(stats?.wins ?? 0, stats?.matches ?? 0)}%</span>
-          </div>
-          <div className="flex gap-6">
-            <div>
-              <p className="text-lg font-bold text-green-400">{stats?.wins ?? 0}</p>
-              <p className="text-[11px] text-[#6b84a0] uppercase tracking-wider">{t("profile.matchesWon")}</p>
-            </div>
-            <div>
-              <p className="text-lg font-bold text-red-400">{stats?.losses ?? 0}</p>
-              <p className="text-[11px] text-[#6b84a0] uppercase tracking-wider">{t("profile.losses")}</p>
-            </div>
-          </div>
-        </div>
-        <p className={`${label} mt-4`}>{t("profile.byTarget")}</p>
-        <TargetSplit buckets={stats?.byTarget?.matches} />
-      </div>
-
-      <div className={`${card} p-4 mb-4`}>
-        <div className="flex items-center justify-between mb-1">
-          <h2 className={label}>{t("profile.gamesSection")}</h2>
-          <span className="text-xs text-[#4d6480]">{stats?.games ?? 0} {t("profile.played")}</span>
-        </div>
-        <p className="text-[11px] text-[#4d6480] mb-3">{t("profile.gamesHint")}</p>
-        <div className="flex items-center gap-4">
-          <div className="relative w-16 h-16 shrink-0">
-            <svg viewBox="0 0 36 36" className="w-16 h-16 -rotate-90">
-              <circle cx="18" cy="18" r="15.5" fill="none" stroke="#1c3350" strokeWidth="3" />
-              <circle cx="18" cy="18" r="15.5" fill="none" stroke="#3b82f6" strokeWidth="3"
-                strokeDasharray={`${rate(stats?.gameWins ?? 0, stats?.games ?? 0)} ${100 - rate(stats?.gameWins ?? 0, stats?.games ?? 0)}`} strokeLinecap="round" />
-            </svg>
-            <span className="absolute inset-0 flex items-center justify-center text-sm font-bold">{rate(stats?.gameWins ?? 0, stats?.games ?? 0)}%</span>
-          </div>
-          <div className="flex gap-6">
-            <div>
-              <p className="text-lg font-bold">{stats?.games ?? 0}</p>
-              <p className="text-[11px] text-[#6b84a0] uppercase tracking-wider">{t("profile.gamesPlayed")}</p>
-            </div>
-            <div>
-              <p className="text-lg font-bold text-green-400">{stats?.gameWins ?? 0}</p>
-              <p className="text-[11px] text-[#6b84a0] uppercase tracking-wider">{t("profile.gamesWon")}</p>
-            </div>
-          </div>
-        </div>
-        <p className={`${label} mt-4`}>{t("profile.byTarget")}</p>
-        <TargetSplit buckets={stats?.byTarget?.games} />
-      </div>
+      {/* Levels 2 and 3, kept apart because only one of them moves the rating. */}
+      <LevelCard titleKey="stats.inTournaments" level={stats?.tournaments} accent="#ccff00" />
+      <p className="text-[11px] text-[#4d6480] -mt-2 mb-4">{t("stats.ratedHint")}</p>
+      <LevelCard titleKey="stats.inGames" level={stats?.games} accent="#3b82f6" />
 
       <div className={`${card} p-4`}>
         <h2 className={`${label} mb-3`}>{t("profile.settings")}</h2>

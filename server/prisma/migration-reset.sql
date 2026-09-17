@@ -34,6 +34,7 @@ BEGIN;
 -- ---------------------------------------------------------------------------
 
 DROP TABLE IF EXISTS "ChatMessage" CASCADE;
+DROP TABLE IF EXISTS "MatchSet" CASCADE;
 DROP TABLE IF EXISTS "Game" CASCADE;
 DROP TABLE IF EXISTS "Match" CASCADE;
 DROP TABLE IF EXISTS "TournamentUser" CASCADE;
@@ -135,8 +136,11 @@ CREATE INDEX "ClubTable_clubId_idx" ON "ClubTable"("clubId");
 ALTER TABLE "ClubTable" ADD CONSTRAINT "ClubTable_clubId_fkey" FOREIGN KEY ("clubId") REFERENCES "Club"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- organizerId is the tournament's manager; every write action is gated on it.
+-- `kind` separates a rated TOURNAMENT from an unrated GAME — same container
+-- otherwise: roster, rounds, pairing, standings.
 CREATE TABLE "Tournament" (
     "id" TEXT NOT NULL,
+    "kind" TEXT NOT NULL DEFAULT 'TOURNAMENT',
     "name" TEXT NOT NULL,
     "description" TEXT,
     "tablesCount" INTEGER NOT NULL DEFAULT 4,
@@ -154,6 +158,7 @@ CREATE TABLE "Tournament" (
     CONSTRAINT "Tournament_pkey" PRIMARY KEY ("id")
 );
 CREATE INDEX "Tournament_status_idx" ON "Tournament"("status");
+CREATE INDEX "Tournament_kind_status_idx" ON "Tournament"("kind", "status");
 CREATE INDEX "Tournament_startTime_idx" ON "Tournament"("startTime");
 CREATE INDEX "Tournament_clubId_idx" ON "Tournament"("clubId");
 ALTER TABLE "Tournament" ADD CONSTRAINT "Tournament_clubId_fkey" FOREIGN KEY ("clubId") REFERENCES "Club"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -176,8 +181,8 @@ CREATE INDEX "TournamentUser_tournamentId_seed_idx" ON "TournamentUser"("tournam
 ALTER TABLE "TournamentUser" ADD CONSTRAINT "TournamentUser_tournamentId_fkey" FOREIGN KEY ("tournamentId") REFERENCES "Tournament"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "TournamentUser" ADD CONSTRAINT "TournamentUser_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
--- One match is one game to pointsToWin (11 or 21) — no nested Game rows.
--- lastScorer/prevServerSide exist so /undo can reverse exactly one point.
+-- A match holds a run of sets. There is no fixed "best of N": whoever won more
+-- sets takes the match, and the judge decides when to stop.
 CREATE TABLE "Match" (
     "id" TEXT NOT NULL,
     "tournamentId" TEXT NOT NULL,
@@ -188,12 +193,8 @@ CREATE TABLE "Match" (
     "player2Id" TEXT,
     "judgeId" TEXT,
     "pointsToWin" INTEGER NOT NULL DEFAULT 11,
-    "score1" INTEGER NOT NULL DEFAULT 0,
-    "score2" INTEGER NOT NULL DEFAULT 0,
-    "serverSide" INTEGER NOT NULL DEFAULT 1,
-    "lastScorer" INTEGER,
-    "prevServerSide" INTEGER,
-    "letCount" INTEGER NOT NULL DEFAULT 0,
+    "setsWon1" INTEGER NOT NULL DEFAULT 0,
+    "setsWon2" INTEGER NOT NULL DEFAULT 0,
     "status" "MatchStatus" NOT NULL DEFAULT 'NOT_STARTED',
     "startedAt" TIMESTAMP(3),
     "endedAt" TIMESTAMP(3),
@@ -210,41 +211,29 @@ ALTER TABLE "Match" ADD CONSTRAINT "Match_player1Id_fkey" FOREIGN KEY ("player1I
 ALTER TABLE "Match" ADD CONSTRAINT "Match_player2Id_fkey" FOREIGN KEY ("player2Id") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 ALTER TABLE "Match" ADD CONSTRAINT "Match_judgeId_fkey" FOREIGN KEY ("judgeId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
--- A casual game: two players, one game to the target score. Scored exactly like a
--- Match, but deliberately UNRATED — Elo never moves for these, which is the whole
--- reason it is a separate table rather than a Match without a tournament.
-CREATE TABLE "Game" (
+-- One set ("партия") inside a match: the thing actually played to 11 or 21.
+-- Point-by-point state lives here, so /undo reverses a point within the set.
+CREATE TABLE "MatchSet" (
     "id" TEXT NOT NULL,
-    "title" TEXT,
-    "clubId" TEXT,
-    "tableId" TEXT,
-    "startTime" TIMESTAMP(3),
+    "matchId" TEXT NOT NULL,
+    "index" INTEGER NOT NULL,
     "pointsToWin" INTEGER NOT NULL DEFAULT 11,
-    "organizerId" TEXT NOT NULL,
-    "player1Id" TEXT,
-    "player2Id" TEXT,
     "score1" INTEGER NOT NULL DEFAULT 0,
     "score2" INTEGER NOT NULL DEFAULT 0,
     "serverSide" INTEGER NOT NULL DEFAULT 1,
     "lastScorer" INTEGER,
     "prevServerSide" INTEGER,
     "letCount" INTEGER NOT NULL DEFAULT 0,
-    "status" "MatchStatus" NOT NULL DEFAULT 'NOT_STARTED',
-    "startedAt" TIMESTAMP(3),
+    "status" "MatchStatus" NOT NULL DEFAULT 'IN_PROGRESS',
+    "winner" INTEGER,
+    "startedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "endedAt" TIMESTAMP(3),
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "Game_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "MatchSet_pkey" PRIMARY KEY ("id")
 );
-CREATE INDEX "Game_status_idx" ON "Game"("status");
-CREATE INDEX "Game_startTime_idx" ON "Game"("startTime");
-CREATE INDEX "Game_clubId_idx" ON "Game"("clubId");
-ALTER TABLE "Game" ADD CONSTRAINT "Game_clubId_fkey" FOREIGN KEY ("clubId") REFERENCES "Club"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-ALTER TABLE "Game" ADD CONSTRAINT "Game_tableId_fkey" FOREIGN KEY ("tableId") REFERENCES "ClubTable"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-ALTER TABLE "Game" ADD CONSTRAINT "Game_organizerId_fkey" FOREIGN KEY ("organizerId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE "Game" ADD CONSTRAINT "Game_player1Id_fkey" FOREIGN KEY ("player1Id") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-ALTER TABLE "Game" ADD CONSTRAINT "Game_player2Id_fkey" FOREIGN KEY ("player2Id") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+CREATE UNIQUE INDEX "MatchSet_matchId_index_key" ON "MatchSet"("matchId", "index");
+CREATE INDEX "MatchSet_matchId_idx" ON "MatchSet"("matchId");
+ALTER TABLE "MatchSet" ADD CONSTRAINT "MatchSet_matchId_fkey" FOREIGN KEY ("matchId") REFERENCES "Match"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- A table reservation. No payment processing — this is just a record.
 CREATE TABLE "Booking" (
@@ -255,7 +244,6 @@ CREATE TABLE "Booking" (
     "date" TIMESTAMP(3) NOT NULL,
     "startTime" TEXT NOT NULL,
     "durationHours" DOUBLE PRECISION NOT NULL DEFAULT 1,
-    "gameId" TEXT,
     "tournamentId" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -267,9 +255,9 @@ CREATE INDEX "Booking_tableId_date_idx" ON "Booking"("tableId", "date");
 ALTER TABLE "Booking" ADD CONSTRAINT "Booking_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "Booking" ADD CONSTRAINT "Booking_clubId_fkey" FOREIGN KEY ("clubId") REFERENCES "Club"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "Booking" ADD CONSTRAINT "Booking_tableId_fkey" FOREIGN KEY ("tableId") REFERENCES "ClubTable"("id") ON DELETE SET NULL ON UPDATE CASCADE;
--- What the table was booked for. Cancelling a booking leaves the event alone,
--- and deleting an event just detaches it from the booking.
-ALTER TABLE "Booking" ADD CONSTRAINT "Booking_gameId_fkey" FOREIGN KEY ("gameId") REFERENCES "Game"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+-- What the table was booked for — a tournament or a game, which are the same
+-- table. Cancelling a booking leaves the event alone, and deleting an event just
+-- detaches it from the booking.
 ALTER TABLE "Booking" ADD CONSTRAINT "Booking_tournamentId_fkey" FOREIGN KEY ("tournamentId") REFERENCES "Tournament"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- "Follow a club" list — no billing, just a saved list.
