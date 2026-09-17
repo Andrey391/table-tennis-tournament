@@ -306,6 +306,8 @@ app.get("/api/auth/me", authMiddleware, async (req: any, res) => {
 // is why the short/long split lives at set level.
 function summariseMatches(matches: any[], userId: string) {
   const matchTally = { played: 0, wins: 0, losses: 0 };
+  const setTally = { played: 0, wins: 0, losses: 0 };
+  const byTarget: any = { 11: { played: 0, wins: 0 }, 21: { played: 0, wins: 0 } };
 
   for (const m of matches) {
     const isP1 = m.player1Id === userId;
@@ -315,8 +317,18 @@ function summariseMatches(matches: any[], userId: string) {
     matchTally.played++;
     if (mine > theirs) matchTally.wins++;
     else if (theirs > mine) matchTally.losses++;
+
+    for (const set of m.sets || []) {
+      if (set.status !== "COMPLETED") continue;
+      const won = set.winner === (isP1 ? 1 : 2);
+      setTally.played++;
+      if (won) setTally.wins++; else setTally.losses++;
+      if (!byTarget[String(set.pointsToWin)]) byTarget[String(set.pointsToWin)] = { played: 0, wins: 0 };
+      byTarget[String(set.pointsToWin)].played++;
+      if (won) byTarget[String(set.pointsToWin)].wins++;
+    }
   }
-  return matchTally;
+  return { matches: matchTally, sets: setTally, byTarget };
 }
 
 app.get("/api/profile/stats", authMiddleware, async (req: any, res) => {
@@ -324,12 +336,14 @@ app.get("/api/profile/stats", authMiddleware, async (req: any, res) => {
   const userId = req.user.userId;
 
   const [events, matches] = await Promise.all([
+    // An event someone withdrew from was still an event they took part in.
     d.tournamentUser.findMany({ where: { userId, status: { in: ["REGISTERED", "WITHDRAWN"] } }, select: { tournament: { select: { kind: true } } } }),
     d.match.findMany({
       where: { status: "COMPLETED", OR: [{ player1Id: userId }, { player2Id: userId }] },
       select: {
         player1Id: true, setsWon1: true, setsWon2: true,
         tournament: { select: { kind: true } },
+        sets: { select: { score1: true, score2: true, pointsToWin: true, status: true, winner: true } },
       },
     }),
   ]);
@@ -372,6 +386,7 @@ app.get("/api/players/:id", authMiddleware, async (req: any, res) => {
       player1: { select: { id: true, firstName: true, lastName: true, rating: true } },
       player2: { select: { id: true, firstName: true, lastName: true, rating: true } },
       tournament: { select: { id: true, name: true, kind: true } },
+      sets: { select: { score1: true, score2: true, status: true }, orderBy: { index: "asc" } },
     },
     orderBy: { endedAt: "desc" },
     take: 25,
