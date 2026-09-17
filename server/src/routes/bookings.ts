@@ -48,7 +48,13 @@ bookingRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, res: R
     const booking = await prisma.$transaction(async (tx) => {
       // A game and a tournament are the same row; `kind` is the only difference.
       const event = await tx.tournament.create({
-        data: { kind: data.eventType, name: title, clubId: club.id, startTime: startsAt, endTime: endsAt, organizerId: userId },
+        data: {
+          kind: data.eventType, name: title, clubId: club.id, startTime: startsAt, endTime: endsAt, organizerId: userId,
+          // The "11 / 21" choice on the booking screen is the target its matches
+          // get created with; tournaments keep the 11 default and set it per match.
+          ...(data.pointsToWin ? { pointsToWin: data.pointsToWin } : {}),
+          ...(data.isPublic === undefined ? {} : { isPublic: data.isPublic }),
+        },
       });
       // The organiser is a participant of their own event from the start.
       await tx.tournamentUser.create({ data: { tournamentId: event.id, userId, status: "REGISTERED" } });

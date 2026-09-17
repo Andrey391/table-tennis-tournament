@@ -1,7 +1,7 @@
 import { Router, Response } from "express";
 import { prisma } from "../config/db.js";
-import { AuthenticatedRequest, authMiddleware, roleMiddleware, generateToken } from "../middleware/auth.js";
-import { LoginSchema, RegisterSchema } from "../shared/schemas.js";
+import { AuthenticatedRequest, authMiddleware, generateToken } from "../middleware/auth.js";
+import { LoginSchema, SelfRegisterSchema } from "../shared/schemas.js";
 import bcrypt from "bcryptjs";
 
 export const authRouter = Router();
@@ -24,14 +24,23 @@ authRouter.post("/login", async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
-authRouter.post("/register", authMiddleware, roleMiddleware("ADMIN", "ORGANIZER"), async (req: AuthenticatedRequest, res: Response) => {
+// Open self-signup, same as the Vercel copy: the client ships a Register screen,
+// so requiring an already-signed-in ADMIN here left a brand-new user staring at a
+// 401 on the very first thing they try. The role is never read from the body —
+// everyone signs up as an ORGANIZER, which only means they can run their own
+// events (per-tournament ownership is what actually gates anything).
+authRouter.post("/register", async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const data = RegisterSchema.parse(req.body);
+    const data = SelfRegisterSchema.parse(req.body);
     const hashed = await bcrypt.hash(data.password, 10);
-    const user = await prisma.user.create({ data: { ...data, password: hashed } });
+    const user = await prisma.user.create({ data: { ...data, password: hashed, role: "ORGANIZER" } });
     const token = generateToken(user.id, user.role);
-    res.status(201).json({ token, user: { id: user.id, email: user.email, role: user.role } });
+    res.status(201).json({
+      token,
+      user: { id: user.id, email: user.email, role: user.role, firstName: user.firstName, lastName: user.lastName, rating: user.rating, club: user.club },
+    });
   } catch (err: any) {
+    if (err.code === "P2002") { res.status(400).json({ error: "An account with this email already exists" }); return; }
     res.status(400).json({ error: err.message });
   }
 });

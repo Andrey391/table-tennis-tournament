@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { apiService } from "../services/api";
 import Layout from "../components/Layout";
+import { useAuth } from "../context/AuthContext";
 import { useT } from "../i18n";
 import { formatShortDate, formatSlot } from "../lib/format";
 
@@ -9,15 +10,19 @@ const DURATIONS = [1, 1.5, 2, 3];
 
 export default function BookingsPage() {
   const { t, lang } = useT();
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const [clubs, setClubs] = useState<any[]>([]);
   const [bookings, setBookings] = useState<any[]>([]);
   const [subscriptions, setSubscriptions] = useState<any[]>([]);
   const [availability, setAvailability] = useState<any[]>([]);
   const [form, setForm] = useState({
     clubId: "", tableId: "", date: "", startTime: "", durationHours: 1,
-    eventType: "GAME" as "GAME" | "TOURNAMENT", eventTitle: "", pointsToWin: 11 as 11 | 21,
+    eventType: "GAME" as "GAME" | "TOURNAMENT", eventTitle: "", pointsToWin: 11 as 11 | 21, isPublic: true,
   });
   const [newClub, setNewClub] = useState({ name: "", city: "", address: "", phone: "" });
+  const [club, setClub] = useState<any>(null);
+  const [newTable, setNewTable] = useState("");
   const [showAddClub, setShowAddClub] = useState(false);
   const [subClubId, setSubClubId] = useState("");
   const [busy, setBusy] = useState(false);
@@ -30,12 +35,21 @@ export default function BookingsPage() {
   };
   useEffect(load, []);
 
+  // The club's own tables. Without any, "book a specific table" has nothing to
+  // offer and the overlap check never fires, so this is also where they get added.
+  const loadClub = (clubId: string) => {
+    if (!clubId) { setClub(null); return; }
+    apiService.clubs.getById(clubId).then(r => setClub(r.data)).catch(console.error);
+  };
+  useEffect(() => { loadClub(form.clubId); }, [form.clubId]);
+
   // Which tables are already taken that day, so a clashing slot is visible before submitting.
-  useEffect(() => {
+  const loadAvailability = () => {
     if (!form.clubId || !form.date) { setAvailability([]); return; }
     apiService.clubs.availability(form.clubId, new Date(form.date).toISOString())
       .then(r => setAvailability(r.data)).catch(console.error);
-  }, [form.clubId, form.date]);
+  };
+  useEffect(loadAvailability, [form.clubId, form.date]);
 
   const set = (key: string, val: any) => setForm(f => ({ ...f, [key]: val, ...(key === "clubId" ? { tableId: "" } : {}) }));
 
@@ -44,7 +58,7 @@ export default function BookingsPage() {
     if (!form.clubId || !form.date || !form.startTime) return;
     setBusy(true); setError("");
     try {
-      await apiService.bookings.create({
+      const created = await apiService.bookings.create({
         clubId: form.clubId,
         tableId: form.tableId || undefined,
         date: new Date(form.date).toISOString(),
@@ -52,10 +66,15 @@ export default function BookingsPage() {
         durationHours: form.durationHours,
         eventType: form.eventType,
         eventTitle: form.eventTitle || undefined,
-        pointsToWin: form.eventType === "GAME" ? form.pointsToWin : undefined,
+        pointsToWin: form.pointsToWin,
+        isPublic: form.isPublic,
       });
       setForm({ ...form, tableId: "", date: "", startTime: "", durationHours: 1, eventTitle: "" });
       load();
+      // The booking exists to hold a table for an event, and that event is where
+      // the next step lives — adding an opponent and starting. Land there instead
+      // of leaving people to hunt for it in the feed.
+      if (created.data?.tournament?.id) navigate(`/tournament/${created.data.tournament.id}`);
     } catch (err: any) { setError(err.response?.data?.error || t("common.failed")); }
     finally { setBusy(false); }
   };
@@ -70,6 +89,30 @@ export default function BookingsPage() {
       setShowAddClub(false);
       setForm(f => ({ ...f, clubId: r.data.id }));
       load();
+    } catch (err: any) { setError(err.response?.data?.error || t("common.failed")); }
+  };
+
+  const addTable = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.clubId || !newTable) return;
+    setError("");
+    try {
+      await apiService.clubs.addTable(form.clubId, { number: +newTable });
+      setNewTable("");
+      loadClub(form.clubId);
+      loadAvailability();
+      load();
+    } catch (err: any) { setError(err.response?.data?.error || t("common.failed")); }
+  };
+
+  const removeTable = async (tableId: string) => {
+    if (!form.clubId) return;
+    setError("");
+    try {
+      await apiService.clubs.removeTable(form.clubId, tableId);
+      if (form.tableId === tableId) set("tableId", "");
+      loadClub(form.clubId);
+      loadAvailability();
     } catch (err: any) { setError(err.response?.data?.error || t("common.failed")); }
   };
 
@@ -120,6 +163,38 @@ export default function BookingsPage() {
               <option value="">{t("play.selectClub")}</option>
               {clubs.map(c => <option key={c.id} value={c.id}>{c.name} &middot; {c.city}</option>)}
             </select>
+
+            {form.clubId && (
+              <div>
+                <label className="block text-xs text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("play.tables")}</label>
+                {club?.tables?.length ? (
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {club.tables.map((tbl: any) => (
+                      <span key={tbl.id} className="flex items-center gap-1.5 bg-[#0a1628] border border-[#1c3350] rounded-full pl-3 pr-1.5 py-1 text-xs text-[#93a8c2]">
+                        &#8470;{tbl.number}
+                        {club.createdById === user?.id && (
+                          <button type="button" onClick={() => removeTable(tbl.id)} aria-label={t("play.removeTable")} className="text-[#6b84a0] px-1">&times;</button>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-[#4d6480] mb-2">{t("play.noTables")}</p>
+                )}
+                {club && (club.createdById === user?.id || !club.createdById) ? (
+                  <div className="flex gap-2">
+                    <input type="number" min={1} placeholder={t("play.tableNumber")} value={newTable} onChange={e => setNewTable(e.target.value)}
+                      className={field + " flex-1"} />
+                    <button type="button" onClick={addTable} disabled={!newTable}
+                      className="px-4 py-2.5 bg-[#1c3350] text-[#93a8c2] rounded-lg text-sm font-medium border border-[#1c3350] shrink-0 disabled:opacity-40">
+                      {t("play.addTable")}
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-xs text-[#4d6480]">{t("play.notClubManager")}</p>
+                )}
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-3">
               <input type="date" value={form.date} onChange={e => set("date", e.target.value)} className={field} required />
@@ -179,19 +254,24 @@ export default function BookingsPage() {
               <p className="text-xs text-[#4d6480] mt-1.5">{t("play.eventTitleHint")}</p>
             </div>
 
-            {form.eventType === "GAME" && (
-              <div>
-                <label className="block text-xs text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("match.pointsToWin")}</label>
-                <div className="flex gap-2">
-                  {([11, 21] as const).map(pts => (
-                    <button key={pts} type="button" onClick={() => set("pointsToWin", pts)}
-                      className={`flex-1 py-2 rounded-lg text-sm font-medium border ${
-                        form.pointsToWin === pts ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00]" : "bg-[#0a1628] text-[#93a8c2] border-[#1c3350]"
-                      }`}>{t("match.pts", { n: pts })}</button>
-                  ))}
-                </div>
+            <div>
+              <label className="block text-xs text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("match.pointsToWin")}</label>
+              <div className="flex gap-2">
+                {([11, 21] as const).map(pts => (
+                  <button key={pts} type="button" onClick={() => set("pointsToWin", pts)}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium border ${
+                      form.pointsToWin === pts ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00]" : "bg-[#0a1628] text-[#93a8c2] border-[#1c3350]"
+                    }`}>{t("match.pts", { n: pts })}</button>
+                ))}
               </div>
-            )}
+            </div>
+
+            {/* Every booking creates an event; a private knockabout has no business
+                showing up in the city feed next to a club tournament. */}
+            <label className="flex items-center gap-2 text-sm text-[#93a8c2]">
+              <input type="checkbox" checked={!form.isPublic} onChange={e => set("isPublic", !e.target.checked)} className="w-4 h-4" />
+              {t("tournament.private")}
+            </label>
 
             <button type="submit" disabled={busy} className="w-full bg-[#ccff00] text-[#0a1628] py-2.5 rounded-lg text-sm font-bold disabled:opacity-50">
               {busy ? t("play.booking") : t("play.bookAction")}
@@ -212,8 +292,13 @@ export default function BookingsPage() {
                   <p className="text-sm font-medium truncate">{b.club?.name}</p>
                   <p className="text-xs text-[#93a8c2]">{formatShortDate(b.date, lang)} &middot; {formatSlot(b.startTime, b.durationHours)}{b.table ? ` · ${t("common.table")} №${b.table.number}` : ""}</p>
                   {b.club?.address && <p className="text-xs text-[#4d6480] truncate">{b.club.address}</p>}
-                  {b.game && <Link to={`/game/${b.game.id}`} className="text-xs text-[#ccff00] font-medium">{t("play.opensGame")}: {b.game.title}</Link>}
-                  {b.tournament && <Link to={`/tournament/${b.tournament.id}`} className="text-xs text-[#ccff00] font-medium">{t("play.opensTournament")}: {b.tournament.name}</Link>}
+                  {/* A game and a tournament are the same row, so the link is the same
+                      screen — only the wording follows what was booked. */}
+                  {b.tournament && (
+                    <Link to={`/tournament/${b.tournament.id}`} className="text-xs text-[#ccff00] font-medium">
+                      {t(b.tournament.kind === "GAME" ? "play.opensGame" : "play.opensTournament")}: {b.tournament.name}
+                    </Link>
+                  )}
                 </div>
                 <button onClick={() => removeBooking(b.id)} className="text-red-400 text-xs px-2 py-1 shrink-0">{t("common.cancel")}</button>
               </div>

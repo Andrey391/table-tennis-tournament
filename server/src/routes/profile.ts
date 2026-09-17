@@ -53,7 +53,8 @@ profileRouter.get("/stats", authMiddleware, async (req: AuthenticatedRequest, re
 
   const [events, matches] = await Promise.all([
     prisma.tournamentUser.findMany({
-      where: { userId, status: "REGISTERED" },
+      // An event someone withdrew from was still an event they took part in.
+      where: { userId, status: { in: ["REGISTERED", "WITHDRAWN"] } },
       select: { tournament: { select: { kind: true } } },
     }),
     prisma.match.findMany({

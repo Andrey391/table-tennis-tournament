@@ -1,5 +1,5 @@
 import { useParams } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { apiService } from "../services/api";
 import { useT } from "../i18n";
 import { playerName, matchScoreLine, setScores, liveSet } from "../lib/format";
@@ -11,11 +11,19 @@ export default function PublicTournament() {
   const [data, setData] = useState<any>(null);
   const [standings, setStandings] = useState<any[]>([]);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     if (!id) return;
     apiService.public.tournament(id).then(r => setData(r.data)).catch(console.error);
     apiService.public.standings(id).then(r => setStandings(r.data)).catch(console.error);
   }, [id]);
+
+  // Spectators park this page on a phone and look back at it between rallies, so
+  // it has to move on its own the way the live board does.
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const i = setInterval(load, 5000);
+    return () => clearInterval(i);
+  }, [load]);
 
   if (!data) return <div className="min-h-screen bg-[#0a1628] flex items-center justify-center text-[#6b84a0] text-sm">{t("common.loading")}</div>;
 
@@ -28,6 +36,7 @@ export default function PublicTournament() {
           <p className={`text-xs mt-1 uppercase tracking-wider font-medium ${
             data.tournament.status === "ACTIVE" ? "text-yellow-400" : data.tournament.status === "COMPLETED" ? "text-green-400" : "text-[#4d6480]"
           }`}>{t(`status.${data.tournament.status}`)}</p>
+          <p className="text-[10px] text-[#4d6480] mt-1">{t("live.updates")}</p>
         </div>
 
         {data.live.length > 0 && (
@@ -76,8 +85,10 @@ export default function PublicTournament() {
                     <span className="truncate">{playerName(s)}</span>
                   </span>
                   <span className="flex items-center gap-3 shrink-0 text-xs">
-                    <span className="text-green-400">{s.wins}W</span>
-                    <span className="text-red-400">{s.losses}L</span>
+                    <span className="text-green-400">{s.wins}{t("tournament.winShort")}</span>
+                    <span className="text-red-400">{s.losses}{t("tournament.lossShort")}</span>
+                    {/* The endpoint already computes these; printing only W/L threw them away. */}
+                    <span className="font-mono text-[#93a8c2]">{s.setsWon}:{s.setsLost}</span>
                   </span>
                 </div>
               ))}

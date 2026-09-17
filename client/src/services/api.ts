@@ -16,6 +16,8 @@ export const apiService = {
   },
   players: {
     getAll: () => api.get("/players"),
+    // A player's public profile plus the matches behind their rating.
+    getById: (id: string) => api.get(`/players/${id}`),
     update: (id: string, d: any) => api.put(`/players/${id}`, d),
   },
   tournaments: {
@@ -25,6 +27,8 @@ export const apiService = {
     getById: (id: string) => api.get(`/tournaments/${id}`),
     create: (d: any) => api.post("/tournaments", d),
     update: (id: string, d: any) => api.put(`/tournaments/${id}`, d),
+    // Deletes the event and its matches. A booking that created it keeps existing.
+    remove: (id: string) => api.delete(`/tournaments/${id}`),
     addPlayers: (id: string, d: { userIds: string[] }) => api.post(`/tournaments/${id}/players`, d),
     removePlayer: (id: string, userId: string) => api.delete(`/tournaments/${id}/players/${userId}`),
     join: (id: string) => api.post(`/tournaments/${id}/join`),
@@ -68,7 +72,7 @@ export const apiService = {
   },
   bookings: {
     getMine: () => api.get("/bookings/mine"),
-    create: (d: { clubId: string; tableId?: string; date: string; startTime: string; durationHours: number; eventType: "GAME" | "TOURNAMENT"; eventTitle?: string; pointsToWin?: 11 | 21 }) => api.post("/bookings", d),
+    create: (d: { clubId: string; tableId?: string; date: string; startTime: string; durationHours: number; eventType: "GAME" | "TOURNAMENT"; eventTitle?: string; pointsToWin?: 11 | 21; isPublic?: boolean }) => api.post("/bookings", d),
     remove: (id: string) => api.delete(`/bookings/${id}`),
   },
   subscriptions: {

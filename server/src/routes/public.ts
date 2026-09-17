@@ -37,7 +37,8 @@ publicRouter.get("/tournament/:id/standings", async (req, res: Response) => {
   const tournament = await prisma.tournament.findUnique({
     where: { id: req.params.id },
     include: {
-      players: { where: { status: "REGISTERED" }, include: { user: { select: playerSelect } } },
+      // A player who left mid-event keeps the matches they already played.
+      players: { where: { status: { in: ["REGISTERED", "WITHDRAWN"] } }, include: { user: { select: playerSelect } } },
       matches: { where: { status: "COMPLETED" }, select: { player1Id: true, player2Id: true, setsWon1: true, setsWon2: true, sets: { select: { score1: true, score2: true, status: true } } } },
     },
   });

@@ -323,6 +323,34 @@ BEGIN
   END IF;
 END $$;
 
+-- 12. The event carries the target score its matches are created with, so the
+-- "11 / 21" choice made when booking a table is actually honoured.
+ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "pointsToWin" INTEGER NOT NULL DEFAULT 11;
+
+
+-- 13. An event can stay out of the public feed, and the round a player sat out is
+-- recorded rather than guessed from "has no match this round".
+ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "isPublic" BOOLEAN NOT NULL DEFAULT true;
+
+CREATE TABLE IF NOT EXISTS "RoundBye" (
+    "id" TEXT NOT NULL,
+    "tournamentId" TEXT NOT NULL,
+    "round" INTEGER NOT NULL,
+    "userId" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "RoundBye_pkey" PRIMARY KEY ("id")
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "RoundBye_tournamentId_round_key" ON "RoundBye"("tournamentId", "round");
+CREATE INDEX IF NOT EXISTS "RoundBye_tournamentId_idx" ON "RoundBye"("tournamentId");
+DO $$ BEGIN
+  ALTER TABLE "RoundBye" ADD CONSTRAINT "RoundBye_tournamentId_fkey" FOREIGN KEY ("tournamentId") REFERENCES "Tournament"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  ALTER TABLE "RoundBye" ADD CONSTRAINT "RoundBye_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+
 -- NOTE: an earlier iteration of this branch had a standalone "Game" table and a
 -- "Booking"."gameId" column. Games are Tournament rows now, so neither is used
 -- any more. They are deliberately left in place rather than dropped: nothing

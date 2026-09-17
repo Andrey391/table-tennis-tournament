@@ -10,6 +10,11 @@ export const CreateTournamentSchema = z.object({
   description: z.string().max(2000).optional(),
   tablesCount: z.number().int().min(1).max(50).default(4),
   maxPlayers: z.number().int().min(2).max(500).optional(),
+  // Target score the event's matches are created with; a judge can still change
+  // it on a match that hasn't started.
+  pointsToWin: z.union([z.literal(11), z.literal(21)]).optional(),
+  // False keeps the event out of the public feed; its participants still see it.
+  isPublic: z.boolean().optional(),
   clubId: z.string().optional(),
   startTime: z.string().datetime().optional(),
   endTime: z.string().datetime().optional(),
@@ -22,6 +27,8 @@ export const UpdateTournamentSchema = z.object({
   description: z.string().max(2000).nullable().optional(),
   tablesCount: z.number().int().min(1).max(50).optional(),
   maxPlayers: z.number().int().min(2).max(500).nullable().optional(),
+  pointsToWin: z.union([z.literal(11), z.literal(21)]).optional(),
+  isPublic: z.boolean().optional(),
   clubId: z.string().nullable().optional(),
   status: z.enum(["DRAFT", "ACTIVE", "COMPLETED", "CANCELLED"]).optional(),
   startTime: z.string().datetime().nullable().optional(),
@@ -54,6 +61,11 @@ export const CreateBookingSchema = z.object({
   durationHours: z.number().min(0.5).max(8).default(1),
   eventType: z.enum(["GAME", "TOURNAMENT"]).default("GAME"),
   eventTitle: z.string().max(200).optional(),
+  // Carried onto the event that the booking creates, so the "11 / 21" choice on
+  // the booking screen is what its matches are actually played to.
+  pointsToWin: z.union([z.literal(11), z.literal(21)]).optional(),
+  // A table held for a private knockabout doesn't belong in the city feed.
+  isPublic: z.boolean().optional(),
 });
 
 export const SubscribeSchema = z.object({
@@ -93,6 +105,18 @@ export const ForfeitSchema = z.object({
 export const LoginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
+});
+
+// Self-signup from the Register screen. Role and rating are deliberately absent:
+// taking them from the request body would let anyone register as an ADMIN with a
+// rating of their choosing.
+export const SelfRegisterSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(6),
+  firstName: z.string().min(1).max(100),
+  lastName: z.string().min(1).max(100),
+  club: z.string().max(100).optional(),
+  city: z.string().max(120).optional(),
 });
 
 export const RegisterSchema = z.object({

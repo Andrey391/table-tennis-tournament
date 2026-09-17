@@ -37,6 +37,7 @@ DROP TABLE IF EXISTS "ChatMessage" CASCADE;
 DROP TABLE IF EXISTS "MatchSet" CASCADE;
 DROP TABLE IF EXISTS "Game" CASCADE;
 DROP TABLE IF EXISTS "Match" CASCADE;
+DROP TABLE IF EXISTS "RoundBye" CASCADE;
 DROP TABLE IF EXISTS "TournamentUser" CASCADE;
 DROP TABLE IF EXISTS "Tournament" CASCADE;
 DROP TABLE IF EXISTS "Booking" CASCADE;
@@ -145,11 +146,13 @@ CREATE TABLE "Tournament" (
     "description" TEXT,
     "tablesCount" INTEGER NOT NULL DEFAULT 4,
     "maxPlayers" INTEGER,
+    "pointsToWin" INTEGER NOT NULL DEFAULT 11,
     "status" TEXT NOT NULL DEFAULT 'DRAFT',
     "startTime" TIMESTAMP(3),
     "endTime" TIMESTAMP(3),
     "minRating" INTEGER,
     "maxRating" INTEGER,
+    "isPublic" BOOLEAN NOT NULL DEFAULT true,
     "clubId" TEXT,
     "organizerId" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -180,6 +183,22 @@ CREATE INDEX "TournamentUser_tournamentId_idx" ON "TournamentUser"("tournamentId
 CREATE INDEX "TournamentUser_tournamentId_seed_idx" ON "TournamentUser"("tournamentId", "seed");
 ALTER TABLE "TournamentUser" ADD CONSTRAINT "TournamentUser_tournamentId_fkey" FOREIGN KEY ("tournamentId") REFERENCES "Tournament"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "TournamentUser" ADD CONSTRAINT "TournamentUser_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- With an odd headcount exactly one player sits each round out; this records who,
+-- so the round can say it rather than the client guessing from missing matches.
+CREATE TABLE "RoundBye" (
+    "id" TEXT NOT NULL,
+    "tournamentId" TEXT NOT NULL,
+    "round" INTEGER NOT NULL,
+    "userId" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "RoundBye_pkey" PRIMARY KEY ("id")
+);
+CREATE UNIQUE INDEX "RoundBye_tournamentId_round_key" ON "RoundBye"("tournamentId", "round");
+CREATE INDEX "RoundBye_tournamentId_idx" ON "RoundBye"("tournamentId");
+ALTER TABLE "RoundBye" ADD CONSTRAINT "RoundBye_tournamentId_fkey" FOREIGN KEY ("tournamentId") REFERENCES "Tournament"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "RoundBye" ADD CONSTRAINT "RoundBye_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- A match holds a run of sets. There is no fixed "best of N": whoever won more
 -- sets takes the match, and the judge decides when to stop.

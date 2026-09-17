@@ -17,6 +17,7 @@ import BookingsPage from "./pages/BookingsPage";
 import ProfilePage from "./pages/ProfilePage";
 import TournamentChatPage from "./pages/TournamentChatPage";
 import GamesPage from "./pages/GamesPage";
+import PlayerPage from "./pages/PlayerPage";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { token } = useAuth();
@@ -33,6 +34,7 @@ function App() {
           <Route path="/register" element={token ? <Navigate to="/" /> : <Register />} />
           <Route path="/" element={<RequireAuth><Dashboard /></RequireAuth>} />
           <Route path="/players" element={<RequireAuth><PlayersPage /></RequireAuth>} />
+          <Route path="/player/:id" element={<RequireAuth><PlayerPage /></RequireAuth>} />
           <Route path="/results" element={<RequireAuth><ResultsPage /></RequireAuth>} />
           <Route path="/rating" element={<RequireAuth><RatingPage /></RequireAuth>} />
           <Route path="/bookings" element={<RequireAuth><BookingsPage /></RequireAuth>} />
