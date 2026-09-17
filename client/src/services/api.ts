@@ -18,7 +18,12 @@ export const apiService = {
     getAll: () => api.get("/players"),
     // A player's public profile plus the matches behind their rating.
     getById: (id: string) => api.get(`/players/${id}`),
-    update: (id: string, d: any) => api.put(`/players/${id}`, d),
+    // The owner's own profile; a new password needs the current one alongside it.
+    update: (id: string, d: {
+      firstName?: string; lastName?: string; email?: string;
+      club?: string | null; city?: string | null; phone?: string | null; dateOfBirth?: string | null;
+      currentPassword?: string; newPassword?: string;
+    }) => api.put(`/players/${id}`, d),
   },
   tournaments: {
     // `kind` picks rated tournaments ("TOURNAMENT") or unrated games ("GAME").

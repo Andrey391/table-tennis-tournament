@@ -409,16 +409,51 @@ app.get("/api/players/:id", authMiddleware, async (req: any, res) => {
   res.json({ player, matches, recent: { wins, losses } });
 });
 
+// A player edits their own profile. Rating is never client-settable - it only
+// moves through Elo after a match - and neither is role, which would be a free
+// promotion to ADMIN.
 app.put("/api/players/:id", authMiddleware, async (req: any, res) => {
   try {
     if (req.params.id !== req.user.userId && req.user.role !== "ADMIN") {
       res.status(403).json({ error: "You can only edit your own profile" });
       return;
     }
-    const { firstName, lastName, club, city, phone } = req.body;
-    const user = await db().user.update({ where: { id: req.params.id }, data: { firstName, lastName, club, city, phone } });
+    const d = db();
+    const { firstName, lastName, email, club, city, phone, dateOfBirth, currentPassword, newPassword } = req.body;
+
+    // Only the fields that were actually sent are written, so a form that submits
+    // one changed field does not blank the rest.
+    const data: any = {};
+    for (const [k, v] of Object.entries({ firstName, lastName, email, club, city, phone })) {
+      if (v !== undefined) data[k] = v;
+    }
+    if (dateOfBirth !== undefined) data.dateOfBirth = dateOfBirth ? new Date(dateOfBirth) : null;
+
+    if (newPassword) {
+      if (String(newPassword).length < 6) { res.status(400).json({ error: "Password must be at least 6 characters" }); return; }
+      const bcrypt = await import("bcryptjs");
+      const current = await d.user.findUnique({ where: { id: req.params.id }, select: { password: true } });
+      if (!current) { res.status(404).json({ error: "Not found" }); return; }
+      // An admin editing someone else has no current password to offer; the owner does.
+      if (req.params.id === req.user.userId) {
+        if (!currentPassword || !(await bcrypt.compare(currentPassword, current.password))) {
+          res.status(400).json({ error: "Current password is wrong" });
+          return;
+        }
+      }
+      data.password = await bcrypt.hash(newPassword, 10);
+    }
+
+    const user = await d.user.update({
+      where: { id: req.params.id },
+      data,
+      select: { id: true, email: true, firstName: true, lastName: true, role: true, club: true, city: true, rating: true, phone: true, dateOfBirth: true, createdAt: true },
+    });
     res.json(user);
-  } catch (e: any) { res.status(400).json({ error: e.message }); }
+  } catch (e: any) {
+    if (e.code === "P2002") { res.status(400).json({ error: "An account with this email already exists" }); return; }
+    res.status(400).json({ error: e.message });
+  }
 });
 
 // ─── TOURNAMENTS ────────────────────────────────────────────────────────────────
