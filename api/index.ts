@@ -102,7 +102,7 @@ async function loadOwnedMatch(res: any, matchId: string, userId: string) {
     include: { tournament: { select: { organizerId: true, kind: true } }, sets: { orderBy: { index: "asc" } } },
   });
   if (!match) { res.status(404).json({ error: "Not found" }); return null; }
-  if (match.tournament.organizerId !== userId) { res.status(403).json({ error: "Only the tournament manager can record this match" }); return null; }
+  if (!match.tournament || match.tournament.organizerId !== userId) { res.status(403).json({ error: "Only the tournament manager can record this match" }); return null; }
   return match;
 }
 
@@ -987,7 +987,8 @@ async function finishMatch(match: any) {
   });
   if (match.setsWon1 !== match.setsWon2) {
     const p1Won = match.setsWon1 > match.setsWon2;
-    await applyEloUpdate(match.tournament.kind, p1Won ? match.player1Id : match.player2Id, p1Won ? match.player2Id : match.player1Id);
+    const kind = match.tournament?.kind || "TOURNAMENT";
+    await applyEloUpdate(kind, p1Won ? match.player1Id : match.player2Id, p1Won ? match.player2Id : match.player1Id);
   }
   await maybeCompleteTournament(match.tournamentId);
 }
@@ -1129,12 +1130,14 @@ app.post("/api/matches/:id/let", authMiddleware, async (req: any, res) => {
 });
 
 app.post("/api/matches/:id/end", authMiddleware, async (req: any, res) => {
-  try {
-    const match = await loadOwnedMatch(res, req.params.id, req.user.userId);
-    if (!match) return;
-    await finishMatch(match);
-    res.json(await reloadMatch(match.id));
-  } catch (e: any) { res.status(400).json({ error: e.message }); }
+    try {
+        const d = db();
+        const match = await loadOwnedMatch(res, req.params.id, req.user.userId);
+        if (!match) return;
+        await finishMatch(match);
+        await d.auditLog.create({ userId: req.user.userId, action: "MATCH_END", entity: "Match", entityId: match.id, newValue: { setsWon1: match.setsWon1, setsWon2: match.setsWon2 } });
+        res.json(await reloadMatch(match.id));
+    } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
 // Marks a no-show: the other side wins by walkover. Works from any state up to
@@ -1175,6 +1178,7 @@ app.post("/api/matches/:id/forfeit", authMiddleware, async (req: any, res) => {
 
     const settled = await d.match.findUnique({ where: { id: match.id }, include: { tournament: { select: { kind: true } } } });
     if (settled) await finishMatch(settled);
+    await d.auditLog.create({ userId: req.user.userId, action: "MATCH_FORFEIT", entity: "Match", entityId: match.id, newValue: { loserSide } });
     res.json(await reloadMatch(match.id));
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });

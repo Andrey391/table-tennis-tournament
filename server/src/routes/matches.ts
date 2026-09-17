@@ -24,7 +24,7 @@ async function loadOwnedMatch(res: Response, matchId: string, userId: string) {
     include: { tournament: { select: { organizerId: true, kind: true } }, sets: { orderBy: { index: "asc" } } },
   });
   if (!match) { res.status(404).json({ error: "Not found" }); return null; }
-  if (match.tournament.organizerId !== userId) { res.status(403).json({ error: "Only the tournament manager can record this match" }); return null; }
+  if (!match.tournament || match.tournament.organizerId !== userId) { res.status(403).json({ error: "Only the tournament manager can record this match" }); return null; }
   return match;
 }
 
@@ -63,7 +63,7 @@ async function applyEloUpdate(kind: string, winnerId: string | null, loserId: st
 // Ends a match and settles the result. There is no fixed number of sets: whoever
 // has won more of them takes the match, and an equal tally is a draw that moves
 // nobody's rating.
-async function finishMatch(match: { id: string; tournamentId: string; player1Id: string | null; player2Id: string | null; setsWon1: number; setsWon2: number; startedAt: Date | null; tournament: { kind: string } }) {
+async function finishMatch(match: { id: string; tournamentId: string; player1Id: string | null; player2Id: string | null; setsWon1: number; setsWon2: number; startedAt: Date | null; tournament: { kind: string } | null }) {
   await prisma.match.update({
     where: { id: match.id },
     data: { status: "COMPLETED", startedAt: match.startedAt ?? new Date(), endedAt: new Date() },
@@ -75,7 +75,8 @@ async function finishMatch(match: { id: string; tournamentId: string; player1Id:
   });
   if (match.setsWon1 !== match.setsWon2) {
     const p1Won = match.setsWon1 > match.setsWon2;
-    await applyEloUpdate(match.tournament.kind, p1Won ? match.player1Id : match.player2Id, p1Won ? match.player2Id : match.player1Id);
+    const kind = match.tournament?.kind ?? "TOURNAMENT";
+    await applyEloUpdate(kind, p1Won ? match.player1Id : match.player2Id, p1Won ? match.player2Id : match.player1Id);
   }
   await maybeCompleteTournament(match.tournamentId);
 }
