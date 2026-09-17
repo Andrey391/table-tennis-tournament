@@ -167,6 +167,9 @@ const DICT: Record<Lang, Record<string, string>> = {
     "auth.creating": "Создаём...",
     "auth.haveAccount": "Уже есть аккаунт?",
     "auth.registerFailed": "Не удалось зарегистрироваться",
+    "auth.continueAsGuest": "Продолжить без входа",
+    "guest.viewOnly": "Без входа доступен только просмотр",
+    "guest.signInToJoin": "Войдите, чтобы участвовать",
 
     "tournament.notFound": "Турнир не найден",
     "tournament.manager": "Организатор",
@@ -471,6 +474,9 @@ const DICT: Record<Lang, Record<string, string>> = {
     "auth.creating": "Creating...",
     "auth.haveAccount": "Have an account?",
     "auth.registerFailed": "Registration failed",
+    "auth.continueAsGuest": "Continue without signing in",
+    "guest.viewOnly": "Without an account you can only look around",
+    "guest.signInToJoin": "Sign in to take part",
 
     "tournament.notFound": "Tournament not found",
     "tournament.manager": "Manager",

@@ -16,10 +16,11 @@ playerRouter.get("/", authMiddleware, async (_req, res: Response) => {
   res.json(players);
 });
 
-// Anyone signed in can open anyone's profile: who they are, how they are doing,
-// and the matches behind it. The match list is what "who did I play last
-// Thursday" needs, and the profile screen had no answer for it.
-playerRouter.get("/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+// Anyone can open anyone's profile, signed in or not: who they are, how they are
+// doing, and the matches behind it. Unauthenticated because a guest browsing the
+// rating table must be able to tap through to a player — the select below is the
+// public shape (no email, no phone), unlike GET /players, which stays gated.
+playerRouter.get("/:id", async (req: AuthenticatedRequest, res: Response) => {
   const player = await prisma.user.findUnique({
     where: { id: req.params.id },
     select: { id: true, firstName: true, lastName: true, club: true, city: true, rating: true, createdAt: true },

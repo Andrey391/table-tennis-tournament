@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { apiService } from "../services/api";
 import Layout from "../components/Layout";
 import { useT } from "../i18n";
+import { useAuth } from "../context/AuthContext";
 import { formatEventDay, formatTimeRange } from "../lib/format";
 
 // A game is a tournament with kind=GAME: same roster, rounds and pairing, no Elo.
@@ -10,6 +11,8 @@ import { formatEventDay, formatTimeRange } from "../lib/format";
 // usual tournament page.
 export default function GamesPage() {
   const { t, lang } = useT();
+  const { token } = useAuth();
+  const isGuest = !token;
   const [games, setGames] = useState<any[]>([]);
   const [clubs, setClubs] = useState<any[]>([]);
   const [scope, setScope] = useState<"all" | "mine">("all");
@@ -19,12 +22,13 @@ export default function GamesPage() {
   const [error, setError] = useState("");
 
   const load = () => {
-    const fetch = scope === "mine"
+    // "Mine" needs an account; a guest only ever sees the open feed.
+    const fetch = scope === "mine" && !isGuest
       ? apiService.tournaments.getMine({ kind: "GAME" })
       : apiService.tournaments.getAll({ kind: "GAME" });
     fetch.then(r => setGames(r.data)).catch(console.error);
   };
-  useEffect(load, [scope]);
+  useEffect(load, [scope, isGuest]);
   useEffect(() => { apiService.clubs.getAll().then(r => setClubs(r.data)).catch(console.error); }, []);
 
   const create = async (e: React.FormEvent) => {
@@ -53,15 +57,19 @@ export default function GamesPage() {
     <Layout>
       <div className="flex items-start justify-between gap-2 mb-1">
         <h1 className="text-2xl font-bold tracking-tight">{t("games.title")}</h1>
-        <button onClick={() => setShowCreate(v => !v)} className="text-sm text-[#ccff00] font-bold shrink-0 mt-1">
-          {showCreate ? t("common.cancel") : `+ ${t("games.new")}`}
-        </button>
+        {isGuest ? (
+          <Link to="/login" className="text-sm text-[#ccff00] font-bold shrink-0 mt-1">{t("auth.signIn")}</Link>
+        ) : (
+          <button onClick={() => setShowCreate(v => !v)} className="text-sm text-[#ccff00] font-bold shrink-0 mt-1">
+            {showCreate ? t("common.cancel") : `+ ${t("games.new")}`}
+          </button>
+        )}
       </div>
       <p className="text-xs text-[#6b84a0] mb-4">{t("games.subtitle")}</p>
 
       {error && <div className="bg-red-500/10 text-red-400 p-3 rounded text-sm border border-red-500/20 mb-4">{error}</div>}
 
-      {showCreate && (
+      {showCreate && !isGuest && (
         <form onSubmit={create} className="bg-[#101f36] p-4 rounded-lg border border-[#1c3350] space-y-3 mb-4">
           <input type="text" placeholder={t("games.namePlaceholder")} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className={field} required />
           <select value={form.clubId} onChange={e => setForm({ ...form, clubId: e.target.value })} className={field}>
@@ -84,7 +92,7 @@ export default function GamesPage() {
         </form>
       )}
 
-      <div className="flex gap-2 mb-3">
+      <div className={`flex gap-2 mb-3 ${isGuest ? "hidden" : ""}`}>
         {(["all", "mine"] as const).map(sc => (
           <button key={sc} onClick={() => setScope(sc)}
             className={`flex-1 py-2 rounded-lg text-sm font-medium border ${

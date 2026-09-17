@@ -10,7 +10,8 @@ import { formatEventDay, formatTimeRange, playerName, matchScoreLine } from "../
 export default function TournamentPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { token, user } = useAuth();
+  const isGuest = !token;
   const { t, lang } = useT();
   const [tournament, setTournament] = useState<any>(null);
   const [standings, setStandings] = useState<any[]>([]);
@@ -39,7 +40,12 @@ export default function TournamentPage() {
     const i = setInterval(load, 5000);
     return () => clearInterval(i);
   }, [id]);
-  useEffect(() => { apiService.players.getAll().then(r => setAllPlayers(r.data)).catch(console.error); }, []);
+  // GET /players carries emails and stays behind auth; it also only feeds the
+  // manager's "add players" picker, so a guest has no reason to ask for it.
+  useEffect(() => {
+    if (isGuest) return;
+    apiService.players.getAll().then(r => setAllPlayers(r.data)).catch(console.error);
+  }, [isGuest]);
   useEffect(() => { apiService.clubs.getAll().then(r => setClubs(r.data)).catch(console.error); }, []);
   useEffect(() => {
     if (!notice) return;
@@ -288,9 +294,11 @@ export default function TournamentPage() {
       <div className="flex gap-2 mb-4">
         {!isDraft && <Link to={`/live/${id}`} className="flex-1 text-center px-3 py-2 bg-[#1c3350] text-[#93a8c2] rounded text-sm border border-[#1c3350]">{t("tournament.live")}</Link>}
         {!isDraft && <Link to={`/public/tournament/${id}`} className="flex-1 text-center px-3 py-2 bg-[#1c3350] text-[#93a8c2] rounded text-sm border border-[#1c3350]">{t("tournament.public")}</Link>}
-        <Link to={`/tournament/${id}/chat`} className={`${isDraft ? "flex-1 text-center" : ""} px-3 py-2 bg-[#1c3350] text-[#93a8c2] rounded text-sm border border-[#1c3350]`}>
-          {isDraft ? t("tournament.chat") : "\u{1F4AC}"}
-        </Link>
+        {!isGuest && (
+          <Link to={`/tournament/${id}/chat`} className={`${isDraft ? "flex-1 text-center" : ""} px-3 py-2 bg-[#1c3350] text-[#93a8c2] rounded text-sm border border-[#1c3350]`}>
+            {isDraft ? t("tournament.chat") : "\u{1F4AC}"}
+          </Link>
+        )}
         {!isDraft && (
           <button onClick={share} className="px-3 py-2 bg-[#1c3350] text-[#93a8c2] rounded text-sm border border-[#1c3350]">{t("tournament.share")}</button>
         )}
@@ -385,7 +393,11 @@ export default function TournamentPage() {
           </div>
         )}
 
-        {!isManager && tournament.status !== "CANCELLED" && (
+        {isGuest ? (
+          <Link to="/login" className="block text-center py-3 mt-3 text-sm font-medium text-[#ccff00] bg-[#ccff00]/10 rounded-lg border border-[#ccff00]/20">
+            {t("guest.signInToJoin")}
+          </Link>
+        ) : !isManager && tournament.status !== "CANCELLED" && (
           myEntry && myEntry.status !== "WITHDRAWN" ? (
             <p className="text-center py-3 mt-3 text-sm text-yellow-400 bg-yellow-500/10 rounded-lg border border-yellow-500/20">
               {myEntry.status === "PENDING" ? t("tournament.pendingApproval") : t("tournament.youreIn")}
