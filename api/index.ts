@@ -306,8 +306,6 @@ app.get("/api/auth/me", authMiddleware, async (req: any, res) => {
 // is why the short/long split lives at set level.
 function summariseMatches(matches: any[], userId: string) {
   const matchTally = { played: 0, wins: 0, losses: 0 };
-  const setTally = { played: 0, wins: 0, losses: 0 };
-  const byTarget: any = { 11: { played: 0, wins: 0 }, 21: { played: 0, wins: 0 } };
 
   for (const m of matches) {
     const isP1 = m.player1Id === userId;
@@ -317,18 +315,8 @@ function summariseMatches(matches: any[], userId: string) {
     matchTally.played++;
     if (mine > theirs) matchTally.wins++;
     else if (theirs > mine) matchTally.losses++;
-
-    for (const set of m.sets || []) {
-      if (set.status !== "COMPLETED") continue;
-      const won = set.winner === (isP1 ? 1 : 2);
-      setTally.played++;
-      if (won) setTally.wins++; else setTally.losses++;
-      if (!byTarget[String(set.pointsToWin)]) byTarget[String(set.pointsToWin)] = { played: 0, wins: 0 };
-      byTarget[String(set.pointsToWin)].played++;
-      if (won) byTarget[String(set.pointsToWin)].wins++;
-    }
   }
-  return { matches: matchTally, sets: setTally, byTarget };
+  return matchTally;
 }
 
 app.get("/api/profile/stats", authMiddleware, async (req: any, res) => {
@@ -336,14 +324,12 @@ app.get("/api/profile/stats", authMiddleware, async (req: any, res) => {
   const userId = req.user.userId;
 
   const [events, matches] = await Promise.all([
-    // An event someone withdrew from was still an event they took part in.
     d.tournamentUser.findMany({ where: { userId, status: { in: ["REGISTERED", "WITHDRAWN"] } }, select: { tournament: { select: { kind: true } } } }),
     d.match.findMany({
       where: { status: "COMPLETED", OR: [{ player1Id: userId }, { player2Id: userId }] },
       select: {
         player1Id: true, setsWon1: true, setsWon2: true,
         tournament: { select: { kind: true } },
-        sets: { select: { score1: true, score2: true, pointsToWin: true, status: true, winner: true } },
       },
     }),
   ]);
@@ -386,7 +372,6 @@ app.get("/api/players/:id", authMiddleware, async (req: any, res) => {
       player1: { select: { id: true, firstName: true, lastName: true, rating: true } },
       player2: { select: { id: true, firstName: true, lastName: true, rating: true } },
       tournament: { select: { id: true, name: true, kind: true } },
-      sets: { select: { score1: true, score2: true, status: true }, orderBy: { index: "asc" } },
     },
     orderBy: { endedAt: "desc" },
     take: 25,
@@ -976,6 +961,7 @@ app.delete("/api/clubs/:id/tables/:tableId", authMiddleware, async (req: any, re
 // nobody's rating.
 async function finishMatch(match: any) {
   const d = db();
+  const tournamentKind = match.tournament?.kind || "TOURNAMENT";
   await d.match.update({
     where: { id: match.id },
     data: { status: "COMPLETED", startedAt: match.startedAt || new Date(), endedAt: new Date() },
@@ -987,8 +973,7 @@ async function finishMatch(match: any) {
   });
   if (match.setsWon1 !== match.setsWon2) {
     const p1Won = match.setsWon1 > match.setsWon2;
-    const kind = match.tournament?.kind || "TOURNAMENT";
-    await applyEloUpdate(kind, p1Won ? match.player1Id : match.player2Id, p1Won ? match.player2Id : match.player1Id);
+    await applyEloUpdate(tournamentKind, p1Won ? match.player1Id : match.player2Id, p1Won ? match.player2Id : match.player1Id);
   }
   await maybeCompleteTournament(match.tournamentId);
 }
@@ -1131,11 +1116,10 @@ app.post("/api/matches/:id/let", authMiddleware, async (req: any, res) => {
 
 app.post("/api/matches/:id/end", authMiddleware, async (req: any, res) => {
     try {
-        const d = db();
         const match = await loadOwnedMatch(res, req.params.id, req.user.userId);
         if (!match) return;
         await finishMatch(match);
-        await d.auditLog.create({ userId: req.user.userId, action: "MATCH_END", entity: "Match", entityId: match.id, newValue: { setsWon1: match.setsWon1, setsWon2: match.setsWon2 } });
+        await db().auditLog.create({ userId: req.user.userId, action: "MATCH_END", entity: "Match", entityId: match.id, newValue: { setsWon1: match.setsWon1, setsWon2: match.setsWon2 } });
         res.json(await reloadMatch(match.id));
     } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
@@ -1178,6 +1162,7 @@ app.post("/api/matches/:id/forfeit", authMiddleware, async (req: any, res) => {
 
     const settled = await d.match.findUnique({ where: { id: match.id }, include: { tournament: { select: { kind: true } } } });
     if (settled) await finishMatch(settled);
+    else await maybeCompleteTournament(match.tournamentId);
     await d.auditLog.create({ userId: req.user.userId, action: "MATCH_FORFEIT", entity: "Match", entityId: match.id, newValue: { loserSide } });
     res.json(await reloadMatch(match.id));
   } catch (e: any) { res.status(400).json({ error: e.message }); }

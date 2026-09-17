@@ -28,7 +28,6 @@ playerRouter.get("/:id", authMiddleware, async (req: AuthenticatedRequest, res: 
       player1: { select: { id: true, firstName: true, lastName: true, rating: true } },
       player2: { select: { id: true, firstName: true, lastName: true, rating: true } },
       tournament: { select: { id: true, name: true, kind: true } },
-      sets: { select: { score1: true, score2: true, status: true }, orderBy: { index: "asc" } },
     },
     orderBy: { endedAt: "desc" },
     take: 25,

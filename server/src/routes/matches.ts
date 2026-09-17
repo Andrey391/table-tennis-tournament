@@ -64,6 +64,7 @@ async function applyEloUpdate(kind: string, winnerId: string | null, loserId: st
 // has won more of them takes the match, and an equal tally is a draw that moves
 // nobody's rating.
 async function finishMatch(match: { id: string; tournamentId: string; player1Id: string | null; player2Id: string | null; setsWon1: number; setsWon2: number; startedAt: Date | null; tournament: { kind: string } | null }) {
+  const tournamentKind = match.tournament?.kind ?? "TOURNAMENT";
   await prisma.match.update({
     where: { id: match.id },
     data: { status: "COMPLETED", startedAt: match.startedAt ?? new Date(), endedAt: new Date() },
@@ -75,8 +76,7 @@ async function finishMatch(match: { id: string; tournamentId: string; player1Id:
   });
   if (match.setsWon1 !== match.setsWon2) {
     const p1Won = match.setsWon1 > match.setsWon2;
-    const kind = match.tournament?.kind ?? "TOURNAMENT";
-    await applyEloUpdate(kind, p1Won ? match.player1Id : match.player2Id, p1Won ? match.player2Id : match.player1Id);
+    await applyEloUpdate(tournamentKind, p1Won ? match.player1Id : match.player2Id, p1Won ? match.player2Id : match.player1Id);
   }
   await maybeCompleteTournament(match.tournamentId);
 }
@@ -289,6 +289,7 @@ matchRouter.post("/:id/forfeit", authMiddleware, async (req: AuthenticatedReques
       include: { tournament: { select: { kind: true } } },
     });
     if (settled) await finishMatch({ ...settled, tournament: settled.tournament });
+    else await maybeCompleteTournament(match.tournamentId);
     await AuditLog.create({ userId: req.user!.userId, action: "MATCH_FORFEIT", entity: "Match", entityId: match.id, newValue: { loserSide } });
     res.json(await reload(match.id));
   } catch (err: any) {
