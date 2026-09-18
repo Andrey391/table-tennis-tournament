@@ -130,8 +130,10 @@ export const ForfeitSchema = z.object({
   loserSide: z.union([z.literal(1), z.literal(2)]),
 });
 
+// Login only looks the address up, so it is not format-checked: the seeded
+// accounts are "admin@localhost", which a strict email check rejects.
 export const LoginSchema = z.object({
-  email: z.string().email(),
+  email: z.string().trim().min(1),
   password: z.string().min(6),
 });
 

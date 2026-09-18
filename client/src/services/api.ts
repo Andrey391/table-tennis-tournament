@@ -50,6 +50,8 @@ export const apiService = {
   matches: {
     getByTournament: (id: string) => api.get(`/matches/tournament/${id}`),
     getById: (id: string) => api.get(`/matches/${id}`),
+    // The caller's unfinished matches in live events (home-screen "your match").
+    mine: () => api.get("/matches/mine"),
     updateSettings: (id: string, d: { tableNumber?: number; setsToWin?: number }) => api.put(`/matches/${id}`, d),
     // Scoring records one whole set for a side; the response carries the whole match.
     start: (id: string) => api.post(`/matches/${id}/start`),
