@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { apiService } from "../services/api";
 import Layout from "../components/Layout";
 import { useAuth } from "../context/AuthContext";
+import SetsToWinPicker from "../components/SetsToWinPicker";
 import { useT } from "../i18n";
 import { formatShortDate, formatSlot } from "../lib/format";
 
@@ -18,7 +19,7 @@ export default function BookingsPage() {
   const [availability, setAvailability] = useState<any[]>([]);
   const [form, setForm] = useState({
     clubId: "", tableId: "", date: "", startTime: "", durationHours: 1,
-    eventType: "GAME" as "GAME" | "TOURNAMENT", eventTitle: "", setsToWin: 1, isPublic: true,
+    eventType: "GAME" as "GAME" | "TOURNAMENT", eventTitle: "", setsToWin: 3, isPublic: true,
   });
   const [newClub, setNewClub] = useState({ name: "", city: "", address: "", phone: "" });
   const [club, setClub] = useState<any>(null);
@@ -256,8 +257,7 @@ export default function BookingsPage() {
 
             <div>
               <label className="block text-xs text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("create.setsToWin")}</label>
-              <input type="number" min={1} value={form.setsToWin}
-                onChange={e => set("setsToWin", Math.max(1, +e.target.value || 1))} className={field} />
+              <SetsToWinPicker value={form.setsToWin} onChange={n => set("setsToWin", n)} />
             </div>
 
             {/* Every booking creates an event; a private knockabout has no business

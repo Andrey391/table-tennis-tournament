@@ -105,8 +105,25 @@ export const MatchSettingsSchema = z.object({
 });
 
 // Which side took a set. Scoring records whole sets, not points.
+// The rally score of the set ("11:7") is optional and only kept for the record.
 export const SetResultSchema = z.object({
   side: z.union([z.literal(1), z.literal(2)]),
+  score1: z.number().int().min(0).max(99).nullish(),
+  score2: z.number().int().min(0).max(99).nullish(),
+});
+
+// Manual round-1 seeding: the full order of approved players, top seed first.
+export const SeedingSchema = z.object({
+  userIds: z.array(z.string()).min(1),
+});
+
+// A friendly game recorded after the fact, in one step: who, and the set tally.
+export const QuickGameSchema = z.object({
+  opponentId: z.string().min(1),
+  setsWon1: z.number().int().min(0).max(20),
+  setsWon2: z.number().int().min(0).max(20),
+  clubId: z.string().optional(),
+  name: z.string().max(120).optional(),
 });
 
 export const ForfeitSchema = z.object({

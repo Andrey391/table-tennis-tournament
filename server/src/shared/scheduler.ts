@@ -3,6 +3,9 @@ export interface RoundCandidate {
   rating: number;
   wins: number;
   matchesPlayed: number;
+  // Manual seed set by the manager before round 1 (1 = top). Unseeded players
+  // follow the seeded ones, by rating.
+  seed?: number | null;
 }
 
 export interface RoundPairResult {
@@ -12,7 +15,7 @@ export interface RoundPairResult {
 
 const pairKey = (a: string, b: string) => [a, b].sort().join("|");
 
-// Round 1: seeded purely by rating. Later rounds: Swiss-style, ranked by
+// Round 1: the manager's manual seeding if any, otherwise rating. Later rounds: Swiss-style, ranked by
 // wins so far (rating breaks ties), with a best-effort pass to avoid
 // repeating a pairing that already happened earlier in the tournament.
 export function generateRoundPairings(
@@ -22,6 +25,10 @@ export function generateRoundPairings(
 ): RoundPairResult {
   const sorted = [...candidates].sort((a, b) => {
     if (!isFirstRound && a.wins !== b.wins) return b.wins - a.wins;
+    if (isFirstRound) {
+      const sa = a.seed ?? Infinity, sb = b.seed ?? Infinity;
+      if (sa !== sb) return sa - sb;
+    }
     return b.rating - a.rating;
   });
 

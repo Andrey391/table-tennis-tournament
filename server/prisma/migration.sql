@@ -387,6 +387,16 @@ ALTER TABLE "Match" ADD COLUMN IF NOT EXISTS "eloDelta" INTEGER;
 -- them by hand once you have checked you want the history gone.
 
 
+-- 16. Matches are played to 3 sets by default (the usual club format), and a set
+-- may carry its rally score again, optionally. Changing a column default touches
+-- no existing row. score1/score2 on MatchSet are added here only for databases
+-- created after they stopped being mapped; on older ones they already exist.
+ALTER TABLE "Tournament" ALTER COLUMN "setsToWin" SET DEFAULT 3;
+ALTER TABLE "Match" ALTER COLUMN "setsToWin" SET DEFAULT 3;
+ALTER TABLE "MatchSet" ADD COLUMN IF NOT EXISTS "score1" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "MatchSet" ADD COLUMN IF NOT EXISTS "score2" INTEGER NOT NULL DEFAULT 0;
+
+
 -- NOTE: an earlier iteration of this branch had a standalone "Game" table and a
 -- "Booking"."gameId" column. Games are Tournament rows now, so neither is used
 -- any more. They are deliberately left in place rather than dropped: nothing

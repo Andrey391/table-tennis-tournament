@@ -39,6 +39,10 @@ export const apiService = {
     join: (id: string) => api.post(`/tournaments/${id}/join`),
     approvePlayer: (id: string, userId: string) => api.post(`/tournaments/${id}/players/${userId}/approve`),
     pair: (id: string) => api.post(`/tournaments/${id}/pair`),
+    // Round-1 order set by the manager: approved players, top seed first (DRAFT only).
+    setSeeding: (id: string, d: { userIds: string[] }) => api.put(`/tournaments/${id}/seeding`, d),
+    // A friendly game already played, written down in one step (unrated, private).
+    quickGame: (d: { opponentId: string; setsWon1: number; setsWon2: number; clubId?: string; name?: string }) => api.post("/tournaments/quick-game", d),
     standings: (id: string) => api.get(`/tournaments/${id}/standings`),
     getChat: (id: string) => api.get(`/tournaments/${id}/chat`),
     sendChat: (id: string, d: { text: string }) => api.post(`/tournaments/${id}/chat`, d),
@@ -49,7 +53,7 @@ export const apiService = {
     updateSettings: (id: string, d: { tableNumber?: number; setsToWin?: number }) => api.put(`/matches/${id}`, d),
     // Scoring records one whole set for a side; the response carries the whole match.
     start: (id: string) => api.post(`/matches/${id}/start`),
-    score: (id: string, d: { side: 1 | 2 }) => api.post(`/matches/${id}/score`, d),
+    score: (id: string, d: { side: 1 | 2; score1?: number; score2?: number }) => api.post(`/matches/${id}/score`, d),
     undo: (id: string) => api.post(`/matches/${id}/undo`),
     end: (id: string) => api.post(`/matches/${id}/end`),
     forfeit: (id: string, d: { loserSide: 1 | 2 }) => api.post(`/matches/${id}/forfeit`, d),

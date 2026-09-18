@@ -107,7 +107,7 @@ model Tournament {
   // How many sets a match here is played to. It is the target the scoring screen
   // prompts at, not a cap: a match runs for as many sets as the pair play, and the
   // judge settles it. Matches inherit it and can override it before they start.
-  setsToWin   Int       @default(1)
+  setsToWin   Int       @default(3)
   status      String    @default("DRAFT")
   startTime   DateTime?
   endTime     DateTime?
@@ -234,7 +234,7 @@ model Match {
   // Sets this match is played to — a target the scoring screen prompts at, not a
   // cap. Only COMPLETED matches reach the statistics, the standings and Elo, and
   // a match is completed by /end, /forfeit or a walkover.
-  setsToWin    Int         @default(1)
+  setsToWin    Int         @default(3)
   // The rating points the winner gained when this match was settled, kept so that
   // undoing the point that ended it can hand them back exactly.
   eloDelta     Int?
@@ -259,8 +259,12 @@ model Match {
 // tracked, so `winner` is the whole content of a set and undo simply removes the
 // last row.
 //
-// The database still carries the old point-by-point columns (score1/score2,
-// serverSide, lastScorer, prevServerSide, letCount, pointsToWin). They are left in
+// `score1`/`score2` hold the set's rally score ("11:7") when someone typed it in —
+// optional, for the record only; 0:0 means it was not entered. Nothing derives the
+// winner from it and there is still no point-by-point play.
+//
+// The database still carries the other old point-by-point columns (serverSide,
+// lastScorer, prevServerSide, letCount, pointsToWin). They are left in
 // place rather than dropped — dropping columns costs data — but nothing reads or
 // writes them any more, so they are not mapped here. Every one of them has a
 // default, which is why inserts that omit them still work.
@@ -271,6 +275,8 @@ model MatchSet {
   index     Int
   status    MatchStatus @default(IN_PROGRESS)
   winner    Int?
+  score1    Int         @default(0)
+  score2    Int         @default(0)
   startedAt DateTime    @default(now())
   endedAt   DateTime?
 

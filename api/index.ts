@@ -106,6 +106,67 @@ async function loadOwnedMatch(res: any, matchId: string, userId: string) {
   return match;
 }
 
+// Loads the match for recording its result: the manager, or either of the two
+// players in it (the manager cannot stand at every table). Walkovers and reopening
+// a settled match stay with the manager (loadOwnedMatch).
+async function loadScorableMatch(res: any, matchId: string, userId: string) {
+  const match = await db().match.findUnique({
+    where: { id: matchId },
+    include: { tournament: { select: { organizerId: true, kind: true } }, sets: { orderBy: { index: "asc" } } },
+  });
+  if (!match) { res.status(404).json({ error: "Not found" }); return null; }
+  const isManager = match.tournament?.organizerId === userId;
+  const isPlayer = match.player1Id === userId || match.player2Id === userId;
+  if (!isManager && !isPlayer) { res.status(403).json({ error: "Only the players in this match or the tournament manager can record it" }); return null; }
+  return { ...match, isManager };
+}
+
+// Optional rally score of a set: both or neither, and it must agree with the side
+// credited with the set. Returns an error message or null.
+function checkSetScore(side: number, score1: any, score2: any): string | null {
+  const has1 = score1 != null, has2 = score2 != null;
+  if (!has1 && !has2) return null;
+  if (has1 !== has2) return "Enter both scores of the set or neither";
+  if (![score1, score2].every((n: any) => Number.isInteger(n) && n >= 0 && n <= 99)) return "Set scores must be whole numbers from 0 to 99";
+  if (score1 === score2) return "A set cannot end level";
+  if ((side === 1) !== (score1 > score2)) return "The set score does not match who took the set";
+  return null;
+}
+
+// A match cannot end level in table tennis, and one with no sets has no result.
+function checkCanEnd(setsWon1: number, setsWon2: number): string | null {
+  if (setsWon1 + setsWon2 === 0) return "No sets recorded yet";
+  if (setsWon1 === setsWon2) return "A match cannot end in a draw: play a deciding set";
+  return null;
+}
+
+// Standings: matches won, then Buchholz (sum of every opponent's wins - the usual
+// Swiss tiebreak), then set difference.
+function computeStandings(players: any[], matches: any[]) {
+  const stats = new Map<string, any>();
+  const opponents = new Map<string, string[]>();
+  for (const pl of players) {
+    if (!pl.user) continue;
+    stats.set(pl.userId, { userId: pl.userId, firstName: pl.user.firstName, lastName: pl.user.lastName, club: pl.user.club, rating: pl.user.rating, wins: 0, losses: 0, setsWon: 0, setsLost: 0, buchholz: 0 });
+    opponents.set(pl.userId, []);
+  }
+  for (const m of matches) {
+    if (!m.player1Id || !m.player2Id) continue;
+    const s1 = stats.get(m.player1Id);
+    const s2 = stats.get(m.player2Id);
+    if (!s1 || !s2) continue;
+    s1.setsWon += m.setsWon1; s1.setsLost += m.setsWon2;
+    s2.setsWon += m.setsWon2; s2.setsLost += m.setsWon1;
+    if (m.setsWon1 > m.setsWon2) { s1.wins++; s2.losses++; }
+    else if (m.setsWon2 > m.setsWon1) { s2.wins++; s1.losses++; }
+    opponents.get(m.player1Id)!.push(m.player2Id);
+    opponents.get(m.player2Id)!.push(m.player1Id);
+  }
+  for (const row of stats.values()) row.buchholz = (opponents.get(row.userId) || []).reduce((sum: number, id: string) => sum + (stats.get(id)?.wins || 0), 0);
+  return Array.from(stats.values()).sort((a: any, b: any) =>
+    b.wins - a.wins || b.buchholz - a.buchholz || (b.setsWon - b.setsLost) - (a.setsWon - a.setsLost));
+}
+
 // A tournament with no unresolved matches left is done — but the manager can always
 // start another round later, which flips it back to ACTIVE (see /pair).
 async function maybeCompleteTournament(tournamentId: string) {
@@ -115,14 +176,18 @@ async function maybeCompleteTournament(tournamentId: string) {
   }
 }
 
-interface RoundCandidate { userId: string; rating: number; wins: number; matchesPlayed: number }
+interface RoundCandidate { userId: string; rating: number; wins: number; matchesPlayed: number; seed?: number | null }
 const pairKey = (a: string, b: string) => [a, b].sort().join("|");
 
-// Round 1: seeded purely by rating. Later rounds: Swiss-style, ranked by wins so
+// Round 1: the manager's manual seeding if any, otherwise rating. Later rounds: Swiss-style, ranked by wins so
 // far (rating breaks ties), with a best-effort pass to avoid repeat pairings.
 function generateRoundPairings(candidates: RoundCandidate[], isFirstRound: boolean, playedPairs: Set<string>) {
   const sorted = [...candidates].sort((a, b) => {
     if (!isFirstRound && a.wins !== b.wins) return b.wins - a.wins;
+    if (isFirstRound) {
+      const sa = a.seed ?? Infinity, sb = b.seed ?? Infinity;
+      if (sa !== sb) return sa - sb;
+    }
     return b.rating - a.rating;
   });
 
@@ -260,8 +325,10 @@ app.get("/api/setup", async (_req, res) => {
     await d.$executeRawUnsafe(`ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "kind" TEXT NOT NULL DEFAULT 'TOURNAMENT'`);
     await d.$executeRawUnsafe(`ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "pointsToWin" INTEGER NOT NULL DEFAULT 11`);
     await d.$executeRawUnsafe(`ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "isPublic" BOOLEAN NOT NULL DEFAULT true`);
-    await d.$executeRawUnsafe(`ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "setsToWin" INTEGER NOT NULL DEFAULT 1`);
-    await d.$executeRawUnsafe(`ALTER TABLE "Match" ADD COLUMN IF NOT EXISTS "setsToWin" INTEGER NOT NULL DEFAULT 1`);
+    await d.$executeRawUnsafe(`ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "setsToWin" INTEGER NOT NULL DEFAULT 3`);
+    await d.$executeRawUnsafe(`ALTER TABLE "Match" ADD COLUMN IF NOT EXISTS "setsToWin" INTEGER NOT NULL DEFAULT 3`);
+    await d.$executeRawUnsafe(`ALTER TABLE "Tournament" ALTER COLUMN "setsToWin" SET DEFAULT 3`);
+    await d.$executeRawUnsafe(`ALTER TABLE "Match" ALTER COLUMN "setsToWin" SET DEFAULT 3`);
     await d.$executeRawUnsafe(`ALTER TABLE "Match" ADD COLUMN IF NOT EXISTS "eloDelta" INTEGER`);
     await d.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "RoundBye" ("id" TEXT NOT NULL, "tournamentId" TEXT NOT NULL, "round" INTEGER NOT NULL, "userId" TEXT NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "RoundBye_pkey" PRIMARY KEY ("id"))`);
     await d.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "RoundBye_tournamentId_round_key" ON "RoundBye"("tournamentId", "round")`);
@@ -513,11 +580,52 @@ app.get("/api/tournaments/:id", async (req, res) => {
 app.post("/api/tournaments", authMiddleware, async (req: any, res) => {
   try {
     const d = db();
-    const { kind, name, description, tablesCount, maxPlayers, clubId, startTime, endTime, minRating, maxRating } = req.body;
-    const tournament = await d.tournament.create({ data: { kind: kind === "GAME" ? "GAME" : "TOURNAMENT", name, description, tablesCount: tablesCount || 4, maxPlayers, clubId, startTime, endTime, minRating, maxRating, organizerId: req.user.userId } });
+    const { kind, name, description, tablesCount, maxPlayers, clubId, startTime, endTime, minRating, maxRating, setsToWin } = req.body;
+    const tournament = await d.tournament.create({ data: { kind: kind === "GAME" ? "GAME" : "TOURNAMENT", name, description, tablesCount: tablesCount || 4, maxPlayers, clubId, startTime, endTime, minRating, maxRating, ...(Number.isInteger(setsToWin) && setsToWin >= 1 ? { setsToWin } : {}), organizerId: req.user.userId } });
     // The organiser takes part in their own event.
     await d.tournamentUser.create({ data: { tournamentId: tournament.id, userId: req.user.userId, status: "REGISTERED" } });
     res.status(201).json(tournament);
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
+// Records a friendly game that has already been played, in one step: caller vs
+// opponent and the set tally. Created already COMPLETED, private, unrated (GAME).
+app.post("/api/tournaments/quick-game", authMiddleware, async (req: any, res) => {
+  try {
+    const d = db();
+    const me = req.user.userId;
+    const { opponentId, setsWon1, setsWon2, clubId, name } = req.body || {};
+    if (typeof opponentId !== "string" || !opponentId) { res.status(400).json({ error: "opponentId is required" }); return; }
+    if (![setsWon1, setsWon2].every((n: any) => Number.isInteger(n) && n >= 0 && n <= 20)) { res.status(400).json({ error: "Set counts must be whole numbers from 0 to 20" }); return; }
+    if (opponentId === me) { res.status(400).json({ error: "Pick an opponent other than yourself" }); return; }
+    const endError = checkCanEnd(setsWon1, setsWon2);
+    if (endError) { res.status(400).json({ error: endError }); return; }
+    const [self, opponent] = await Promise.all([
+      d.user.findUnique({ where: { id: me }, select: { firstName: true } }),
+      d.user.findUnique({ where: { id: opponentId }, select: { firstName: true } }),
+    ]);
+    if (!self || !opponent) { res.status(404).json({ error: "Player not found" }); return; }
+    const now = new Date();
+    const target = Math.max(setsWon1, setsWon2);
+    const winners = [...Array(setsWon1).fill(1), ...Array(setsWon2).fill(2)];
+    const game = await d.$transaction(async (tx: any) => {
+      const t = await tx.tournament.create({ data: {
+        kind: "GAME", name: (typeof name === "string" && name.trim()) ? name.trim().slice(0, 120) : self.firstName + " - " + opponent.firstName,
+        organizerId: me, status: "COMPLETED", isPublic: false, tablesCount: 1, setsToWin: target, startTime: now, endTime: now,
+        ...(typeof clubId === "string" && clubId ? { clubId } : {}),
+      } });
+      await tx.tournamentUser.createMany({ data: [
+        { tournamentId: t.id, userId: me, status: "REGISTERED", seed: 1 },
+        { tournamentId: t.id, userId: opponentId, status: "REGISTERED", seed: 2 },
+      ] });
+      await tx.match.create({ data: {
+        tournamentId: t.id, round: 1, matchIndex: 0, tableNumber: 1, player1Id: me, player2Id: opponentId,
+        setsToWin: target, setsWon1, setsWon2, status: "COMPLETED", startedAt: now, endedAt: now, judgeId: me,
+        sets: { create: winners.map((w: number, i: number) => ({ index: i + 1, winner: w, status: "COMPLETED", endedAt: now })) },
+      } });
+      return t;
+    });
+    res.status(201).json(game);
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
@@ -673,6 +781,27 @@ app.delete("/api/tournaments/:id/players/:userId", authMiddleware, async (req: a
 // Generates a new round of pairs: round 1 (DRAFT -> ACTIVE) seeds by rating; every
 // later round is Swiss-style, ranked by wins so far. Nobody is eliminated between
 // rounds. Can be called again after a tournament auto-completed to keep playing.
+// Manual round-1 seeding (manager, DRAFT only): the full order of approved players.
+// Everyone starts at the same rating, so without it a strong newcomer is seeded last.
+app.put("/api/tournaments/:id/seeding", authMiddleware, async (req: any, res) => {
+  try {
+    const tournament = await loadOwnedTournament(res, req.params.id, req.user.userId);
+    if (!tournament) return;
+    if (tournament.status !== "DRAFT") { res.status(400).json({ error: "Seeding can only be changed before round 1" }); return; }
+    const userIds = req.body?.userIds;
+    if (!Array.isArray(userIds) || userIds.length === 0 || !userIds.every((x: any) => typeof x === "string")) { res.status(400).json({ error: "userIds must be a non-empty list" }); return; }
+    const d = db();
+    const roster = await d.tournamentUser.findMany({ where: { tournamentId: tournament.id, status: "REGISTERED" }, select: { userId: true } });
+    const onRoster = new Set(roster.map((r: any) => r.userId));
+    if (userIds.some((id: string) => !onRoster.has(id)) || new Set(userIds).size !== userIds.length) {
+      res.status(400).json({ error: "Seeding must list approved players, each once" }); return;
+    }
+    await d.$transaction(userIds.map((userId: string, idx: number) =>
+      d.tournamentUser.update({ where: { tournamentId_userId: { tournamentId: tournament.id, userId } }, data: { seed: idx + 1 } })));
+    res.json({ ok: true });
+  } catch (e: any) { res.status(400).json({ error: e.message }); }
+});
+
 app.post("/api/tournaments/:id/pair", authMiddleware, async (req: any, res) => {
   try {
     const tournament = await loadOwnedTournament(res, req.params.id, req.user.userId);
@@ -688,7 +817,7 @@ app.post("/api/tournaments/:id/pair", authMiddleware, async (req: any, res) => {
     }
 
     const [players, allMatches] = await Promise.all([
-      d.tournamentUser.findMany({ where: { tournamentId: tournament.id, status: "REGISTERED" }, include: { user: { select: { id: true, rating: true } } } }),
+      d.tournamentUser.findMany({ where: { tournamentId: tournament.id, status: "REGISTERED" }, select: { userId: true, seed: true, user: { select: { id: true, rating: true } } } }),
       d.match.findMany({ where: { tournamentId: tournament.id }, select: { round: true, player1Id: true, player2Id: true, setsWon1: true, setsWon2: true } }),
     ]);
     if (players.length < 2) { res.status(400).json({ error: "Need at least 2 approved players" }); return; }
@@ -714,10 +843,12 @@ app.post("/api/tournaments/:id/pair", authMiddleware, async (req: any, res) => {
       rating: p.user?.rating || 0,
       wins: winsPerPlayer.get(p.userId) || 0,
       matchesPlayed: matchesPerPlayer.get(p.userId) || 0,
+      seed: p.seed,
     }));
 
     if (isFirstRound) {
-      const sorted = [...candidates].sort((a, b) => b.rating - a.rating);
+      // Manual seeds first (see /seeding), everyone else by rating; then renumber.
+      const sorted = [...candidates].sort((a, b) => (a.seed ?? Infinity) - (b.seed ?? Infinity) || b.rating - a.rating);
       await d.$transaction(sorted.map((c, idx) => d.tournamentUser.update({ where: { tournamentId_userId: { tournamentId: tournament.id, userId: c.userId } }, data: { seed: idx + 1 } })));
     }
 
@@ -754,26 +885,7 @@ app.get("/api/tournaments/:id/standings", async (req, res) => {
     });
     if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
 
-    const stats = new Map<string, any>();
-    for (const pl of tournament.players) {
-      if (!pl.user) continue;
-      stats.set(pl.userId, { userId: pl.userId, firstName: pl.user.firstName, lastName: pl.user.lastName, club: pl.user.club, rating: pl.user.rating, wins: 0, losses: 0, setsWon: 0, setsLost: 0 });
-    }
-    // Matches are won on sets, and sets are all there is to aggregate - the
-    // rally-by-rally score is not recorded any more.
-    for (const m of tournament.matches) {
-      if (!m.player1Id || !m.player2Id) continue;
-      const s1 = stats.get(m.player1Id);
-      const s2 = stats.get(m.player2Id);
-      if (!s1 || !s2) continue;
-      s1.setsWon += m.setsWon1; s1.setsLost += m.setsWon2;
-      s2.setsWon += m.setsWon2; s2.setsLost += m.setsWon1;
-      if (m.setsWon1 > m.setsWon2) { s1.wins++; s2.losses++; }
-      else if (m.setsWon2 > m.setsWon1) { s2.wins++; s1.losses++; }
-    }
-    const result = Array.from(stats.values()).sort((a: any, b: any) =>
-      b.wins - a.wins || (b.setsWon - b.setsLost) - (a.setsWon - a.setsLost));
-    res.json(result);
+    res.json(computeStandings(tournament.players, tournament.matches));
   } catch (e: any) { res.status(400).json({ error: e.message }); }
 });
 
@@ -1013,7 +1125,9 @@ app.delete("/api/clubs/:id/tables/:tableId", authMiddleware, async (req: any, re
 // Ends a match and settles the result. There is no fixed number of sets: whoever
 // won more of them takes the match, and an equal tally is a draw that moves
 // nobody's rating.
-async function finishMatch(match: any) {
+// `rated` is false for a walkover: a no-show says nothing about how either player
+// plays, so it moves nobody's Elo. /end refuses an equal tally before getting here.
+async function finishMatch(match: any, rated = true) {
   const d = db();
   const tournamentKind = match.tournament?.kind || "TOURNAMENT";
   await d.match.update({
@@ -1025,7 +1139,7 @@ async function finishMatch(match: any) {
     where: { matchId: match.id, status: { not: "COMPLETED" } },
     data: { status: "CANCELLED", endedAt: new Date() },
   });
-  if (match.setsWon1 !== match.setsWon2) {
+  if (rated && match.setsWon1 !== match.setsWon2) {
     const p1Won = match.setsWon1 > match.setsWon2;
     const delta = await applyEloUpdate(tournamentKind, p1Won ? match.player1Id : match.player2Id, p1Won ? match.player2Id : match.player1Id);
     if (delta != null) await d.match.update({ where: { id: match.id }, data: { eloDelta: delta } });
@@ -1046,10 +1160,13 @@ app.get("/api/matches/:id", async (req, res) => {
 
 app.put("/api/matches/:id", authMiddleware, async (req: any, res) => {
   try {
-    const match = await loadOwnedMatch(res, req.params.id, req.user.userId);
+    const match = await loadScorableMatch(res, req.params.id, req.user.userId);
     if (!match) return;
     if (match.status !== "NOT_STARTED") { res.status(400).json({ error: "Can only change settings before the match starts" }); return; }
     const { tableNumber, judgeId, setsToWin } = req.body;
+    // Players may agree how many sets they play; the table and judge are the manager's.
+    if (!match.isManager && (tableNumber !== undefined || judgeId !== undefined)) { res.status(403).json({ error: "Only the tournament manager can do this" }); return; }
+    if (setsToWin !== undefined && !(Number.isInteger(setsToWin) && setsToWin >= 1)) { res.status(400).json({ error: "setsToWin must be a whole number of at least 1" }); return; }
     await db().match.update({ where: { id: match.id }, data: { tableNumber, judgeId, setsToWin } });
     res.json(await reloadMatch(match.id));
   } catch (e: any) { res.status(400).json({ error: e.message }); }
@@ -1059,8 +1176,10 @@ app.put("/api/matches/:id", authMiddleware, async (req: any, res) => {
 app.post("/api/matches/:id/start", authMiddleware, async (req: any, res) => {
   try {
     const d = db();
-    const match = await loadOwnedMatch(res, req.params.id, req.user.userId);
+    const match = await loadScorableMatch(res, req.params.id, req.user.userId);
     if (!match) return;
+    // Starting a finished match would reopen it without handing its rating back.
+    if (match.status === "COMPLETED") { res.status(400).json({ error: "Match is already completed" }); return; }
     // A set is not created up front any more: a set only exists once someone has
     // won it, because a set is recorded as a result rather than played out.
     await d.match.update({
@@ -1078,12 +1197,14 @@ app.post("/api/matches/:id/start", authMiddleware, async (req: any, res) => {
 app.post("/api/matches/:id/score", authMiddleware, async (req: any, res) => {
   try {
     const d = db();
-    const match = await loadOwnedMatch(res, req.params.id, req.user.userId);
+    const match = await loadScorableMatch(res, req.params.id, req.user.userId);
     if (!match) return;
     if (match.status !== "IN_PROGRESS") { res.status(400).json({ error: "Match is not in progress" }); return; }
 
-    const { side } = req.body;
+    const { side, score1, score2 } = req.body;
     if (side !== 1 && side !== 2) { res.status(400).json({ error: "side must be 1 or 2" }); return; }
+    const scoreError = checkSetScore(side, score1, score2);
+    if (scoreError) { res.status(400).json({ error: scoreError }); return; }
 
     const nextIndex = match.sets.length ? Math.max(...match.sets.map((x: any) => x.index)) + 1 : 1;
     const setsWon1 = side === 1 ? match.setsWon1 + 1 : match.setsWon1;
@@ -1092,7 +1213,7 @@ app.post("/api/matches/:id/score", authMiddleware, async (req: any, res) => {
     await d.$transaction([
       // The set row is the per-set history the match keeps; who took it is the
       // whole content of a set.
-      d.matchSet.create({ data: { matchId: match.id, index: nextIndex, status: "COMPLETED", winner: side, endedAt: new Date() } }),
+      d.matchSet.create({ data: { matchId: match.id, index: nextIndex, status: "COMPLETED", winner: side, endedAt: new Date(), ...(score1 != null ? { score1, score2 } : {}) } }),
       d.match.update({ where: { id: match.id }, data: { setsWon1, setsWon2 } }),
     ]);
 
@@ -1104,7 +1225,7 @@ app.post("/api/matches/:id/score", authMiddleware, async (req: any, res) => {
 app.post("/api/matches/:id/undo", authMiddleware, async (req: any, res) => {
   try {
     const d = db();
-    const match = await loadOwnedMatch(res, req.params.id, req.user.userId);
+    const match = await loadScorableMatch(res, req.params.id, req.user.userId);
     if (!match) return;
 
     const last = [...match.sets].sort((a: any, b: any) => a.index - b.index).pop() || null;
@@ -1113,6 +1234,8 @@ app.post("/api/matches/:id/undo", authMiddleware, async (req: any, res) => {
     // A settled match can be taken back too: reopen it and hand the rating back,
     // otherwise a match ended by mistake would be unfixable.
     if (match.status === "COMPLETED") {
+      // Reopening a settled result is the manager's call, not the players'.
+      if (!match.isManager) { res.status(403).json({ error: "Only the tournament manager can reopen a finished match" }); return; }
       await revertEloUpdate(match);
       await d.match.update({ where: { id: match.id }, data: { status: "IN_PROGRESS", endedAt: null, eloDelta: null } });
       // The event was flipped to COMPLETED by this match; it is live again.
@@ -1132,8 +1255,11 @@ app.post("/api/matches/:id/undo", authMiddleware, async (req: any, res) => {
 
 app.post("/api/matches/:id/end", authMiddleware, async (req: any, res) => {
     try {
-        const match = await loadOwnedMatch(res, req.params.id, req.user.userId);
+        const match = await loadScorableMatch(res, req.params.id, req.user.userId);
         if (!match) return;
+        if (match.status === "COMPLETED") { res.status(400).json({ error: "Match is already completed" }); return; }
+        const endError = checkCanEnd(match.setsWon1, match.setsWon2);
+        if (endError) { res.status(400).json({ error: endError }); return; }
         await finishMatch(match);
         res.json(await reloadMatch(match.id));
     } catch (e: any) { res.status(400).json({ error: e.message }); }
@@ -1171,7 +1297,7 @@ app.post("/api/matches/:id/forfeit", authMiddleware, async (req: any, res) => {
     ]);
 
     const settled = await d.match.findUnique({ where: { id: match.id }, include: { tournament: { select: { kind: true } } } });
-    if (settled) await finishMatch(settled);
+    if (settled) await finishMatch(settled, false);
     else await maybeCompleteTournament(match.tournamentId);
     res.json(await reloadMatch(match.id));
   } catch (e: any) { res.status(400).json({ error: e.message }); }
