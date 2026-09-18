@@ -238,6 +238,10 @@ model Match {
   // The rating points the winner gained when this match was settled, kept so that
   // undoing the point that ended it can hand them back exactly.
   eloDelta     Int?
+  // Both players' ratings at the moment the match was settled, so "best win" and
+  // "beat someone 100+ above" compare against the rating they had then, not now.
+  rating1Before Int?
+  rating2Before Int?
   sets         MatchSet[]
   // Running tally of sets won. There is no fixed "best of N": sets are played
   // one after another and the judge ends the match, whoever leads takes it.

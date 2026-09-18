@@ -2,6 +2,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { apiService } from "../services/api";
 import { useAuth } from "../context/AuthContext";
+import { HeadToHead } from "../components/PlayerStats";
 import { useT } from "../i18n";
 import { playerName } from "../lib/format";
 import SetsToWinPicker from "../components/SetsToWinPicker";
@@ -120,6 +121,7 @@ export default function MatchPage() {
             {t("match.upTo", { n: target })}
             {match.tournament?.kind === "GAME" && ` · ${t("games.unrated")}`}
           </p>
+          {match.status === "NOT_STARTED" && match.player1Id && match.player2Id && <HeadToHead playerId={match.player1Id} otherId={match.player2Id} compact />}
           {match.status === "NOT_STARTED" && canScore && (
             <>
               <p className="text-[11px] text-[#4d6480] uppercase tracking-wider mt-3 mb-1.5">{t("match.setsToWin")}</p>

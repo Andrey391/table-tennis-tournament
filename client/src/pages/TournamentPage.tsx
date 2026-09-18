@@ -6,7 +6,7 @@ import Layout from "../components/Layout";
 import Avatar from "../components/Avatar";
 import SetsToWinPicker from "../components/SetsToWinPicker";
 import { useT } from "../i18n";
-import { formatEventDay, formatTimeRange, playerName, matchScoreLine } from "../lib/format";
+import { formatEventDay, formatTimeRange, playerName, matchScoreLine, formatDelta, deltaTone } from "../lib/format";
 
 export default function TournamentPage() {
   const { id } = useParams<{ id: string }>();
@@ -552,6 +552,7 @@ export default function TournamentPage() {
                   <span className="text-red-400">{s.losses}{t("tournament.lossShort")}</span>
                   <span className="text-[#93a8c2]">{s.buchholz ?? 0}{t("tournament.buchholzShort")}</span>
                   <span className="font-mono text-[#93a8c2]">{s.setsWon}:{s.setsLost}</span>
+                  {tournament.kind === "TOURNAMENT" && <span className={`font-mono w-9 text-right ${deltaTone(s.ratingChange)}`}>{formatDelta(s.ratingChange)}</span>}
                 </span>
               </div>
             ))}
@@ -592,6 +593,7 @@ function MatchRow({ m, tournamentId, tableLabel }: { m: any; tournamentId: strin
       <span className="flex-1 min-w-0 text-right text-sm truncate pr-2">{playerName(m.player1)}</span>
       <span className={`px-3 shrink-0 text-center ${m.status === "IN_PROGRESS" ? "text-yellow-400" : "text-[#93a8c2]"}`}>
         <span className="block font-mono font-bold text-sm">{matchScoreLine(m)}</span>
+        {m.eloDelta != null && <span className="block text-[10px] font-mono text-[#4d6480]">&plusmn;{m.eloDelta}</span>}
       </span>
       <span className="flex-1 min-w-0 text-sm truncate pl-2">{playerName(m.player2)}</span>
       {m.tableNumber && <span className="ml-2 text-[10px] text-[#4d6480] shrink-0">{tableLabel} {m.tableNumber}</span>}

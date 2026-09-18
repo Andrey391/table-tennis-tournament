@@ -5,7 +5,8 @@ import { apiService } from "../services/api";
 import Avatar from "../components/Avatar";
 import Layout from "../components/Layout";
 import { useT, type Lang } from "../i18n";
-import { playerName } from "../lib/format";
+import { playerName, formatDelta, deltaTone } from "../lib/format";
+import PlayerStats from "../components/PlayerStats";
 
 type Tally = { played: number; wins: number; losses: number };
 type Level = { matches: Tally; sets: Tally };
@@ -221,6 +222,8 @@ export default function ProfilePage() {
       <p className="text-[11px] text-[#4d6480] -mt-2 mb-4">{t("stats.ratedHint")}</p>
       <LevelCard titleKey="stats.inGames" level={stats?.games} accent="#3b82f6" />
 
+      {user && <PlayerStats playerId={user.id} />}
+
       <h2 className={`${label} mb-2`}>{t("player.history")}</h2>
       {history.length === 0 ? (
         <div className={`${card} p-6 text-center mb-5`}>
@@ -235,15 +238,18 @@ export default function ProfilePage() {
             const theirs = isP1 ? m.setsWon2 : m.setsWon1;
             const tone = mine > theirs ? "text-green-400" : theirs > mine ? "text-red-400" : "text-[#93a8c2]";
             return (
-              <Link key={m.id} to={`/tournament/${m.tournament?.id}`} className={`${card} block p-3 active:bg-[#1c3350] transition-colors`}>
+              <Link key={m.id} to={`/tournament/${m.tournament?.id}/match/${m.id}`} className={`${card} block p-3 active:bg-[#1c3350] transition-colors`}>
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm truncate">{t("player.vs")} {playerName(opponent)}</span>
                   <span className={`font-mono font-bold text-sm shrink-0 ${tone}`}>{mine} : {theirs}</span>
                 </div>
-                <p className="text-[11px] text-[#4d6480] truncate mt-0.5">
-                  {t("player.inEvent")} {m.tournament?.name}
-                  {m.tournament?.kind === "GAME" && ` · ${t("games.unrated")}`}
-                </p>
+                <div className="flex justify-between gap-2 mt-0.5">
+                  <p className="text-[11px] text-[#4d6480] truncate">
+                    {t("player.inEvent")} {m.tournament?.name}
+                    {m.tournament?.kind === "GAME" && ` · ${t("games.unrated")}`}
+                  </p>
+                  {m.eloDelta != null && <span className={`text-[11px] font-mono shrink-0 ${deltaTone(mine > theirs ? m.eloDelta : -m.eloDelta)}`}>{formatDelta(mine > theirs ? m.eloDelta : -m.eloDelta)}</span>}
+                </div>
               </Link>
             );
           })}

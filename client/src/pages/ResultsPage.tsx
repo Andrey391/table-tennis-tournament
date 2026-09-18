@@ -2,79 +2,142 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiService } from "../services/api";
 import Layout from "../components/Layout";
+import Avatar from "../components/Avatar";
 import { useT } from "../i18n";
-import { playerName, matchScoreLine } from "../lib/format";
+import { useAuth } from "../context/AuthContext";
+import { playerName, formatEventDay, formatDelta, deltaTone } from "../lib/format";
 
+const MEDALS = ["#ccff00", "#93a8c2", "#c08457"];
+const chip = (on: boolean) => `px-3 py-1.5 rounded-full text-xs font-medium border shrink-0 ${on ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00]" : "bg-[#101f36] text-[#93a8c2] border-[#1c3350]"}`;
+
+// Two views of what has been played: a feed of events with their podiums, and
+// leaderboards over a period. The match-by-match detail lives on the event page.
 export default function ResultsPage() {
-  const { t } = useT();
-  const [tournaments, setTournaments] = useState<any[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [matches, setMatches] = useState<any[]>([]);
+  const { t, lang } = useT();
+  const { user } = useAuth();
+  const [tab, setTab] = useState<"events" | "leaders">("events");
+
+  const [scope, setScope] = useState<"all" | "mine">("all");
+  const [kind, setKind] = useState<"" | "TOURNAMENT" | "GAME">("");
   const [search, setSearch] = useState("");
+  const [events, setEvents] = useState<any[] | null>(null);
 
-  useEffect(() => { apiService.tournaments.getAll().then(r => setTournaments(r.data)).catch(console.error); }, []);
-  useEffect(() => { if (selected) apiService.matches.getByTournament(selected).then(r => setMatches(r.data)).catch(console.error); }, [selected]);
+  const [metric, setMetric] = useState<"rating" | "wins" | "played">("rating");
+  const [period, setPeriod] = useState<"month" | "year" | "all">("month");
+  const [leaders, setLeaders] = useState<any[] | null>(null);
 
-  // Newest first: the tournament someone wants results for is almost always a
-  // recent one, and the feed hands them over oldest-first.
-  const options = tournaments
-    .filter((tr: any) => tr.name.toLowerCase().includes(search.toLowerCase()))
-    .slice()
-    .reverse();
+  useEffect(() => {
+    if (tab !== "events") return;
+    setEvents(null);
+    const timer = setTimeout(() => {
+      apiService.stats.results({ kind: kind || undefined, q: search.trim() || undefined, userId: scope === "mine" ? user?.id : undefined })
+        .then(r => setEvents(r.data)).catch(() => setEvents([]));
+    }, search ? 300 : 0);
+    return () => clearTimeout(timer);
+  }, [tab, kind, scope, search, user?.id]);
 
-  const live = matches.filter((m: any) => m.status === "IN_PROGRESS");
-  const completed = matches.filter((m: any) => m.status === "COMPLETED");
+  useEffect(() => {
+    if (tab !== "leaders") return;
+    setLeaders(null);
+    apiService.stats.leaders({ metric, period }).then(r => setLeaders(r.data)).catch(() => setLeaders([]));
+  }, [tab, metric, period]);
 
   return (
     <Layout>
       <h1 className="text-2xl font-bold tracking-tight mb-3">{t("results.title")}</h1>
-      <input type="text" placeholder={t("results.search")} value={search} onChange={e => setSearch(e.target.value)}
-        className="w-full px-3 py-2.5 bg-[#101f36] rounded border border-[#1c3350] text-sm focus:outline-none mb-2" />
-      <select value={selected || ""} onChange={e => setSelected(e.target.value || null)}
-        className="w-full px-3 py-2.5 bg-[#101f36] rounded border border-[#1c3350] text-sm focus:outline-none mb-4">
-        <option value="">{t("results.select")}</option>
-        {options.map((tr: any) => <option key={tr.id} value={tr.id}>{tr.name}</option>)}
-      </select>
+      <div className="grid grid-cols-2 gap-1 bg-[#101f36] border border-[#1c3350] rounded-lg p-1 mb-4">
+        {(["events", "leaders"] as const).map(k => (
+          <button key={k} onClick={() => setTab(k)} className={`py-2 rounded text-sm font-medium ${tab === k ? "bg-[#1c3350] text-white" : "text-[#6b84a0]"}`}>
+            {t(k === "events" ? "results.tabEvents" : "results.tabLeaders")}
+          </button>
+        ))}
+      </div>
 
-      {live.length > 0 && (
-        <div className="mb-4">
-          <h2 className="text-xs font-medium text-yellow-400 uppercase tracking-wider mb-2">{t("results.live")}</h2>
-          <div className="space-y-2">
-            {live.map((m: any) => (
-              <Link key={m.id} to={`/tournament/${selected}/match/${m.id}`}
-                className="flex items-center justify-between bg-[#101f36] border border-yellow-500/20 p-3 rounded-lg">
-                <span className="text-sm flex-1 min-w-0 text-right truncate pr-2">{playerName(m.player1)}</span>
-                <span className="px-3 shrink-0 text-center text-yellow-400">
-                  <span className="block font-mono font-bold text-sm">{matchScoreLine(m)}</span>
-                </span>
-                <span className="text-sm flex-1 min-w-0 truncate pl-2">{playerName(m.player2)}</span>
-              </Link>
+      {tab === "events" ? (
+        <>
+          <div className="flex gap-2 overflow-x-auto pb-1 mb-2">
+            {user && (["all", "mine"] as const).map(s => <button key={s} onClick={() => setScope(s)} className={chip(scope === s)}>{t(`results.${s}`)}</button>)}
+            {user && <span className="w-px bg-[#1c3350] shrink-0" />}
+            {([["", "results.kindAll"], ["TOURNAMENT", "results.kindTournaments"], ["GAME", "results.kindGames"]] as const).map(([k, key]) => (
+              <button key={k} onClick={() => setKind(k)} className={chip(kind === k)}>{t(key)}</button>
             ))}
           </div>
-        </div>
-      )}
+          <input type="text" placeholder={t("results.search")} value={search} onChange={e => setSearch(e.target.value)}
+            className="w-full px-3 py-2.5 bg-[#101f36] rounded border border-[#1c3350] text-sm focus:outline-none mb-4" />
 
-      {completed.length > 0 && (
-        <div>
-          <h2 className="text-xs font-medium text-[#6b84a0] uppercase tracking-wider mb-2">{t("results.completed")}</h2>
-          <div className="space-y-2">
-            {completed.map((m: any) => (
-              <div key={m.id} className="flex items-center justify-between bg-[#101f36] p-3 rounded-lg border border-[#1c3350]">
-                <span className="text-sm flex-1 min-w-0 text-right truncate pr-2 text-[#93a8c2]">{playerName(m.player1)}</span>
-                <span className="px-3 shrink-0 text-center">
-                  <span className="block font-mono font-bold text-sm">{matchScoreLine(m)}</span>
-                </span>
-                <span className="text-sm flex-1 min-w-0 truncate pl-2 text-[#93a8c2]">{playerName(m.player2)}</span>
-              </div>
+          {events === null ? (
+            <div className="text-center py-12 text-[#6b84a0] text-sm">{t("common.loading")}</div>
+          ) : events.length === 0 ? (
+            <div className="text-center py-12 bg-[#101f36] rounded-lg border border-[#1c3350]"><p className="text-[#6b84a0] text-sm">{t("results.emptyFeed")}</p></div>
+          ) : (
+            <div className="space-y-3">
+              {events.map(e => (
+                <Link key={e.id} to={`/tournament/${e.id}`} className="block bg-[#101f36] rounded-2xl border border-[#1c3350] p-4 active:bg-[#1c3350] transition-colors">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-semibold truncate">{e.name}</p>
+                      <p className="text-[11px] text-[#4d6480] truncate mt-0.5">
+                        {formatEventDay(e.startTime || e.createdAt, lang)}
+                        {e.club && ` · ${e.club.name}`}
+                        {` · ${t("results.players", { n: e.players })}`}
+                        {e.kind === "GAME" && ` · ${t("games.unrated")}`}
+                      </p>
+                    </div>
+                    {e.live > 0 && <span className="shrink-0 text-[10px] uppercase tracking-wider text-yellow-400 border border-yellow-500/30 rounded-full px-2 py-0.5">{t("results.liveNow")}</span>}
+                  </div>
+                  {e.podium.length === 0 ? (
+                    <p className="text-xs text-[#6b84a0] mt-3">{t("results.noMatchesYet")}</p>
+                  ) : (
+                    <div className="mt-3 space-y-1.5">
+                      {e.podium.map((p: any, i: number) => (
+                        <div key={p.userId} className="flex items-center gap-2 text-sm">
+                          <span className="w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center text-[#0a1628] shrink-0" style={{ background: MEDALS[i] }}>{i + 1}</span>
+                          <span className="truncate flex-1">{playerName(p)}</span>
+                          <span className="text-xs text-[#93a8c2] shrink-0">{p.wins}{t("tournament.winShort")} {p.losses}{t("tournament.lossShort")}</span>
+                          {e.kind === "TOURNAMENT" && <span className={`text-xs font-mono w-10 text-right shrink-0 ${deltaTone(p.ratingChange)}`}>{formatDelta(p.ratingChange)}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </Link>
+              ))}
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          <div className="flex gap-2 overflow-x-auto pb-1 mb-2">
+            {([["rating", "leaders.metricRating"], ["wins", "leaders.metricWins"], ["played", "leaders.metricPlayed"]] as const).map(([k, key]) => (
+              <button key={k} onClick={() => setMetric(k)} className={chip(metric === k)}>{t(key)}</button>
             ))}
           </div>
-        </div>
-      )}
+          <div className="flex gap-2 overflow-x-auto pb-1 mb-4">
+            {(["month", "year", "all"] as const).map(k => <button key={k} onClick={() => setPeriod(k)} className={chip(period === k)}>{t(`leaders.${k}`)}</button>)}
+          </div>
+          {metric === "rating" && <p className="text-[11px] text-[#4d6480] -mt-2 mb-3">{t("leaders.hintRating")}</p>}
 
-      {selected && completed.length === 0 && live.length === 0 && (
-        <div className="text-center py-12 bg-[#101f36] rounded-lg border border-[#1c3350]">
-          <p className="text-[#6b84a0] text-sm">{t("results.empty")}</p>
-        </div>
+          {leaders === null ? (
+            <div className="text-center py-12 text-[#6b84a0] text-sm">{t("common.loading")}</div>
+          ) : leaders.length === 0 ? (
+            <div className="text-center py-12 bg-[#101f36] rounded-lg border border-[#1c3350]"><p className="text-[#6b84a0] text-sm">{t("leaders.empty")}</p></div>
+          ) : (
+            <div className="bg-[#101f36] rounded-lg border border-[#1c3350] divide-y divide-[#1c3350]/50">
+              {leaders.map((r, i) => (
+                <Link key={r.player.id} to={`/player/${r.player.id}`} className="flex items-center gap-3 px-3 py-2.5">
+                  <span className={`text-xs w-5 shrink-0 font-bold ${i < 3 ? "text-[#ccff00]" : "text-[#4d6480]"}`}>{i + 1}</span>
+                  <Avatar firstName={r.player.firstName} lastName={r.player.lastName} rating={r.player.rating} size="sm" />
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm truncate">{playerName(r.player)}</span>
+                    <span className="block text-[11px] text-[#4d6480]">{t("leaders.matches", { n: r.played })} · {t("leaders.record", { wins: r.wins, losses: r.losses })}</span>
+                  </span>
+                  <span className={`font-mono font-bold text-sm shrink-0 ${metric === "rating" ? deltaTone(r.ratingChange) : "text-white"}`}>
+                    {metric === "rating" ? formatDelta(r.ratingChange) : metric === "wins" ? r.wins : r.played}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          )}
+        </>
       )}
     </Layout>
   );

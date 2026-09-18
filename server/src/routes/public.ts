@@ -39,7 +39,7 @@ publicRouter.get("/tournament/:id/standings", async (req, res: Response) => {
     include: {
       // A player who left mid-event keeps the matches they already played.
       players: { where: { status: { in: ["REGISTERED", "WITHDRAWN"] } }, include: { user: { select: playerSelect } } },
-      matches: { where: { status: "COMPLETED" }, select: { player1Id: true, player2Id: true, setsWon1: true, setsWon2: true } },
+      matches: { where: { status: "COMPLETED" }, select: { player1Id: true, player2Id: true, setsWon1: true, setsWon2: true, eloDelta: true } },
     },
   });
   if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
