@@ -4,7 +4,7 @@ import { apiService } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import Layout from "../components/Layout";
 import { useT } from "../i18n";
-import { formatEventDay, formatTimeRange } from "../lib/format";
+import { formatEventDay, formatTimeRange, playerName, matchScoreLine } from "../lib/format";
 
 export default function Dashboard() {
   const { t, lang } = useT();
@@ -17,6 +17,17 @@ export default function Dashboard() {
   const [city, setCity] = useState<string>(() => { try { return localStorage.getItem("city") ?? ""; } catch { return ""; } });
   const [cityTouched, setCityTouched] = useState(() => { try { return localStorage.getItem("city") !== null; } catch { return false; } });
   const [scope, setScope] = useState<"all" | "mine">("all");
+  const [myMatches, setMyMatches] = useState<any[]>([]);
+
+  // "Your match" on the home screen: during a club night this is what a player opens
+  // the app for. Polled like the event page, so a newly paired round shows up here.
+  useEffect(() => {
+    if (isGuest) { setMyMatches([]); return; }
+    const load = () => apiService.matches.mine().then(r => setMyMatches(r.data)).catch(console.error);
+    load();
+    const i = setInterval(load, 10000);
+    return () => clearInterval(i);
+  }, [isGuest]);
 
   useEffect(() => { apiService.clubs.cities().then(r => setCities(r.data)).catch(console.error); }, []);
   useEffect(() => {
@@ -52,6 +63,24 @@ export default function Dashboard() {
           </select>
         </div>
       </div>
+
+      {myMatches.map(m => (
+        <Link key={m.id} to={`/tournament/${m.tournament.id}/match/${m.id}`}
+          className="block rounded-lg p-4 mb-3 border bg-[#ccff00]/10 border-[#ccff00]/40">
+          <p className="text-[11px] text-[#ccff00] uppercase tracking-wider truncate">{t("tournament.myMatch")} &middot; {m.tournament.name}</p>
+          <p className="text-base font-bold mt-1 truncate">
+            {t("tournament.myMatchVs", { name: playerName(m.player1Id === user?.id ? m.player2 : m.player1) })}
+          </p>
+          <div className="flex items-center justify-between mt-1">
+            <span className="text-sm text-[#93a8c2]">
+              {t("tournament.round", { n: m.round })}
+              {m.tableNumber ? ` \u00b7 ${t("tournament.myMatchTable", { n: m.tableNumber })}` : ""}
+              {m.status === "IN_PROGRESS" && <span className="font-mono ml-2">{matchScoreLine(m)}</span>}
+            </span>
+            <span className="text-xs text-[#ccff00] font-medium">{t("tournament.openMatch")} &rarr;</span>
+          </div>
+        </Link>
+      ))}
 
       <div className="relative overflow-hidden rounded-2xl border border-[#1c3350] bg-gradient-to-br from-[#142a44] via-[#101f36] to-[#0a1628] p-5 mb-5">
         <div className="absolute -right-12 -top-12 w-36 h-36 rounded-full bg-[#ccff00]/10 blur-2xl" />

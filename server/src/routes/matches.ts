@@ -136,6 +136,23 @@ matchRouter.get("/live/:tournamentId", async (req, res: Response) => {
   res.json(matches);
 });
 
+// The caller's own matches still to be played or finished, across every live event.
+// The home screen shows them as "your match" cards: someone opening the app during
+// a club night wants who they play and at which table, not the event feed.
+matchRouter.get("/mine", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user!.userId;
+  const matches = await prisma.match.findMany({
+    where: {
+      status: { in: ["NOT_STARTED", "IN_PROGRESS"] },
+      tournament: { status: "ACTIVE" },
+      OR: [{ player1Id: userId }, { player2Id: userId }],
+    },
+    include: { player1: { select: playerSelect }, player2: { select: playerSelect }, tournament: { select: { id: true, name: true, kind: true } } },
+    orderBy: [{ status: "desc" }, { round: "asc" }],
+  });
+  res.json(matches);
+});
+
 matchRouter.get("/:id", async (req, res: Response) => {
   const match = await prisma.match.findUnique({ where: { id: req.params.id }, include: matchInclude });
   if (!match) { res.status(404).json({ error: "Not found" }); return; }

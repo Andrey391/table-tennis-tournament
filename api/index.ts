@@ -1152,6 +1152,23 @@ app.get("/api/matches/tournament/:tournamentId", async (req, res) => {
   res.json(matches);
 });
 
+// The caller's own matches still to be played or finished, across every live event.
+// The home screen shows them as "your match" cards: someone opening the app during
+// a club night wants who they play and at which table, not the event feed.
+app.get("/api/matches/mine", authMiddleware, async (req: any, res) => {
+  const userId = req.user.userId;
+  const matches = await db().match.findMany({
+    where: {
+      status: { in: ["NOT_STARTED", "IN_PROGRESS"] },
+      tournament: { status: "ACTIVE" },
+      OR: [{ player1Id: userId }, { player2Id: userId }],
+    },
+    include: { player1: { select: playerSelect }, player2: { select: playerSelect }, tournament: { select: { id: true, name: true, kind: true } } },
+    orderBy: [{ status: "desc" }, { round: "asc" }],
+  });
+  res.json(matches);
+});
+
 app.get("/api/matches/:id", async (req, res) => {
   const match = await db().match.findUnique({ where: { id: req.params.id }, include: matchInclude });
   if (!match) { res.status(404).json({ error: "Not found" }); return; }
