@@ -2,7 +2,7 @@ import { Router, Response } from "express";
 import { prisma } from "../config/db.js";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth.js";
 import { MatchSettingsSchema, SetResultSchema, ForfeitSchema } from "../shared/schemas.js";
-import { computeEloDelta } from "../shared/scoring.js";
+import { computeEloDelta, checkSetScore, checkCanEnd } from "../shared/scoring.js";
 import AuditLog from "../models/AuditLog.js";
 
 export const matchRouter = Router();
@@ -26,6 +26,23 @@ async function loadOwnedMatch(res: Response, matchId: string, userId: string) {
   if (!match) { res.status(404).json({ error: "Not found" }); return null; }
   if (!match.tournament || match.tournament.organizerId !== userId) { res.status(403).json({ error: "Only the tournament manager can record this match" }); return null; }
   return match;
+}
+
+// Loads the match for recording its result: the manager, or either of the two
+// players in it. At a club night with six tables the manager cannot stand at every
+// one of them, so the players at the table enter their own sets (the way a paper
+// score sheet at the table works); the manager keeps the last word — walkovers and
+// reopening a settled match stay with them (see loadOwnedMatch).
+async function loadScorableMatch(res: Response, matchId: string, userId: string) {
+  const match = await prisma.match.findUnique({
+    where: { id: matchId },
+    include: { tournament: { select: { organizerId: true, kind: true } }, sets: { orderBy: { index: "asc" } } },
+  });
+  if (!match) { res.status(404).json({ error: "Not found" }); return null; }
+  const isManager = match.tournament?.organizerId === userId;
+  const isPlayer = match.player1Id === userId || match.player2Id === userId;
+  if (!isManager && !isPlayer) { res.status(403).json({ error: "Only the players in this match or the tournament manager can record it" }); return null; }
+  return { ...match, isManager };
 }
 
 const reload = (id: string) => prisma.match.findUnique({ where: { id }, include: matchInclude });
@@ -79,10 +96,10 @@ async function revertEloUpdate(match: { player1Id: string | null; player2Id: str
   ]);
 }
 
-// Ends a match and settles the result. There is no fixed number of sets: whoever
-// has won more of them takes the match, and an equal tally is a draw that moves
-// nobody's rating.
-async function finishMatch(match: { id: string; tournamentId: string; player1Id: string | null; player2Id: string | null; setsWon1: number; setsWon2: number; startedAt: Date | null; tournament: { kind: string } | null }) {
+// Ends a match and settles the result: whoever has won more sets takes it (/end
+// refuses an equal tally). `rated` is false for a walkover — a no-show says nothing
+// about how well either player plays, so it moves nobody's Elo.
+async function finishMatch(match: { id: string; tournamentId: string; player1Id: string | null; player2Id: string | null; setsWon1: number; setsWon2: number; startedAt: Date | null; tournament: { kind: string } | null }, rated = true) {
   const tournamentKind = match.tournament?.kind ?? "TOURNAMENT";
   await prisma.match.update({
     where: { id: match.id },
@@ -93,7 +110,7 @@ async function finishMatch(match: { id: string; tournamentId: string; player1Id:
     where: { matchId: match.id, status: { not: "COMPLETED" } },
     data: { status: "CANCELLED", endedAt: new Date() },
   });
-  if (match.setsWon1 !== match.setsWon2) {
+  if (rated && match.setsWon1 !== match.setsWon2) {
     const p1Won = match.setsWon1 > match.setsWon2;
     const delta = await applyEloUpdate(tournamentKind, p1Won ? match.player1Id : match.player2Id, p1Won ? match.player2Id : match.player1Id);
     if (delta != null) await prisma.match.update({ where: { id: match.id }, data: { eloDelta: delta } });
@@ -127,10 +144,12 @@ matchRouter.get("/:id", async (req, res: Response) => {
 
 matchRouter.put("/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const match = await loadOwnedMatch(res, req.params.id, req.user!.userId);
+    const match = await loadScorableMatch(res, req.params.id, req.user!.userId);
     if (!match) return;
     if (match.status !== "NOT_STARTED") { res.status(400).json({ error: "Can only change settings before the match starts" }); return; }
     const data = MatchSettingsSchema.parse(req.body);
+    // Players may agree how many sets they play; the table and judge are the manager's.
+    if (!match.isManager && (data.tableNumber !== undefined || data.judgeId !== undefined)) { res.status(403).json({ error: "Only the tournament manager can do this" }); return; }
     await prisma.match.update({ where: { id: match.id }, data });
     res.json(await reload(match.id));
   } catch (err: any) {
@@ -143,8 +162,11 @@ matchRouter.put("/:id", authMiddleware, async (req: AuthenticatedRequest, res: R
 // rather than played out point by point.
 matchRouter.post("/:id/start", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const match = await loadOwnedMatch(res, req.params.id, req.user!.userId);
+    const match = await loadScorableMatch(res, req.params.id, req.user!.userId);
     if (!match) return;
+    // Starting a finished match would reopen it without handing its rating back;
+    // that is what /undo is for.
+    if (match.status === "COMPLETED") { res.status(400).json({ error: "Match is already completed" }); return; }
     await prisma.match.update({
       where: { id: match.id },
       data: { status: "IN_PROGRESS", startedAt: match.startedAt ?? new Date(), judgeId: req.user!.userId },
@@ -162,11 +184,13 @@ matchRouter.post("/:id/start", authMiddleware, async (req: AuthenticatedRequest,
 // /end — see `setsToWin`, which is only the target the screen prompts at.
 matchRouter.post("/:id/score", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const match = await loadOwnedMatch(res, req.params.id, req.user!.userId);
+    const match = await loadScorableMatch(res, req.params.id, req.user!.userId);
     if (!match) return;
     if (match.status !== "IN_PROGRESS") { res.status(400).json({ error: "Match is not in progress" }); return; }
 
-    const { side } = SetResultSchema.parse(req.body);
+    const { side, score1, score2 } = SetResultSchema.parse(req.body);
+    const scoreError = checkSetScore(side, score1, score2);
+    if (scoreError) { res.status(400).json({ error: scoreError }); return; }
     const nextIndex = match.sets.length ? Math.max(...match.sets.map(x => x.index)) + 1 : 1;
     const setsWon1 = side === 1 ? match.setsWon1 + 1 : match.setsWon1;
     const setsWon2 = side === 2 ? match.setsWon2 + 1 : match.setsWon2;
@@ -175,7 +199,7 @@ matchRouter.post("/:id/score", authMiddleware, async (req: AuthenticatedRequest,
       // The set row is the per-set history the match keeps; who took it is the
       // whole content of a set.
       prisma.matchSet.create({
-        data: { matchId: match.id, index: nextIndex, status: "COMPLETED", winner: side, endedAt: new Date() },
+        data: { matchId: match.id, index: nextIndex, status: "COMPLETED", winner: side, endedAt: new Date(), ...(score1 != null ? { score1, score2: score2! } : {}) },
       }),
       prisma.match.update({ where: { id: match.id }, data: { setsWon1, setsWon2 } }),
     ]);
@@ -190,7 +214,7 @@ matchRouter.post("/:id/score", authMiddleware, async (req: AuthenticatedRequest,
 // Takes back the last recorded set. One step, no history beyond that.
 matchRouter.post("/:id/undo", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const match = await loadOwnedMatch(res, req.params.id, req.user!.userId);
+    const match = await loadScorableMatch(res, req.params.id, req.user!.userId);
     if (!match) return;
 
     const last = [...match.sets].sort((a, b) => a.index - b.index).pop() ?? null;
@@ -199,6 +223,8 @@ matchRouter.post("/:id/undo", authMiddleware, async (req: AuthenticatedRequest, 
     // A settled match can be taken back too: reopen it and hand the rating back,
     // otherwise a match ended by mistake would be unfixable.
     if (match.status === "COMPLETED") {
+      // Reopening a settled result is the manager's call, not the players'.
+      if (!match.isManager) { res.status(403).json({ error: "Only the tournament manager can reopen a finished match" }); return; }
       await revertEloUpdate(match);
       await prisma.match.update({ where: { id: match.id }, data: { status: "IN_PROGRESS", endedAt: null, eloDelta: null } });
       // The event was flipped to COMPLETED by this match; it is live again.
@@ -220,8 +246,11 @@ matchRouter.post("/:id/undo", authMiddleware, async (req: AuthenticatedRequest, 
 
 matchRouter.post("/:id/end", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const match = await loadOwnedMatch(res, req.params.id, req.user!.userId);
+    const match = await loadScorableMatch(res, req.params.id, req.user!.userId);
     if (!match) return;
+    if (match.status === "COMPLETED") { res.status(400).json({ error: "Match is already completed" }); return; }
+    const endError = checkCanEnd(match.setsWon1, match.setsWon2);
+    if (endError) { res.status(400).json({ error: endError }); return; }
     await finishMatch(match);
     await AuditLog.create({ userId: req.user!.userId, action: "MATCH_END", entity: "Match", entityId: match.id, newValue: { setsWon1: match.setsWon1, setsWon2: match.setsWon2 } });
     res.json(await reload(match.id));
@@ -262,7 +291,7 @@ matchRouter.post("/:id/forfeit", authMiddleware, async (req: AuthenticatedReques
       where: { id: match.id },
       include: { tournament: { select: { kind: true } } },
     });
-    if (settled) await finishMatch({ ...settled, tournament: settled.tournament });
+    if (settled) await finishMatch({ ...settled, tournament: settled.tournament }, false);
     else await maybeCompleteTournament(match.tournamentId);
     await AuditLog.create({ userId: req.user!.userId, action: "MATCH_FORFEIT", entity: "Match", entityId: match.id, newValue: { loserSide } });
     res.json(await reload(match.id));

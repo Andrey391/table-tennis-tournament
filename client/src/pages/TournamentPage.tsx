@@ -1,9 +1,10 @@
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiService } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import Layout from "../components/Layout";
 import Avatar from "../components/Avatar";
+import SetsToWinPicker from "../components/SetsToWinPicker";
 import { useT } from "../i18n";
 import { formatEventDay, formatTimeRange, playerName, matchScoreLine } from "../lib/format";
 
@@ -47,6 +48,19 @@ export default function TournamentPage() {
     apiService.players.getAll().then(r => setAllPlayers(r.data)).catch(console.error);
   }, [isGuest]);
   useEffect(() => { apiService.clubs.getAll().then(r => setClubs(r.data)).catch(console.error); }, []);
+  // Participants keep this page open between rounds; when the manager pairs the
+  // next one, say so (and buzz the phone) rather than let it change silently.
+  const lastRound = useRef<number | null>(null);
+  useEffect(() => {
+    if (!tournament) return;
+    const round = (tournament.matches || []).reduce((max: number, m: any) => Math.max(max, m.round), 0);
+    const inIt = !!user && tournament.players?.some((p: any) => p.userId === user.id && p.status === "REGISTERED");
+    if (lastRound.current != null && round > lastRound.current && inIt) {
+      setNotice(t("tournament.newRoundNotice", { n: round }));
+      try { navigator.vibrate?.(200); } catch { /* not supported */ }
+    }
+    lastRound.current = round;
+  }, [tournament, user]);
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => setNotice(""), 2500);
@@ -135,7 +149,7 @@ export default function TournamentPage() {
     maxPlayers: tournament.maxPlayers ?? "",
     minRating: tournament.minRating ?? "",
     maxRating: tournament.maxRating ?? "",
-    setsToWin: tournament.setsToWin ?? 1,
+    setsToWin: tournament.setsToWin ?? 3,
     isPublic: tournament.isPublic !== false,
   });
 
@@ -198,6 +212,29 @@ export default function TournamentPage() {
   // also flagged everyone who joined after the round had already been played.
   const byes: any[] = tournament.byes || [];
   const byeOf = (round: number) => byes.find((b: any) => b.round === round) || null;
+
+  // "Your match": the first thing a participant looks for is who they play and at
+  // which table, so it is pulled out of the round list and put on top.
+  const myCurrent = user && currentRound > 0
+    ? matches.find((m: any) => m.round === currentRound && (m.player1Id === user.id || m.player2Id === user.id)) || null
+    : null;
+  const mySittingOut = !!user && currentRound > 0 && byeOf(currentRound)?.userId === user.id;
+  const waitingOn = matches.filter((m: any) => m.round === currentRound && m.status !== "COMPLETED");
+
+  // Round-1 seeding the manager can reorder: manual seeds first, then rating.
+  const seeded = [...approved].sort((a: any, b: any) =>
+    ((a.seed ?? Infinity) - (b.seed ?? Infinity)) || ((b.user?.rating ?? 0) - (a.user?.rating ?? 0)));
+  const canSeed = isManager && isDraft && approved.length > 1;
+  const moveSeed = async (idx: number, dir: -1 | 1) => {
+    if (!id) return;
+    const order = seeded.map((p: any) => p.userId);
+    const j = idx + dir;
+    if (j < 0 || j >= order.length) return;
+    [order[idx], order[j]] = [order[j], order[idx]];
+    setError("");
+    try { await apiService.tournaments.setSeeding(id, { userIds: order }); load(); }
+    catch (e: any) { setError(e.response?.data?.error || t("common.failed")); }
+  };
 
   return (
     <Layout>
@@ -275,8 +312,7 @@ export default function TournamentPage() {
           </div>
           <div>
             <label className="block text-xs text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("create.setsToWin")}</label>
-            <input type="number" min={1} value={edit.setsToWin}
-              onChange={e => setEdit({ ...edit, setsToWin: Math.max(1, +e.target.value || 1) })} className={editField} />
+            <SetsToWinPicker value={edit.setsToWin} onChange={n => setEdit({ ...edit, setsToWin: n })} />
             <p className="text-xs text-[#4d6480] mt-1.5">{t("create.setsToWinHint")}</p>
           </div>
           <label className="flex items-center gap-2 text-sm text-[#93a8c2]">
@@ -289,6 +325,27 @@ export default function TournamentPage() {
         </form>
       )}
 
+      {!isDraft && (myCurrent || mySittingOut) && (
+        myCurrent ? (
+          <Link to={`/tournament/${id}/match/${myCurrent.id}`}
+            className={`block rounded-lg p-4 mb-4 border ${myCurrent.status === "COMPLETED" ? "bg-[#101f36] border-[#1c3350]" : "bg-[#ccff00]/10 border-[#ccff00]/40"}`}>
+            <p className="text-[11px] text-[#ccff00] uppercase tracking-wider">{t("tournament.myMatch")} &middot; {t("tournament.round", { n: currentRound })}</p>
+            <p className="text-base font-bold mt-1 truncate">
+              {t("tournament.myMatchVs", { name: playerName(myCurrent.player1Id === user!.id ? myCurrent.player2 : myCurrent.player1) })}
+            </p>
+            <div className="flex items-center justify-between mt-1">
+              <span className="text-sm text-[#93a8c2]">
+                {myCurrent.tableNumber ? t("tournament.myMatchTable", { n: myCurrent.tableNumber }) : ""}
+                {myCurrent.status !== "NOT_STARTED" && <span className="font-mono ml-2">{matchScoreLine(myCurrent)}</span>}
+              </span>
+              <span className="text-xs text-[#ccff00] font-medium">{t("tournament.openMatch")} &rarr;</span>
+            </div>
+          </Link>
+        ) : (
+          <div className="rounded-lg p-4 mb-4 border border-dashed border-[#1c3350] bg-[#101f36]/60 text-sm text-[#93a8c2] text-center">{t("tournament.myBye")}</div>
+        )
+      )}
+
       {/* The chat is how people agree when to meet, so it is there from the start;
           the scoreboards only mean something once a round exists. */}
       <div className="flex gap-2 mb-4">
@@ -296,7 +353,11 @@ export default function TournamentPage() {
         {!isDraft && <Link to={`/public/tournament/${id}`} className="flex-1 text-center px-3 py-2 bg-[#1c3350] text-[#93a8c2] rounded text-sm border border-[#1c3350]">{t("tournament.public")}</Link>}
         {!isGuest && (
           <Link to={`/tournament/${id}/chat`} className={`${isDraft ? "flex-1 text-center" : ""} px-3 py-2 bg-[#1c3350] text-[#93a8c2] rounded text-sm border border-[#1c3350]`}>
-            {isDraft ? t("tournament.chat") : "\u{1F4AC}"}
+            {isDraft ? t("tournament.chat") : (
+              <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-label={t("tournament.chat")}>
+                <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" />
+              </svg>
+            )}
           </Link>
         )}
         {!isDraft && (
@@ -362,14 +423,21 @@ export default function TournamentPage() {
         <div className="space-y-1">
           {approved.length === 0 ? (
             <p className="text-center py-8 text-sm text-[#6b84a0] bg-[#101f36] rounded-lg border border-[#1c3350]">{t("tournament.noPlayers")}</p>
-          ) : approved.map((p: any) => (
+          ) : (canSeed ? seeded : approved).map((p: any, idx: number) => (
             <div key={p.id} className="flex justify-between items-center bg-[#101f36] p-2.5 rounded border border-[#1c3350]">
               <Link to={`/player/${p.userId}`} className="min-w-0 flex items-center gap-2">
                 <Avatar firstName={p.user?.firstName} lastName={p.user?.lastName} rating={p.user?.rating} size="sm" />
-                {p.seed && <span className="text-[10px] bg-[#1c3350] text-[#93a8c2] px-1.5 py-0.5 rounded shrink-0">#{p.seed}</span>}
+                {canSeed ? <span className="text-[10px] bg-[#1c3350] text-[#93a8c2] px-1.5 py-0.5 rounded shrink-0">#{idx + 1}</span>
+                  : p.seed && <span className="text-[10px] bg-[#1c3350] text-[#93a8c2] px-1.5 py-0.5 rounded shrink-0">#{p.seed}</span>}
                 <span className="text-sm truncate">{p.user?.firstName} {p.user?.lastName}</span>
               </Link>
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-1 shrink-0">
+                {canSeed && (
+                  <>
+                    <button onClick={() => moveSeed(idx, -1)} disabled={idx === 0} aria-label={t("tournament.seedUp")} className="text-[#93a8c2] w-8 h-8 rounded border border-[#1c3350] disabled:opacity-30">&uarr;</button>
+                    <button onClick={() => moveSeed(idx, 1)} disabled={idx === seeded.length - 1} aria-label={t("tournament.seedDown")} className="text-[#93a8c2] w-8 h-8 rounded border border-[#1c3350] disabled:opacity-30">&darr;</button>
+                  </>
+                )}
                 {isManager && (
                   <button onClick={() => removePlayer(p.userId)} aria-label={isDraft ? t("common.remove") : t("tournament.withdraw")}
                     className="text-[#4d6480] text-sm px-1">&times;</button>
@@ -378,6 +446,8 @@ export default function TournamentPage() {
             </div>
           ))}
         </div>
+
+        {canSeed && <p className="text-xs text-[#4d6480] mt-2">{t("tournament.seedingHint")}</p>}
 
         {withdrawn.length > 0 && (
           <div className="mt-3">
@@ -399,7 +469,9 @@ export default function TournamentPage() {
           </Link>
         ) : !isManager && tournament.status !== "CANCELLED" && (
           myEntry && myEntry.status !== "WITHDRAWN" ? (
-            <p className="text-center py-3 mt-3 text-sm text-yellow-400 bg-yellow-500/10 rounded-lg border border-yellow-500/20">
+            // "Waiting for pairing" is only true before round 1; after that the
+            // "your match" card says where the player stands.
+            myEntry.status === "REGISTERED" && !isDraft ? null : <p className="text-center py-3 mt-3 text-sm text-yellow-400 bg-yellow-500/10 rounded-lg border border-yellow-500/20">
               {myEntry.status === "PENDING" ? t("tournament.pendingApproval") : t("tournament.youreIn")}
             </p>
           ) : ratingBlocked ? (
@@ -436,6 +508,19 @@ export default function TournamentPage() {
               {busy ? t("tournament.pairing") : canStartNextRound ? t("tournament.startRound", { n: currentRound + 1 }) : t("tournament.finishRoundFirst")}
             </button>
           )}
+          {/* The round waits for its slowest table; say which one, so the manager
+              can go and hurry it along (or record a walkover). */}
+          {isManager && waitingOn.length > 0 && (
+            <div className="text-xs text-[#93a8c2] bg-[#101f36] rounded-lg border border-[#1c3350] p-3 space-y-1">
+              <p className="text-[#6b84a0]">{t("tournament.waitingOn")}</p>
+              {waitingOn.map((m: any) => (
+                <Link key={m.id} to={`/tournament/${id}/match/${m.id}`} className="flex justify-between gap-2">
+                  <span className="truncate">{playerName(m.player1)} &ndash; {playerName(m.player2)}</span>
+                  <span className="shrink-0 text-[#4d6480]">{m.tableNumber ? `${t("tournament.table")} ${m.tableNumber}` : ""} &middot; <span className="font-mono">{matchScoreLine(m)}</span></span>
+                </Link>
+              ))}
+            </div>
+          )}
           {rounds.map((round) => (
             <div key={round}>
               <h2 className="text-xs font-medium text-[#6b84a0] uppercase tracking-wider mb-2">{t("tournament.round", { n: round })}</h2>
@@ -465,11 +550,13 @@ export default function TournamentPage() {
                 <span className="flex items-center gap-3 shrink-0 text-xs">
                   <span className="text-green-400">{s.wins}{t("tournament.winShort")}</span>
                   <span className="text-red-400">{s.losses}{t("tournament.lossShort")}</span>
+                  <span className="text-[#93a8c2]">{s.buchholz ?? 0}{t("tournament.buchholzShort")}</span>
                   <span className="font-mono text-[#93a8c2]">{s.setsWon}:{s.setsLost}</span>
                 </span>
               </div>
             ))}
           </div>
+          <p className="text-[11px] text-[#4d6480] mt-1.5">{t("tournament.buchholzHint")}</p>
         </section>
       )}
       {isManager && (

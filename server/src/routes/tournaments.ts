@@ -1,7 +1,9 @@
 import { Router, Response } from "express";
 import { prisma } from "../config/db.js";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth.js";
-import { CreateTournamentSchema, UpdateTournamentSchema, AddPlayersSchema, ChatMessageSchema } from "../shared/schemas.js";
+import { CreateTournamentSchema, UpdateTournamentSchema, AddPlayersSchema, ChatMessageSchema, SeedingSchema, QuickGameSchema } from "../shared/schemas.js";
+import { computeStandings } from "../shared/standings.js";
+import { checkCanEnd } from "../shared/scoring.js";
 import { generateRoundPairings } from "../shared/scheduler.js";
 import AuditLog from "../models/AuditLog.js";
 
@@ -18,37 +20,6 @@ async function loadOwnedTournament(res: Response, tournamentId: string, userId: 
   return tournament;
 }
 
-type StandingsMatch = {
-  player1Id: string | null;
-  player2Id: string | null;
-  setsWon1: number;
-  setsWon2: number;
-};
-
-// A match is won by whoever took more sets. Sets are all there is to aggregate —
-// the rally-by-rally score is not recorded any more — so the table ranks on
-// matches won and then on set difference. An equal set tally is a draw and counts
-// for neither column.
-function computeStandings(players: { userId: string; user: { firstName: string; lastName: string; club: string | null; rating: number } | null }[], matches: StandingsMatch[]) {
-  const stats = new Map<string, { userId: string; firstName: string; lastName: string; club?: string | null; rating: number; wins: number; losses: number; setsWon: number; setsLost: number }>();
-  for (const p of players) {
-    if (!p.user) continue;
-    stats.set(p.userId, { userId: p.userId, firstName: p.user.firstName, lastName: p.user.lastName, club: p.user.club, rating: p.user.rating, wins: 0, losses: 0, setsWon: 0, setsLost: 0 });
-  }
-  for (const m of matches) {
-    if (!m.player1Id || !m.player2Id) continue;
-    const s1 = stats.get(m.player1Id);
-    const s2 = stats.get(m.player2Id);
-    if (!s1 || !s2) continue;
-    s1.setsWon += m.setsWon1; s1.setsLost += m.setsWon2;
-    s2.setsWon += m.setsWon2; s2.setsLost += m.setsWon1;
-    if (m.setsWon1 > m.setsWon2) { s1.wins++; s2.losses++; }
-    else if (m.setsWon2 > m.setsWon1) { s2.wins++; s1.losses++; }
-  }
-  return Array.from(stats.values()).sort((a, b) =>
-    b.wins - a.wins || (b.setsWon - b.setsLost) - (a.setsWon - a.setsLost));
-}
-
 tournamentRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const data = CreateTournamentSchema.parse(req.body);
@@ -57,6 +28,57 @@ tournamentRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, res
     await prisma.tournamentUser.create({ data: { tournamentId: tournament.id, userId: req.user!.userId, status: "REGISTERED" } });
     await AuditLog.create({ userId: req.user!.userId, action: "TOURNAMENT_CREATE", entity: "Tournament", entityId: tournament.id, newValue: data });
     res.status(201).json(tournament);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Records a friendly game that has already been played, in one step: the caller
+// and an opponent, the set tally, done. Two friends at a table do not want to
+// create an event, start it, open the match and tap every set in — they want to
+// write down "3:1" and leave. It is the same GAME container as any other (so it
+// shows in both players' history and stats), created already COMPLETED, private
+// to the feed, and unrated like every GAME.
+tournamentRouter.post("/quick-game", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const data = QuickGameSchema.parse(req.body);
+    const me = req.user!.userId;
+    if (data.opponentId === me) { res.status(400).json({ error: "Pick an opponent other than yourself" }); return; }
+    const endError = checkCanEnd(data.setsWon1, data.setsWon2);
+    if (endError) { res.status(400).json({ error: endError }); return; }
+    const [self, opponent] = await Promise.all([
+      prisma.user.findUnique({ where: { id: me }, select: { firstName: true } }),
+      prisma.user.findUnique({ where: { id: data.opponentId }, select: { firstName: true } }),
+    ]);
+    if (!self || !opponent) { res.status(404).json({ error: "Player not found" }); return; }
+    const now = new Date();
+    // Sets in the order they are listed: the winner's sets are not interleaved
+    // because nobody recorded the order, only the tally.
+    const winners = [...Array(data.setsWon1).fill(1), ...Array(data.setsWon2).fill(2)];
+    const game = await prisma.$transaction(async (tx) => {
+      const t = await tx.tournament.create({
+        data: {
+          kind: "GAME", name: data.name || `${self.firstName} - ${opponent.firstName}`, organizerId: me, status: "COMPLETED",
+          isPublic: false, tablesCount: 1, setsToWin: Math.max(data.setsWon1, data.setsWon2), startTime: now, endTime: now,
+          ...(data.clubId ? { clubId: data.clubId } : {}),
+        },
+      });
+      await tx.tournamentUser.createMany({ data: [
+        { tournamentId: t.id, userId: me, status: "REGISTERED", seed: 1 },
+        { tournamentId: t.id, userId: data.opponentId, status: "REGISTERED", seed: 2 },
+      ] });
+      await tx.match.create({
+        data: {
+          tournamentId: t.id, round: 1, matchIndex: 0, tableNumber: 1, player1Id: me, player2Id: data.opponentId,
+          setsToWin: Math.max(data.setsWon1, data.setsWon2), setsWon1: data.setsWon1, setsWon2: data.setsWon2,
+          status: "COMPLETED", startedAt: now, endedAt: now, judgeId: me,
+          sets: { create: winners.map((w, i) => ({ index: i + 1, winner: w, status: "COMPLETED" as const, endedAt: now })) },
+        },
+      });
+      return t;
+    });
+    await AuditLog.create({ userId: me, action: "QUICK_GAME", entity: "Tournament", entityId: game.id, newValue: data });
+    res.status(201).json(game);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
@@ -288,6 +310,29 @@ tournamentRouter.delete("/:id/players/:userId", authMiddleware, async (req: Auth
   }
 });
 
+// Manual round-1 seeding. Ratings start at 100 for everyone, so a strong newcomer
+// is seeded last and meets the weakest player in round 1; the manager, who knows
+// the room, can put the order right before pairing. Only in DRAFT: from round 2 on
+// the order is wins.
+tournamentRouter.put("/:id/seeding", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const tournament = await loadOwnedTournament(res, req.params.id, req.user!.userId);
+    if (!tournament) return;
+    if (tournament.status !== "DRAFT") { res.status(400).json({ error: "Seeding can only be changed before round 1" }); return; }
+    const { userIds } = SeedingSchema.parse(req.body);
+    const roster = await prisma.tournamentUser.findMany({ where: { tournamentId: tournament.id, status: "REGISTERED" }, select: { userId: true } });
+    const onRoster = new Set(roster.map(r => r.userId));
+    if (userIds.some(id => !onRoster.has(id)) || new Set(userIds).size !== userIds.length) {
+      res.status(400).json({ error: "Seeding must list approved players, each once" }); return;
+    }
+    await prisma.$transaction(userIds.map((userId, idx) =>
+      prisma.tournamentUser.update({ where: { tournamentId_userId: { tournamentId: tournament.id, userId } }, data: { seed: idx + 1 } })));
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // Generates a new round of pairs: round 1 (DRAFT -> ACTIVE) seeds by rating; every
 // later round is Swiss-style, ranked by wins so far. Nobody is eliminated between
 // rounds. Can be called again after a tournament auto-completed to keep playing.
@@ -304,7 +349,7 @@ tournamentRouter.post("/:id/pair", authMiddleware, async (req: AuthenticatedRequ
     }
 
     const [players, allMatches] = await Promise.all([
-      prisma.tournamentUser.findMany({ where: { tournamentId: tournament.id, status: "REGISTERED" }, include: { user: { select: { id: true, rating: true } } } }),
+      prisma.tournamentUser.findMany({ where: { tournamentId: tournament.id, status: "REGISTERED" }, select: { userId: true, seed: true, user: { select: { id: true, rating: true } } } }),
       prisma.match.findMany({ where: { tournamentId: tournament.id }, select: { round: true, player1Id: true, player2Id: true, setsWon1: true, setsWon2: true } }),
     ]);
     if (players.length < 2) { res.status(400).json({ error: "Need at least 2 approved players" }); return; }
@@ -330,10 +375,12 @@ tournamentRouter.post("/:id/pair", authMiddleware, async (req: AuthenticatedRequ
       rating: p.user?.rating || 0,
       wins: winsPerPlayer.get(p.userId) || 0,
       matchesPlayed: matchesPerPlayer.get(p.userId) || 0,
+      seed: p.seed,
     }));
 
     if (isFirstRound) {
-      const sorted = [...candidates].sort((a, b) => b.rating - a.rating);
+      // Manual seeds first (see /seeding), everyone else by rating; then renumber.
+      const sorted = [...candidates].sort((a, b) => (a.seed ?? Infinity) - (b.seed ?? Infinity) || b.rating - a.rating);
       await prisma.$transaction(
         sorted.map((c, idx) => prisma.tournamentUser.update({ where: { tournamentId_userId: { tournamentId: tournament.id, userId: c.userId } }, data: { seed: idx + 1 } }))
       );

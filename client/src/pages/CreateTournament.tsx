@@ -2,13 +2,14 @@ import React from "react";
 import { useNavigate } from "react-router-dom";
 import { apiService } from "../services/api";
 import Layout from "../components/Layout";
+import SetsToWinPicker from "../components/SetsToWinPicker";
 import { useT } from "../i18n";
 
 export default function CreateTournament() {
   const navigate = useNavigate();
   const { t } = useT();
   const [clubs, setClubs] = React.useState<any[]>([]);
-  const [form, setForm] = React.useState({ name: "", description: "", clubId: "", startTime: "", endTime: "", tablesCount: 4, maxPlayers: "", minRating: "", maxRating: "", setsToWin: 1 });
+  const [form, setForm] = React.useState({ name: "", description: "", clubId: "", startTime: "", endTime: "", tablesCount: 4, maxPlayers: "", minRating: "", maxRating: "", setsToWin: 3 });
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
 
@@ -82,8 +83,7 @@ export default function CreateTournament() {
         <p className="text-xs text-[#4d6480] -mt-2">{t("create.maxPlayersHint")}</p>
         <div>
           <label className={label}>{t("create.setsToWin")}</label>
-          <input type="number" min={1} value={form.setsToWin}
-            onChange={e => set("setsToWin", Math.max(1, +e.target.value || 1))} className={field} />
+          <SetsToWinPicker value={form.setsToWin} onChange={n => set("setsToWin", n)} />
           <p className="text-xs text-[#4d6480] mt-1.5">{t("create.setsToWinHint")}</p>
         </div>
         <div>
