@@ -102,9 +102,13 @@ async function revertEloUpdate(match: { player1Id: string | null; player2Id: str
 // about how well either player plays, so it moves nobody's Elo.
 async function finishMatch(match: { id: string; tournamentId: string; player1Id: string | null; player2Id: string | null; setsWon1: number; setsWon2: number; startedAt: Date | null; tournament: { kind: string } | null }, rated = true) {
   const tournamentKind = match.tournament?.kind ?? "TOURNAMENT";
+  // Snapshot both ratings before Elo moves them: the statistics judge a win by the
+  // opponent's rating at the time, not by wherever it has drifted since.
+  const [r1, r2] = await Promise.all([match.player1Id, match.player2Id].map(id =>
+    id ? prisma.user.findUnique({ where: { id }, select: { rating: true } }) : null));
   await prisma.match.update({
     where: { id: match.id },
-    data: { status: "COMPLETED", startedAt: match.startedAt ?? new Date(), endedAt: new Date() },
+    data: { status: "COMPLETED", startedAt: match.startedAt ?? new Date(), endedAt: new Date(), rating1Before: r1?.rating ?? null, rating2Before: r2?.rating ?? null },
   });
   // Abandon a set that was still open when the match ended.
   await prisma.matchSet.updateMany({

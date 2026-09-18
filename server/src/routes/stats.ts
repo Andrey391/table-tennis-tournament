@@ -1,0 +1,107 @@
+import { Router, Response } from "express";
+import { Prisma } from "@prisma/client";
+import { prisma } from "../config/db.js";
+import { publicError } from "../shared/errors.js";
+import { computeStandings } from "../shared/standings.js";
+import { computePlayerStats, computeHeadToHead, computeLeaders, periodStart, LeaderMetric } from "../shared/stats.js";
+
+// Results feed, player statistics, head-to-head and leaderboards. All read-only
+// and unauthenticated, like the rest of what a guest can browse: the selects
+// carry the public player shape (no email, no phone).
+export const statsRouter = Router();
+
+const statPlayer = { select: { id: true, firstName: true, lastName: true, rating: true } } as const;
+const statMatchSelect = {
+  id: true, tournamentId: true, player1Id: true, player2Id: true, setsWon1: true, setsWon2: true,
+  eloDelta: true, rating1Before: true, rating2Before: true, endedAt: true,
+  player1: statPlayer, player2: statPlayer,
+  tournament: { select: { id: true, name: true, kind: true } },
+} satisfies Prisma.MatchSelect;
+const standingsInclude = {
+  players: { where: { status: { in: ["REGISTERED", "WITHDRAWN"] } }, include: { user: { select: { id: true, firstName: true, lastName: true, club: true, rating: true } } } },
+  matches: { where: { status: "COMPLETED" }, select: { player1Id: true, player2Id: true, setsWon1: true, setsWon2: true, eloDelta: true } },
+} satisfies Prisma.TournamentInclude;
+
+// Finished and running events, newest first, each with its podium. `userId`
+// narrows it to one player's events and then includes their private ones too
+// (quick games), which their profile history already shows anyway.
+statsRouter.get("/results", async (req, res: Response) => {
+  try {
+    const { kind, city, userId, q } = req.query as Record<string, string | undefined>;
+    const events = await prisma.tournament.findMany({
+      where: {
+        status: { in: ["ACTIVE", "COMPLETED"] },
+        ...(userId ? { players: { some: { userId, status: { in: ["REGISTERED", "WITHDRAWN"] } } } } : { isPublic: true }),
+        ...(kind ? { kind } : {}),
+        ...(city ? { OR: [{ club: { city } }, { clubId: null, organizer: { city } }] } : {}),
+        ...(q ? { name: { contains: q, mode: "insensitive" as const } } : {}),
+      },
+      include: {
+        ...standingsInclude,
+        club: { select: { id: true, name: true, city: true } },
+        _count: { select: { matches: { where: { status: "IN_PROGRESS" } } } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 40,
+    });
+    const when = (e: { startTime: Date | null; createdAt: Date }) => (e.startTime ?? e.createdAt).getTime();
+    res.json(events.sort((a, b) => when(b) - when(a)).map(e => ({
+      id: e.id, name: e.name, kind: e.kind, status: e.status, startTime: e.startTime, createdAt: e.createdAt, club: e.club,
+      players: e.players.filter(p => p.status === "REGISTERED").length,
+      matchesPlayed: e.matches.length,
+      live: e._count.matches,
+      podium: e.matches.length ? computeStandings(e.players, e.matches).slice(0, 3) : [],
+    })));
+  } catch (err: any) { res.status(400).json({ error: publicError(err) }); }
+});
+
+statsRouter.get("/players/:id/stats", async (req, res: Response) => {
+  try {
+    const userId = req.params.id;
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { rating: true } });
+    if (!user) { res.status(404).json({ error: "Not found" }); return; }
+    const [matches, finished] = await Promise.all([
+      prisma.match.findMany({ where: { status: "COMPLETED", OR: [{ player1Id: userId }, { player2Id: userId }] }, select: statMatchSelect }),
+      // Finished tournaments (games have no placings worth a medal) with at least
+      // three players: winning a two-person "tournament" is just winning a match.
+      prisma.tournament.findMany({
+        where: { kind: "TOURNAMENT", status: "COMPLETED", players: { some: { userId, status: { in: ["REGISTERED", "WITHDRAWN"] } } } },
+        include: standingsInclude,
+      }),
+    ]);
+    const placings = finished
+      .filter(e => e.players.length >= 3)
+      .map(e => computeStandings(e.players, e.matches).findIndex(r => r.userId === userId) + 1)
+      .filter(p => p > 0);
+    res.json(computePlayerStats(userId, user.rating, matches, placings));
+  } catch (err: any) { res.status(400).json({ error: publicError(err) }); }
+});
+
+statsRouter.get("/players/:id/h2h/:otherId", async (req, res: Response) => {
+  try {
+    const { id, otherId } = req.params;
+    const matches = await prisma.match.findMany({
+      where: { status: "COMPLETED", OR: [{ player1Id: id, player2Id: otherId }, { player1Id: otherId, player2Id: id }] },
+      select: statMatchSelect,
+    });
+    res.json(computeHeadToHead(id, matches));
+  } catch (err: any) { res.status(400).json({ error: publicError(err) }); }
+});
+
+// ?metric=rating|wins|played&period=month|year|all&city=
+statsRouter.get("/leaders", async (req, res: Response) => {
+  try {
+    const { metric = "rating", period = "month", city } = req.query as Record<string, string | undefined>;
+    if (!["rating", "wins", "played"].includes(metric)) { res.status(400).json({ error: "Unknown metric" }); return; }
+    const since = periodStart(period);
+    const matches = await prisma.match.findMany({
+      where: {
+        status: "COMPLETED",
+        ...(since ? { endedAt: { gte: since } } : {}),
+        ...(city ? { tournament: { OR: [{ club: { city } }, { clubId: null, organizer: { city } }] } } : {}),
+      },
+      select: statMatchSelect,
+    });
+    res.json(computeLeaders(matches, metric as LeaderMetric));
+  } catch (err: any) { res.status(400).json({ error: publicError(err) }); }
+});

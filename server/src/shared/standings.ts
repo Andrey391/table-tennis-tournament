@@ -11,6 +11,8 @@ export type StandingsMatch = {
   player2Id: string | null;
   setsWon1: number;
   setsWon2: number;
+  // What the winner gained (and the loser gave up); null for an unrated match.
+  eloDelta?: number | null;
 };
 
 export type StandingsPlayer = {
@@ -21,6 +23,8 @@ export type StandingsPlayer = {
 export type StandingsRow = {
   userId: string; firstName: string; lastName: string; club?: string | null; rating: number;
   wins: number; losses: number; setsWon: number; setsLost: number; buchholz: number;
+  // Net rating movement across this event's matches.
+  ratingChange: number;
 };
 
 export function computeStandings(players: StandingsPlayer[], matches: StandingsMatch[]): StandingsRow[] {
@@ -28,7 +32,7 @@ export function computeStandings(players: StandingsPlayer[], matches: StandingsM
   const opponents = new Map<string, string[]>();
   for (const p of players) {
     if (!p.user) continue;
-    stats.set(p.userId, { userId: p.userId, firstName: p.user.firstName, lastName: p.user.lastName, club: p.user.club, rating: p.user.rating, wins: 0, losses: 0, setsWon: 0, setsLost: 0, buchholz: 0 });
+    stats.set(p.userId, { userId: p.userId, firstName: p.user.firstName, lastName: p.user.lastName, club: p.user.club, rating: p.user.rating, wins: 0, losses: 0, setsWon: 0, setsLost: 0, buchholz: 0, ratingChange: 0 });
     opponents.set(p.userId, []);
   }
   for (const m of matches) {
@@ -38,8 +42,9 @@ export function computeStandings(players: StandingsPlayer[], matches: StandingsM
     if (!s1 || !s2) continue;
     s1.setsWon += m.setsWon1; s1.setsLost += m.setsWon2;
     s2.setsWon += m.setsWon2; s2.setsLost += m.setsWon1;
-    if (m.setsWon1 > m.setsWon2) { s1.wins++; s2.losses++; }
-    else if (m.setsWon2 > m.setsWon1) { s2.wins++; s1.losses++; }
+    const delta = m.eloDelta ?? 0;
+    if (m.setsWon1 > m.setsWon2) { s1.wins++; s2.losses++; s1.ratingChange += delta; s2.ratingChange -= delta; }
+    else if (m.setsWon2 > m.setsWon1) { s2.wins++; s1.losses++; s2.ratingChange += delta; s1.ratingChange -= delta; }
     opponents.get(m.player1Id)!.push(m.player2Id);
     opponents.get(m.player2Id)!.push(m.player1Id);
   }

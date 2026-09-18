@@ -61,3 +61,14 @@ export function matchScoreLine(m: { status?: string; setsWon1?: number; setsWon2
 export function setsPlayed(m: { setsWon1?: number; setsWon2?: number }): number {
   return (m?.setsWon1 ?? 0) + (m?.setsWon2 ?? 0);
 }
+
+// A rating change as "+12" / "−12" (true minus sign), for results and standings.
+export function formatDelta(n?: number | null): string {
+  if (!n) return "0";
+  return n > 0 ? `+${n}` : `−${Math.abs(n)}`;
+}
+
+// Green for a gain, red for a loss, muted for no change.
+export function deltaTone(n?: number | null): string {
+  return !n ? "text-[#4d6480]" : n > 0 ? "text-green-400" : "text-red-400";
+}

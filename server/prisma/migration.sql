@@ -376,6 +376,8 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "setsToWin" INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE "Match" ADD COLUMN IF NOT EXISTS "setsToWin" INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE "Match" ADD COLUMN IF NOT EXISTS "eloDelta" INTEGER;
+ALTER TABLE "Match" ADD COLUMN IF NOT EXISTS "rating1Before" INTEGER;
+ALTER TABLE "Match" ADD COLUMN IF NOT EXISTS "rating2Before" INTEGER;
 
 
 -- 15. Scoring is per set, not per point: the judge records who took each set and

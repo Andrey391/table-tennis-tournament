@@ -14,6 +14,7 @@ import { profileRouter } from "./routes/profile.js";
 import { clubRouter } from "./routes/clubs.js";
 import { playerRouter, ratingRouter } from "./routes/players.js";
 import { liveRouter, publicRouter } from "./routes/public.js";
+import { statsRouter } from "./routes/stats.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -37,6 +38,7 @@ app.use("/api/bookings", bookingRouter);
 app.use("/api/subscriptions", subscriptionRouter);
 app.use("/api/profile", profileRouter);
 app.use("/api/clubs", clubRouter);
+app.use("/api", statsRouter);
 app.use("/api/players", playerRouter);
 app.use("/api/rating", ratingRouter);
 app.use("/api/live", liveRouter);

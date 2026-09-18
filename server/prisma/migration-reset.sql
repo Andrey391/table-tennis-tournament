@@ -213,6 +213,8 @@ CREATE TABLE "Match" (
     "judgeId" TEXT,
     "setsToWin" INTEGER NOT NULL DEFAULT 3,
     "eloDelta" INTEGER,
+    "rating1Before" INTEGER,
+    "rating2Before" INTEGER,
     "setsWon1" INTEGER NOT NULL DEFAULT 0,
     "setsWon2" INTEGER NOT NULL DEFAULT 0,
     "status" "MatchStatus" NOT NULL DEFAULT 'NOT_STARTED',
