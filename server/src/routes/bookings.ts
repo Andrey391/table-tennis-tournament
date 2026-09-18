@@ -1,4 +1,5 @@
 import { Router, Response } from "express";
+import { publicError } from "../shared/errors.js";
 import { prisma } from "../config/db.js";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth.js";
 import { CreateBookingSchema } from "../shared/schemas.js";
@@ -69,7 +70,7 @@ bookingRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, res: R
 
     res.status(201).json(booking);
   } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: publicError(err) });
   }
 });
 
@@ -90,6 +91,6 @@ bookingRouter.delete("/:id", authMiddleware, async (req: AuthenticatedRequest, r
     await prisma.booking.delete({ where: { id: req.params.id } });
     res.json({ ok: true });
   } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: publicError(err) });
   }
 });

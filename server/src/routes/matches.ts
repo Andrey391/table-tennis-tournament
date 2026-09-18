@@ -1,4 +1,5 @@
 import { Router, Response } from "express";
+import { publicError } from "../shared/errors.js";
 import { prisma } from "../config/db.js";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth.js";
 import { MatchSettingsSchema, SetResultSchema, ForfeitSchema } from "../shared/schemas.js";
@@ -170,7 +171,7 @@ matchRouter.put("/:id", authMiddleware, async (req: AuthenticatedRequest, res: R
     await prisma.match.update({ where: { id: match.id }, data });
     res.json(await reload(match.id));
   } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: publicError(err) });
   }
 });
 
@@ -190,7 +191,7 @@ matchRouter.post("/:id/start", authMiddleware, async (req: AuthenticatedRequest,
     });
     res.json(await reload(match.id));
   } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: publicError(err) });
   }
 });
 
@@ -224,7 +225,7 @@ matchRouter.post("/:id/score", authMiddleware, async (req: AuthenticatedRequest,
 
     res.json({ match: await reload(match.id), setWinner: side });
   } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: publicError(err) });
   }
 });
 
@@ -257,7 +258,7 @@ matchRouter.post("/:id/undo", authMiddleware, async (req: AuthenticatedRequest, 
     ]);
     res.json({ match: await reload(match.id) });
   } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: publicError(err) });
   }
 });
 
@@ -272,7 +273,7 @@ matchRouter.post("/:id/end", authMiddleware, async (req: AuthenticatedRequest, r
     await AuditLog.create({ userId: req.user!.userId, action: "MATCH_END", entity: "Match", entityId: match.id, newValue: { setsWon1: match.setsWon1, setsWon2: match.setsWon2 } });
     res.json(await reload(match.id));
   } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: publicError(err) });
   }
 });
 
@@ -313,6 +314,6 @@ matchRouter.post("/:id/forfeit", authMiddleware, async (req: AuthenticatedReques
     await AuditLog.create({ userId: req.user!.userId, action: "MATCH_FORFEIT", entity: "Match", entityId: match.id, newValue: { loserSide } });
     res.json(await reload(match.id));
   } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: publicError(err) });
   }
 });

@@ -1,4 +1,5 @@
 import { Router, Response } from "express";
+import { publicError } from "../shared/errors.js";
 import { prisma } from "../config/db.js";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth.js";
 import { CreateTournamentSchema, UpdateTournamentSchema, AddPlayersSchema, ChatMessageSchema, SeedingSchema, QuickGameSchema } from "../shared/schemas.js";
@@ -29,7 +30,7 @@ tournamentRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, res
     await AuditLog.create({ userId: req.user!.userId, action: "TOURNAMENT_CREATE", entity: "Tournament", entityId: tournament.id, newValue: data });
     res.status(201).json(tournament);
   } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: publicError(err) });
   }
 });
 
@@ -80,7 +81,7 @@ tournamentRouter.post("/quick-game", authMiddleware, async (req: AuthenticatedRe
     await AuditLog.create({ userId: me, action: "QUICK_GAME", entity: "Tournament", entityId: game.id, newValue: data });
     res.status(201).json(game);
   } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: publicError(err) });
   }
 });
 
@@ -154,7 +155,7 @@ tournamentRouter.put("/:id", authMiddleware, async (req: AuthenticatedRequest, r
     await AuditLog.create({ userId: req.user!.userId, action: "TOURNAMENT_UPDATE", entity: "Tournament", entityId: tournament.id, newValue: data });
     res.json(updated);
   } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: publicError(err) });
   }
 });
 
@@ -179,7 +180,7 @@ tournamentRouter.delete("/:id", authMiddleware, async (req: AuthenticatedRequest
     await AuditLog.create({ userId: req.user!.userId, action: "TOURNAMENT_DELETE", entity: "Tournament", entityId: tournament.id, oldValue: { name: tournament.name, kind: tournament.kind } });
     res.json({ ok: true });
   } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: publicError(err) });
   }
 });
 
@@ -213,7 +214,7 @@ tournamentRouter.post("/:id/players", authMiddleware, async (req: AuthenticatedR
     );
     res.status(201).json(created);
   } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: publicError(err) });
   }
 });
 
@@ -261,7 +262,7 @@ tournamentRouter.post("/:id/join", authMiddleware, async (req: AuthenticatedRequ
     res.status(201).json(entry);
   } catch (err: any) {
     if (err.code === "P2002") { res.status(400).json({ error: "Already requested to join" }); return; }
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: publicError(err) });
   }
 });
 
@@ -280,7 +281,7 @@ tournamentRouter.post("/:id/players/:userId/approve", authMiddleware, async (req
     });
     res.json(updated);
   } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: publicError(err) });
   }
 });
 
@@ -306,7 +307,7 @@ tournamentRouter.delete("/:id/players/:userId", authMiddleware, async (req: Auth
     await prisma.tournamentUser.delete({ where: { tournamentId_userId: { tournamentId: req.params.id, userId: req.params.userId } } });
     res.json({ ok: true, withdrawn: false });
   } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: publicError(err) });
   }
 });
 
@@ -329,7 +330,7 @@ tournamentRouter.put("/:id/seeding", authMiddleware, async (req: AuthenticatedRe
       prisma.tournamentUser.update({ where: { tournamentId_userId: { tournamentId: tournament.id, userId } }, data: { seed: idx + 1 } })));
     res.json({ ok: true });
   } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: publicError(err) });
   }
 });
 
@@ -417,7 +418,7 @@ tournamentRouter.post("/:id/pair", authMiddleware, async (req: AuthenticatedRequ
     await AuditLog.create({ userId: req.user!.userId, action: "TOURNAMENT_PAIR", entity: "Tournament", entityId: tournament.id, newValue: { round: newRound, pairs: pairs.length, bye: byeUserId } });
     res.json({ message: "Paired", round: newRound, matches: pairs.length, bye: byeUserId });
   } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: publicError(err) });
   }
 });
 
@@ -454,7 +455,7 @@ tournamentRouter.post("/:id/chat", authMiddleware, async (req: AuthenticatedRequ
     });
     res.status(201).json(message);
   } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: publicError(err) });
   }
 });
 
@@ -472,6 +473,6 @@ tournamentRouter.get("/:id/standings", async (req, res: Response) => {
     if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
     res.json(computeStandings(tournament.players, tournament.matches));
   } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: publicError(err) });
   }
 });
