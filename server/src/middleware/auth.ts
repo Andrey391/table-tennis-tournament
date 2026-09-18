@@ -6,10 +6,13 @@ export interface AuthenticatedRequest extends Request {
   user?: { userId: string; role: string };
 }
 
-const JWT_SECRET = process.env.JWT_SECRET || "your-super-secret-key-change-me";
+// No fallback: a default secret baked into the code lets anyone sign their own
+// token for any account. Refuse to start instead.
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) throw new Error("JWT_SECRET is not set");
 
 export function generateToken(userId: string, role: string): string {
-  return jwt.sign({ userId, role }, JWT_SECRET, { expiresIn: "24h" });
+  return jwt.sign({ userId, role }, JWT_SECRET!, { expiresIn: "24h" });
 }
 
 export function authMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
@@ -21,7 +24,7 @@ export function authMiddleware(req: AuthenticatedRequest, res: Response, next: N
 
   try {
     const token = header.split(" ")[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; role: string };
+    const decoded = jwt.verify(token, JWT_SECRET!) as { userId: string; role: string };
     req.user = decoded;
     next();
   } catch {

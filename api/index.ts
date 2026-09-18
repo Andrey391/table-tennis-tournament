@@ -1,6 +1,9 @@
 import express from "express";
 import cors from "cors";
 import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
+import rateLimit from "express-rate-limit";
+import { z } from "zod";
 import { PrismaClient } from "@prisma/client";
 
 let prisma: PrismaClient;
@@ -9,14 +12,70 @@ function db() {
   return prisma;
 }
 
+// No fallback secret: a default baked into the code lets anyone sign a token for
+// any account. Every token operation fails until JWT_SECRET is configured.
+function jwtSecret(): string {
+  const s = process.env.JWT_SECRET;
+  if (!s) throw new Error("JWT_SECRET is not set");
+  return s;
+}
+
+// See server/src/shared/errors.ts: Prisma errors expose the schema, so they are
+// logged and replaced; a Zod error is reduced to its first issue.
+function publicError(err: any): string {
+  if (err?.name === "ZodError" && Array.isArray(err.issues) && err.issues[0]) {
+    const i = err.issues[0];
+    return i.path?.length ? `${i.path.join(".")}: ${i.message}` : i.message;
+  }
+  if (typeof err?.name === "string" && err.name.startsWith("PrismaClient")) {
+    console.error("[DB]", err.message);
+    return "Invalid request";
+  }
+  return err?.message || "Invalid request";
+}
+
+// Mirrors of server/src/shared/schemas.ts (this file cannot import from server/).
+const LoginSchema = z.object({ email: z.string().trim().min(1), password: z.string().min(6) });
+const SelfRegisterSchema = z.object({
+  email: z.string().email(), password: z.string().min(6),
+  firstName: z.string().min(1).max(100), lastName: z.string().min(1).max(100),
+  club: z.string().max(100).optional(), city: z.string().max(120).optional(),
+});
+const CreateTournamentSchema = z.object({
+  kind: z.enum(["TOURNAMENT", "GAME"]).default("TOURNAMENT"),
+  name: z.string().min(1).max(200), description: z.string().max(2000).optional(),
+  tablesCount: z.number().int().min(1).max(50).default(4), maxPlayers: z.number().int().min(2).max(500).optional(),
+  setsToWin: z.number().int().min(1).optional(), isPublic: z.boolean().optional(), clubId: z.string().optional(),
+  startTime: z.string().datetime().optional(), endTime: z.string().datetime().optional(),
+  minRating: z.number().int().min(0).max(5000).optional(), maxRating: z.number().int().min(0).max(5000).optional(),
+});
+const UpdateTournamentSchema = z.object({
+  name: z.string().min(1).max(200).optional(), description: z.string().max(2000).nullable().optional(),
+  tablesCount: z.number().int().min(1).max(50).optional(), maxPlayers: z.number().int().min(2).max(500).nullable().optional(),
+  setsToWin: z.number().int().min(1).optional(), isPublic: z.boolean().optional(), clubId: z.string().nullable().optional(),
+  status: z.enum(["DRAFT", "ACTIVE", "COMPLETED", "CANCELLED"]).optional(),
+  startTime: z.string().datetime().nullable().optional(), endTime: z.string().datetime().nullable().optional(),
+  minRating: z.number().int().min(0).max(5000).nullable().optional(), maxRating: z.number().int().min(0).max(5000).nullable().optional(),
+});
+const ChatMessageSchema = z.object({ text: z.string().trim().min(1).max(1000) });
+
 const app = express();
-app.use(cors());
-app.use(express.json());
+// Behind Vercel's proxy: the client IP (which the rate limit keys on) is in X-Forwarded-For.
+app.set("trust proxy", 1);
+// The client is served from the same origin, which needs no CORS at all; other
+// origins are allowed only when listed in CLIENT_URL.
+const allowedOrigins = (process.env.CLIENT_URL || "").split(",").map(s => s.trim()).filter(Boolean);
+app.use(cors({ origin: allowedOrigins.length ? allowedOrigins : false }));
+app.use(express.json({ limit: "100kb" }));
+// Per-instance in serverless, so a floor rather than a guarantee. The general limit
+// sits above the scoring screen's 2s polling; sign-in/sign-up are kept strict.
+app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 1500 }));
+app.use(["/api/auth/login", "/api/auth/register"], rateLimit({ windowMs: 15 * 60 * 1000, max: 20, message: { error: "Too many attempts, try again later" } }));
 
 function authMiddleware(req: any, res: any, next: any) {
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) { res.status(401).json({ error: "No token" }); return; }
-  try { req.user = jwt.verify(token, process.env.JWT_SECRET || "secret"); next(); }
+  try { req.user = jwt.verify(token, jwtSecret()); next(); }
   catch { res.status(401).json({ error: "Invalid token" }); }
 }
 
@@ -276,7 +335,11 @@ async function revertEloUpdate(match: any) {
 
 app.get("/api/health", (_req, res) => { res.json({ status: "ok", time: new Date().toISOString() }); });
 
-app.get("/api/setup", async (_req, res) => {
+// Runs DDL, so it is only reachable with the SETUP_KEY configured on the
+// deployment, passed as ?key= or the x-setup-key header; without it, 404.
+app.get("/api/setup", async (req, res) => {
+  const key = process.env.SETUP_KEY;
+  if (!key || (req.query.key !== key && req.headers["x-setup-key"] !== key)) { res.status(404).json({ error: "Not found" }); return; }
   const d = db();
   const doBlock = (body: string) => `DO $$ BEGIN ${body}; EXCEPTION WHEN duplicate_object THEN null; END $$`;
   try {
@@ -345,29 +408,30 @@ app.get("/api/setup", async (_req, res) => {
 
 app.post("/api/auth/register", async (req, res) => {
   try {
-    const bcrypt = await import("bcryptjs");
-    const { email, password, firstName, lastName, club, city } = req.body;
+    const { email, password, firstName, lastName, club, city } = SelfRegisterSchema.parse(req.body);
     const hashed = await bcrypt.hash(password, 10);
     // This endpoint is unauthenticated self-signup, so the role is never taken from
     // the request body (that would let anyone register as ADMIN). Everyone who signs
     // up can organize their own tournaments.
     const user = await db().user.create({ data: { email, password: hashed, firstName, lastName, club, city, role: "ORGANIZER" } });
-    const token = jwt.sign({ userId: user.id, role: user.role }, process.env.JWT_SECRET || "secret", { expiresIn: "24h" });
+    const token = jwt.sign({ userId: user.id, role: user.role }, jwtSecret(), { expiresIn: "24h" });
     res.status(201).json({ token, user: { id: user.id, email: user.email, role: user.role, firstName: user.firstName, lastName: user.lastName, rating: user.rating, club: user.club } });
-  } catch (e: any) { res.status(400).json({ error: e.message }); }
+  } catch (e: any) {
+    if (e.code === "P2002") { res.status(400).json({ error: "An account with this email already exists" }); return; }
+    res.status(400).json({ error: publicError(e) });
+  }
 });
 
 app.post("/api/auth/login", async (req, res) => {
   try {
-    const bcrypt = await import("bcryptjs");
-    const { email, password } = req.body;
+    const { email, password } = LoginSchema.parse(req.body);
     const user = await db().user.findUnique({ where: { email } });
     if (!user) { res.status(401).json({ error: "Invalid credentials" }); return; }
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) { res.status(401).json({ error: "Invalid credentials" }); return; }
-    const token = jwt.sign({ userId: user.id, role: user.role }, process.env.JWT_SECRET || "secret", { expiresIn: "24h" });
+    const token = jwt.sign({ userId: user.id, role: user.role }, jwtSecret(), { expiresIn: "24h" });
     res.json({ token, user: { id: user.id, email: user.email, role: user.role, firstName: user.firstName, lastName: user.lastName, rating: user.rating, club: user.club } });
-  } catch (e: any) { res.status(400).json({ error: e.message }); }
+  } catch (e: any) { res.status(400).json({ error: publicError(e) }); }
 });
 
 app.get("/api/auth/me", authMiddleware, async (req: any, res) => {
@@ -438,7 +502,7 @@ app.get("/api/profile/stats", authMiddleware, async (req: any, res) => {
 // ─── PLAYERS ────────────────────────────────────────────────────────────────────
 
 app.get("/api/players", authMiddleware, async (_req, res) => {
-  const players = await db().user.findMany({ select: { id: true, email: true, firstName: true, lastName: true, role: true, club: true, rating: true, phone: true, dateOfBirth: true, createdAt: true }, orderBy: { rating: "desc" } });
+  const players = await db().user.findMany({ select: { id: true, firstName: true, lastName: true, role: true, club: true, city: true, rating: true, createdAt: true }, orderBy: { rating: "desc" } });
   res.json(players);
 });
 
@@ -499,7 +563,6 @@ app.put("/api/players/:id", authMiddleware, async (req: any, res) => {
 
     if (newPassword) {
       if (String(newPassword).length < 6) { res.status(400).json({ error: "Password must be at least 6 characters" }); return; }
-      const bcrypt = await import("bcryptjs");
       const current = await d.user.findUnique({ where: { id: req.params.id }, select: { password: true } });
       if (!current) { res.status(404).json({ error: "Not found" }); return; }
       // An admin editing someone else has no current password to offer; the owner does.
@@ -520,7 +583,7 @@ app.put("/api/players/:id", authMiddleware, async (req: any, res) => {
     res.json(user);
   } catch (e: any) {
     if (e.code === "P2002") { res.status(400).json({ error: "An account with this email already exists" }); return; }
-    res.status(400).json({ error: e.message });
+    res.status(400).json({ error: publicError(e) });
   }
 });
 
@@ -580,12 +643,12 @@ app.get("/api/tournaments/:id", async (req, res) => {
 app.post("/api/tournaments", authMiddleware, async (req: any, res) => {
   try {
     const d = db();
-    const { kind, name, description, tablesCount, maxPlayers, clubId, startTime, endTime, minRating, maxRating, setsToWin } = req.body;
-    const tournament = await d.tournament.create({ data: { kind: kind === "GAME" ? "GAME" : "TOURNAMENT", name, description, tablesCount: tablesCount || 4, maxPlayers, clubId, startTime, endTime, minRating, maxRating, ...(Number.isInteger(setsToWin) && setsToWin >= 1 ? { setsToWin } : {}), organizerId: req.user.userId } });
+    const { kind, name, description, tablesCount, maxPlayers, clubId, startTime, endTime, minRating, maxRating, setsToWin, isPublic } = CreateTournamentSchema.parse(req.body);
+    const tournament = await d.tournament.create({ data: { kind, name, description, tablesCount, maxPlayers, clubId, startTime, endTime, minRating, maxRating, ...(setsToWin ? { setsToWin } : {}), ...(isPublic !== undefined ? { isPublic } : {}), organizerId: req.user.userId } });
     // The organiser takes part in their own event.
     await d.tournamentUser.create({ data: { tournamentId: tournament.id, userId: req.user.userId, status: "REGISTERED" } });
     res.status(201).json(tournament);
-  } catch (e: any) { res.status(400).json({ error: e.message }); }
+  } catch (e: any) { res.status(400).json({ error: publicError(e) }); }
 });
 
 // Records a friendly game that has already been played, in one step: caller vs
@@ -626,17 +689,17 @@ app.post("/api/tournaments/quick-game", authMiddleware, async (req: any, res) =>
       return t;
     });
     res.status(201).json(game);
-  } catch (e: any) { res.status(400).json({ error: e.message }); }
+  } catch (e: any) { res.status(400).json({ error: publicError(e) }); }
 });
 
 app.put("/api/tournaments/:id", authMiddleware, async (req: any, res) => {
   try {
     const tournament = await loadOwnedTournament(res, req.params.id, req.user.userId);
     if (!tournament) return;
-    const { name, description, status, startTime, endTime, tablesCount, maxPlayers, clubId, minRating, maxRating, setsToWin, isPublic } = req.body;
+    const { name, description, status, startTime, endTime, tablesCount, maxPlayers, clubId, minRating, maxRating, setsToWin, isPublic } = UpdateTournamentSchema.parse(req.body);
     const updated = await db().tournament.update({ where: { id: tournament.id }, data: { name, description, status, startTime, endTime, tablesCount, maxPlayers, clubId, minRating, maxRating, setsToWin, isPublic } });
     res.json(updated);
-  } catch (e: any) { res.status(400).json({ error: e.message }); }
+  } catch (e: any) { res.status(400).json({ error: publicError(e) }); }
 });
 
 // Deletes the event for good. Without this a mistyped tournament (or the event
@@ -659,7 +722,7 @@ app.delete("/api/tournaments/:id", authMiddleware, async (req: any, res) => {
       d.tournament.delete({ where: { id: tournament.id } }),
     ]);
     res.json({ ok: true });
-  } catch (e: any) { res.status(400).json({ error: e.message }); }
+  } catch (e: any) { res.status(400).json({ error: publicError(e) }); }
 });
 
 // Manager directly adds already-known players to the roster, pre-approved.
@@ -688,7 +751,7 @@ app.post("/api/tournaments/:id/players", authMiddleware, async (req: any, res) =
       update: { status: "REGISTERED" },
     })));
     res.status(201).json(created);
-  } catch (e: any) { res.status(400).json({ error: e.message }); }
+  } catch (e: any) { res.status(400).json({ error: publicError(e) }); }
 });
 
 // Any signed-in user can request to join (if their rating fits the range) — the
@@ -732,7 +795,7 @@ app.post("/api/tournaments/:id/join", authMiddleware, async (req: any, res) => {
     res.status(201).json(entry);
   } catch (e: any) {
     if (e.code === "P2002") { res.status(400).json({ error: "Already requested to join" }); return; }
-    res.status(400).json({ error: e.message });
+    res.status(400).json({ error: publicError(e) });
   }
 });
 
@@ -750,7 +813,7 @@ app.post("/api/tournaments/:id/players/:userId/approve", authMiddleware, async (
       data: { status: "REGISTERED" },
     });
     res.json(updated);
-  } catch (e: any) { res.status(400).json({ error: e.message }); }
+  } catch (e: any) { res.status(400).json({ error: publicError(e) }); }
 });
 
 // Manager rejects a pending request or drops a participant. Before any match has
@@ -775,7 +838,7 @@ app.delete("/api/tournaments/:id/players/:userId", authMiddleware, async (req: a
     }
     await d.tournamentUser.delete({ where: { tournamentId_userId: { tournamentId: req.params.id, userId: req.params.userId } } });
     res.json({ ok: true, withdrawn: false });
-  } catch (e: any) { res.status(400).json({ error: e.message }); }
+  } catch (e: any) { res.status(400).json({ error: publicError(e) }); }
 });
 
 // Generates a new round of pairs: round 1 (DRAFT -> ACTIVE) seeds by rating; every
@@ -799,7 +862,7 @@ app.put("/api/tournaments/:id/seeding", authMiddleware, async (req: any, res) =>
     await d.$transaction(userIds.map((userId: string, idx: number) =>
       d.tournamentUser.update({ where: { tournamentId_userId: { tournamentId: tournament.id, userId } }, data: { seed: idx + 1 } })));
     res.json({ ok: true });
-  } catch (e: any) { res.status(400).json({ error: e.message }); }
+  } catch (e: any) { res.status(400).json({ error: publicError(e) }); }
 });
 
 app.post("/api/tournaments/:id/pair", authMiddleware, async (req: any, res) => {
@@ -869,7 +932,7 @@ app.post("/api/tournaments/:id/pair", authMiddleware, async (req: any, res) => {
     ]);
 
     res.json({ message: "Paired", round: newRound, matches: pairs.length, bye: byeUserId });
-  } catch (e: any) { res.status(400).json({ error: e.message }); }
+  } catch (e: any) { res.status(400).json({ error: publicError(e) }); }
 });
 
 app.get("/api/tournaments/:id/standings", async (req, res) => {
@@ -886,7 +949,7 @@ app.get("/api/tournaments/:id/standings", async (req, res) => {
     if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
 
     res.json(computeStandings(tournament.players, tournament.matches));
-  } catch (e: any) { res.status(400).json({ error: e.message }); }
+  } catch (e: any) { res.status(400).json({ error: publicError(e) }); }
 });
 
 // Basic per-tournament message board (polled, not real-time). Manager + approved participants only.
@@ -915,13 +978,13 @@ app.post("/api/tournaments/:id/chat", authMiddleware, async (req: any, res) => {
   try {
     const tournament = await assertCanUseChat(res, req.params.id, req.user.userId);
     if (!tournament) return;
-    const { text } = req.body;
+    const { text } = ChatMessageSchema.parse(req.body);
     const message = await db().chatMessage.create({
       data: { tournamentId: req.params.id, userId: req.user.userId, text },
       include: { user: { select: { id: true, firstName: true, lastName: true } } },
     });
     res.status(201).json(message);
-  } catch (e: any) { res.status(400).json({ error: e.message }); }
+  } catch (e: any) { res.status(400).json({ error: publicError(e) }); }
 });
 
 // ─── BOOKINGS ───────────────────────────────────────────────────────────────────
@@ -982,7 +1045,7 @@ app.post("/api/bookings", authMiddleware, async (req: any, res) => {
     });
 
     res.status(201).json(booking);
-  } catch (e: any) { res.status(400).json({ error: e.message }); }
+  } catch (e: any) { res.status(400).json({ error: publicError(e) }); }
 });
 
 app.get("/api/bookings/mine", authMiddleware, async (req: any, res) => {
@@ -997,7 +1060,7 @@ app.delete("/api/bookings/:id", authMiddleware, async (req: any, res) => {
     if (booking.userId !== req.user.userId) { res.status(403).json({ error: "Not your booking" }); return; }
     await db().booking.delete({ where: { id: req.params.id } });
     res.json({ ok: true });
-  } catch (e: any) { res.status(400).json({ error: e.message }); }
+  } catch (e: any) { res.status(400).json({ error: publicError(e) }); }
 });
 
 // ─── SUBSCRIPTIONS ──────────────────────────────────────────────────────────────
@@ -1017,7 +1080,7 @@ app.post("/api/subscriptions", authMiddleware, async (req: any, res) => {
     res.status(201).json(subscription);
   } catch (e: any) {
     if (e.code === "P2002") { res.status(400).json({ error: "Already subscribed" }); return; }
-    res.status(400).json({ error: e.message });
+    res.status(400).json({ error: publicError(e) });
   }
 });
 
@@ -1025,7 +1088,7 @@ app.delete("/api/subscriptions/:clubId", authMiddleware, async (req: any, res) =
   try {
     await db().subscription.delete({ where: { userId_clubId: { userId: req.user.userId, clubId: req.params.clubId } } });
     res.json({ ok: true });
-  } catch (e: any) { res.status(400).json({ error: e.message }); }
+  } catch (e: any) { res.status(400).json({ error: publicError(e) }); }
 });
 
 // --- CLUBS ---------------------------------------------------------------------
@@ -1081,7 +1144,7 @@ app.post("/api/clubs", authMiddleware, async (req: any, res) => {
     res.status(201).json(club);
   } catch (e: any) {
     if (e.code === "P2002") { res.status(400).json({ error: "A club with this name already exists in this city" }); return; }
-    res.status(400).json({ error: e.message });
+    res.status(400).json({ error: publicError(e) });
   }
 });
 
@@ -1092,7 +1155,7 @@ app.put("/api/clubs/:id", authMiddleware, async (req: any, res) => {
     const { name, city, address, phone } = req.body;
     const updated = await db().club.update({ where: { id: club.id }, data: { name, city, address, phone } });
     res.json(updated);
-  } catch (e: any) { res.status(400).json({ error: e.message }); }
+  } catch (e: any) { res.status(400).json({ error: publicError(e) }); }
 });
 
 app.post("/api/clubs/:id/tables", authMiddleware, async (req: any, res) => {
@@ -1104,7 +1167,7 @@ app.post("/api/clubs/:id/tables", authMiddleware, async (req: any, res) => {
     res.status(201).json(table);
   } catch (e: any) {
     if (e.code === "P2002") { res.status(400).json({ error: "This table number already exists at the club" }); return; }
-    res.status(400).json({ error: e.message });
+    res.status(400).json({ error: publicError(e) });
   }
 });
 
@@ -1117,7 +1180,7 @@ app.delete("/api/clubs/:id/tables/:tableId", authMiddleware, async (req: any, re
     if (!table || table.clubId !== club.id) { res.status(404).json({ error: "Not found" }); return; }
     await d.clubTable.delete({ where: { id: table.id } });
     res.json({ ok: true });
-  } catch (e: any) { res.status(400).json({ error: e.message }); }
+  } catch (e: any) { res.status(400).json({ error: publicError(e) }); }
 });
 
 // ─── MATCHES ────────────────────────────────────────────────────────────────────
@@ -1186,7 +1249,7 @@ app.put("/api/matches/:id", authMiddleware, async (req: any, res) => {
     if (setsToWin !== undefined && !(Number.isInteger(setsToWin) && setsToWin >= 1)) { res.status(400).json({ error: "setsToWin must be a whole number of at least 1" }); return; }
     await db().match.update({ where: { id: match.id }, data: { tableNumber, judgeId, setsToWin } });
     res.json(await reloadMatch(match.id));
-  } catch (e: any) { res.status(400).json({ error: e.message }); }
+  } catch (e: any) { res.status(400).json({ error: publicError(e) }); }
 });
 
 // Starting a match opens its first set.
@@ -1204,7 +1267,7 @@ app.post("/api/matches/:id/start", authMiddleware, async (req: any, res) => {
       data: { status: "IN_PROGRESS", startedAt: match.startedAt || new Date(), judgeId: req.user.userId },
     });
     res.json(await reloadMatch(match.id));
-  } catch (e: any) { res.status(400).json({ error: e.message }); }
+  } catch (e: any) { res.status(400).json({ error: publicError(e) }); }
 });
 
 // Records one set for a side. The unit of scoring is the set ("partiya"), not the
@@ -1235,7 +1298,7 @@ app.post("/api/matches/:id/score", authMiddleware, async (req: any, res) => {
     ]);
 
     res.json({ match: await reloadMatch(match.id), setWinner: side });
-  } catch (e: any) { res.status(400).json({ error: e.message }); }
+  } catch (e: any) { res.status(400).json({ error: publicError(e) }); }
 });
 
 // Takes back the last recorded set. One step, no history beyond that.
@@ -1267,7 +1330,7 @@ app.post("/api/matches/:id/undo", authMiddleware, async (req: any, res) => {
       }),
     ]);
     res.json({ match: await reloadMatch(match.id) });
-  } catch (e: any) { res.status(400).json({ error: e.message }); }
+  } catch (e: any) { res.status(400).json({ error: publicError(e) }); }
 });
 
 app.post("/api/matches/:id/end", authMiddleware, async (req: any, res) => {
@@ -1279,7 +1342,7 @@ app.post("/api/matches/:id/end", authMiddleware, async (req: any, res) => {
         if (endError) { res.status(400).json({ error: endError }); return; }
         await finishMatch(match);
         res.json(await reloadMatch(match.id));
-    } catch (e: any) { res.status(400).json({ error: e.message }); }
+    } catch (e: any) { res.status(400).json({ error: publicError(e) }); }
 });
 
 // Marks a no-show: the other side wins by walkover. Works from any state up to
@@ -1317,7 +1380,7 @@ app.post("/api/matches/:id/forfeit", authMiddleware, async (req: any, res) => {
     if (settled) await finishMatch(settled, false);
     else await maybeCompleteTournament(match.tournamentId);
     res.json(await reloadMatch(match.id));
-  } catch (e: any) { res.status(400).json({ error: e.message }); }
+  } catch (e: any) { res.status(400).json({ error: publicError(e) }); }
 });
 
 // ─── LIVE ───────────────────────────────────────────────────────────────────────
@@ -1373,7 +1436,7 @@ app.get("/api/public/tournament/:id/standings", async (req, res) => {
     const result = Array.from(stats.values()).sort((a: any, b: any) =>
       b.wins - a.wins || (b.setsWon - b.setsLost) - (a.setsWon - a.setsLost));
     res.json(result);
-  } catch (e: any) { res.status(400).json({ error: e.message }); }
+  } catch (e: any) { res.status(400).json({ error: publicError(e) }); }
 });
 
 // ─── RATING ─────────────────────────────────────────────────────────────────────

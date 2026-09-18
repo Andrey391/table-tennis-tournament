@@ -1,4 +1,5 @@
 import { Router, Response } from "express";
+import { publicError } from "../shared/errors.js";
 import { prisma } from "../config/db.js";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth.js";
 import { UpdateProfileSchema } from "../shared/schemas.js";
@@ -6,10 +7,11 @@ import bcrypt from "bcryptjs";
 
 export const playerRouter = Router();
 
-const listSelect = { id: true, email: true, firstName: true, lastName: true, role: true, club: true, city: true, rating: true, createdAt: true };
+// Any signed-up account can read this list, so it carries no contact details.
+const listSelect = { id: true, firstName: true, lastName: true, role: true, club: true, city: true, rating: true, createdAt: true };
 // What the owner gets back after editing — the same shape `/auth/me` returns, so
 // the client can drop it straight into its session user.
-const selfSelect = { ...listSelect, phone: true, dateOfBirth: true };
+const selfSelect = { ...listSelect, email: true, phone: true, dateOfBirth: true };
 
 playerRouter.get("/", authMiddleware, async (_req, res: Response) => {
   const players = await prisma.user.findMany({ select: listSelect, orderBy: { rating: "desc" } });
@@ -82,7 +84,7 @@ playerRouter.put("/:id", authMiddleware, async (req: AuthenticatedRequest, res: 
     res.json(user);
   } catch (err: any) {
     if (err.code === "P2002") { res.status(400).json({ error: "An account with this email already exists" }); return; }
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: publicError(err) });
   }
 });
 

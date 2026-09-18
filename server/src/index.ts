@@ -5,7 +5,6 @@ import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { prisma } from "./config/db.js";
-import { initSocket } from "./socket.js";
 import { authRouter } from "./routes/auth.js";
 import { tournamentRouter } from "./routes/tournaments.js";
 import { matchRouter } from "./routes/matches.js";
@@ -19,11 +18,17 @@ import { liveRouter, publicRouter } from "./routes/public.js";
 const app = express();
 const server = http.createServer(app);
 
+// Render sits behind a proxy; the rate limit keys on the real client IP.
+app.set("trust proxy", 1);
 app.use(helmet({ contentSecurityPolicy: false }));
 const allowedOrigins = (process.env.CLIENT_URL || "http://localhost:5173").split(",").map(s => s.trim());
 app.use(cors({ origin: (origin, cb) => { if (!origin || allowedOrigins.includes(origin) || allowedOrigins.includes("*")) cb(null, true); else cb(new Error("Not allowed")); }, credentials: true }));
-app.use(express.json());
-app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 200 }));
+app.use(express.json({ limit: "100kb" }));
+// The scoring screen polls every 2s (~450 requests per 15 min), so the general
+// limit has to sit above that; sign-in and sign-up get their own strict one
+// against password guessing.
+app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 1500 }));
+app.use(["/api/auth/login", "/api/auth/register"], rateLimit({ windowMs: 15 * 60 * 1000, max: 20, message: { error: "Too many attempts, try again later" } }));
 
 app.use("/api/auth", authRouter);
 app.use("/api/tournaments", tournamentRouter);
@@ -50,7 +55,6 @@ async function main() {
   await prisma.$connect();
   console.log("Connected to database");
 
-  initSocket(server);
 
   server.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);

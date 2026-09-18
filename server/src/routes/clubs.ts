@@ -1,4 +1,5 @@
 import { Router, Response } from "express";
+import { publicError } from "../shared/errors.js";
 import { prisma } from "../config/db.js";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth.js";
 import { CreateClubSchema, UpdateClubSchema, CreateClubTableSchema } from "../shared/schemas.js";
@@ -66,7 +67,7 @@ clubRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, res: Resp
     res.status(201).json(club);
   } catch (err: any) {
     if (err.code === "P2002") { res.status(400).json({ error: "A club with this name already exists in this city" }); return; }
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: publicError(err) });
   }
 });
 
@@ -78,7 +79,7 @@ clubRouter.put("/:id", authMiddleware, async (req: AuthenticatedRequest, res: Re
     const updated = await prisma.club.update({ where: { id: club.id }, data });
     res.json(updated);
   } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: publicError(err) });
   }
 });
 
@@ -91,7 +92,7 @@ clubRouter.post("/:id/tables", authMiddleware, async (req: AuthenticatedRequest,
     res.status(201).json(table);
   } catch (err: any) {
     if (err.code === "P2002") { res.status(400).json({ error: "This table number already exists at the club" }); return; }
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: publicError(err) });
   }
 });
 
@@ -104,7 +105,7 @@ clubRouter.delete("/:id/tables/:tableId", authMiddleware, async (req: Authentica
     await prisma.clubTable.delete({ where: { id: table.id } });
     res.json({ ok: true });
   } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: publicError(err) });
   }
 });
 

@@ -1,4 +1,5 @@
 import { Router, Response } from "express";
+import { publicError } from "../shared/errors.js";
 import { prisma } from "../config/db.js";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth.js";
 import { SubscribeSchema } from "../shared/schemas.js";
@@ -27,7 +28,7 @@ subscriptionRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, r
     res.status(201).json(subscription);
   } catch (err: any) {
     if (err.code === "P2002") { res.status(400).json({ error: "Already subscribed" }); return; }
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: publicError(err) });
   }
 });
 
@@ -36,6 +37,6 @@ subscriptionRouter.delete("/:clubId", authMiddleware, async (req: AuthenticatedR
     await prisma.subscription.delete({ where: { userId_clubId: { userId: req.user!.userId, clubId: req.params.clubId } } });
     res.json({ ok: true });
   } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: publicError(err) });
   }
 });

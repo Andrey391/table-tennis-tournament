@@ -1,4 +1,5 @@
 import { Router, Response } from "express";
+import { publicError } from "../shared/errors.js";
 import { prisma } from "../config/db.js";
 import { AuthenticatedRequest, authMiddleware, generateToken } from "../middleware/auth.js";
 import { LoginSchema, SelfRegisterSchema } from "../shared/schemas.js";
@@ -20,7 +21,7 @@ authRouter.post("/login", async (req: AuthenticatedRequest, res: Response) => {
       user: { id: user.id, email: user.email, role: user.role, firstName: user.firstName, lastName: user.lastName, rating: user.rating, club: user.club },
     });
   } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: publicError(err) });
   }
 });
 
@@ -41,7 +42,7 @@ authRouter.post("/register", async (req: AuthenticatedRequest, res: Response) =>
     });
   } catch (err: any) {
     if (err.code === "P2002") { res.status(400).json({ error: "An account with this email already exists" }); return; }
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: publicError(err) });
   }
 });
 
