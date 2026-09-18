@@ -6,9 +6,25 @@ import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import { PrismaClient } from "@prisma/client";
 
+// Every serverless instance gets its own client, and Prisma's default pool is
+// several connections each. Behind Supabase's pooler (15 clients in session
+// mode) a handful of warm instances used it all up, and every query after that
+// failed or hung — sign-in first. One connection per instance is plenty here;
+// on the transaction-mode port (6543) Prisma also needs pgbouncer=true.
+function databaseUrl(): string | undefined {
+  const raw = process.env.DATABASE_URL;
+  if (!raw) return raw;
+  try {
+    const u = new URL(raw);
+    if (!u.searchParams.has("connection_limit")) u.searchParams.set("connection_limit", "1");
+    if (u.port === "6543" && !u.searchParams.has("pgbouncer")) u.searchParams.set("pgbouncer", "true");
+    return u.toString();
+  } catch { return raw; }
+}
+
 let prisma: PrismaClient;
 function db() {
-  if (!prisma) prisma = new PrismaClient();
+  if (!prisma) prisma = new PrismaClient({ datasources: { db: { url: databaseUrl() } } });
   return prisma;
 }
 
