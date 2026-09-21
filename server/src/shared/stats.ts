@@ -11,7 +11,9 @@ export type StatMatch = {
   player2Id: string | null;
   setsWon1: number;
   setsWon2: number;
+  // What the winner gained and (separately, FNTR is not zero-sum) what the loser gave up.
   eloDelta: number | null;
+  eloDeltaLoser: number | null;
   rating1Before: number | null;
   rating2Before: number | null;
   endedAt: Date | null;
@@ -33,7 +35,7 @@ function side(m: StatMatch, userId: string) {
     opponentBefore: isP1 ? m.rating2Before : m.rating1Before,
     myBefore: isP1 ? m.rating1Before : m.rating2Before,
     // Rating this match moved for this player; zero for games and walkovers.
-    delta: m.eloDelta == null ? 0 : mine > theirs ? m.eloDelta : theirs > mine ? -m.eloDelta : 0,
+    delta: m.eloDelta == null ? 0 : mine > theirs ? m.eloDelta : theirs > mine ? (m.eloDeltaLoser ?? 0) : 0,
   };
 }
 
@@ -76,14 +78,14 @@ export function computePlayerStats(userId: string, currentRating: number, matche
   }
 
   // Rating history, walked backwards from today's rating through every rated
-  // match's delta, so it needs nothing stored beyond Match.eloDelta.
+  // match's delta, so it needs nothing stored beyond Match.eloDelta/eloDeltaLoser.
   const rated = sorted.filter(m => m.tournament.kind === "TOURNAMENT" && m.eloDelta != null);
   const ratingHistory: { date: Date | null; rating: number; delta: number; matchId: string | null }[] = [];
   let r = currentRating;
   for (let i = rated.length - 1; i >= 0; i--) {
     const s = side(rated[i], userId);
     ratingHistory.unshift({ date: rated[i].endedAt, rating: r, delta: s.delta, matchId: rated[i].id });
-    r -= s.delta;
+    r = Math.round((r - s.delta) * 100) / 100;
   }
   ratingHistory.unshift({ date: rated[0]?.endedAt ?? null, rating: r, delta: 0, matchId: null });
 
@@ -152,6 +154,7 @@ export function computeLeaders(matches: StatMatch[], metric: LeaderMetric, limit
     }
   }
   const key = metric === "rating" ? "ratingChange" : metric;
+  for (const r of rows.values()) r.ratingChange = Math.round(r.ratingChange * 100) / 100;
   return Array.from(rows.values())
     .filter(r => metric !== "rating" || r.ratingChange !== 0)
     .sort((a, b) => b[key] - a[key] || b.wins - a.wins || b.player.rating - a.player.rating)

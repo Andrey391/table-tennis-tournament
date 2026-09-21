@@ -15,7 +15,7 @@ export const statsRouter = Router();
 const statPlayer = { select: { id: true, firstName: true, lastName: true, rating: true } } as const;
 const statMatchSelect = {
   id: true, tournamentId: true, player1Id: true, player2Id: true, setsWon1: true, setsWon2: true,
-  eloDelta: true, rating1Before: true, rating2Before: true, endedAt: true,
+  eloDelta: true, eloDeltaLoser: true, rating1Before: true, rating2Before: true, endedAt: true,
   player1: statPlayer, player2: statPlayer,
   tournament: { select: { id: true, name: true, kind: true } },
 } satisfies Prisma.MatchSelect;

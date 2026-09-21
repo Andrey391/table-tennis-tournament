@@ -9,7 +9,7 @@ import SetsToWinPicker from "../components/SetsToWinPicker";
 import { useT } from "../i18n";
 import { btnDanger, btnPrimary, btnPrimaryLg, btnSecondary, btnSmall, card, errorBox, field, fieldLabel, noticeBox, sectionLabel } from "../lib/ui";
 import { tourDone, requestClaim, rememberDemoTournament } from "../lib/tour";
-import { formatEventDay, formatTimeRange, playerName, matchScoreLine, formatDelta, deltaTone } from "../lib/format";
+import { formatEventDay, formatTimeRange, playerName, matchScoreLine, formatDelta, deltaTone, formatRating } from "../lib/format";
 import EmptyState from "../components/EmptyState";
 
 export default function TournamentPage() {
@@ -163,6 +163,7 @@ export default function TournamentPage() {
     minRating: tournament.minRating ?? "",
     maxRating: tournament.maxRating ?? "",
     setsToWin: tournament.setsToWin ?? 3,
+    ratingWeight: tournament.ratingWeight ?? 0.5,
     isPublic: tournament.isPublic !== false,
   });
 
@@ -182,6 +183,7 @@ export default function TournamentPage() {
         minRating: edit.minRating === "" ? null : +edit.minRating,
         maxRating: edit.maxRating === "" ? null : +edit.maxRating,
         setsToWin: edit.setsToWin,
+        ratingWeight: edit.ratingWeight === "" ? undefined : +edit.ratingWeight,
         isPublic: edit.isPublic,
       });
       setEdit(null);
@@ -339,6 +341,13 @@ export default function TournamentPage() {
             <SetsToWinPicker value={edit.setsToWin} onChange={n => setEdit({ ...edit, setsToWin: n })} />
             <p className="text-xs text-[#4d6480] mt-1.5">{t("create.setsToWinHint")}</p>
           </div>
+          {tournament.kind === "TOURNAMENT" && (
+            <div>
+              <label className={fieldLabel}>{t("create.ratingWeight")}</label>
+              <input type="number" min={0.1} max={1} step={0.1} value={edit.ratingWeight} onChange={e => setEdit({ ...edit, ratingWeight: e.target.value })} className={field} />
+              <p className="text-xs text-[#4d6480] mt-1.5">{t("create.ratingWeightHint")}</p>
+            </div>
+          )}
           <label className="flex items-center gap-2 text-sm text-[#93a8c2]">
             <input type="checkbox" checked={!edit.isPublic} onChange={e => setEdit({ ...edit, isPublic: !e.target.checked })} className="w-4 h-4" />
             {t("tournament.private")}
@@ -440,7 +449,7 @@ export default function TournamentPage() {
                     <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggleSelect(p.id)} className="w-4 h-4 shrink-0" />
                     <span className="text-sm truncate">{p.firstName} {p.lastName}</span>
                   </span>
-                  <span className="text-xs font-mono text-[#3b82f6] shrink-0">{p.rating}</span>
+                  <span className="text-xs font-mono text-[#3b82f6] shrink-0">{formatRating(p.rating)}</span>
                 </label>
               ))}
             </div>
@@ -519,7 +528,7 @@ export default function TournamentPage() {
           ) : ratingBlocked ? (
             <div className="text-center py-3 mt-3 text-sm bg-red-500/10 rounded-lg border border-red-500/20 px-3">
               <p className="text-[#93a8c2]">{t("tournament.ratingGate", { min: tournament.minRating ?? 0, max: tournament.maxRating ?? "∞" })}</p>
-              <p className="text-red-400 font-medium mt-1">{t("tournament.yourRating", { rating: user?.rating ?? 0 })}</p>
+              <p className="text-red-400 font-medium mt-1">{t("tournament.yourRating", { rating: formatRating(user?.rating ?? 0) })}</p>
             </div>
           ) : isFull ? (
             <p className={`${card} text-center py-3 mt-3 text-sm text-[#93a8c2]`}>{t("tournament.full")}</p>
@@ -633,7 +642,7 @@ function MatchRow({ m, tournamentId, tableLabel }: { m: any; tournamentId: strin
       <span className="flex-1 min-w-0 text-right text-sm truncate pr-2">{playerName(m.player1)}</span>
       <span className={`px-3 shrink-0 text-center ${m.status === "IN_PROGRESS" ? "text-yellow-400" : "text-[#93a8c2]"}`}>
         <span className="block font-mono font-bold text-sm">{matchScoreLine(m)}</span>
-        {m.eloDelta != null && <span className="block text-[10px] font-mono text-[#4d6480]">&plusmn;{m.eloDelta}</span>}
+        {m.eloDelta != null && <span className="block text-[10px] font-mono text-[#4d6480]">{formatDelta(m.eloDelta)} / {formatDelta(m.eloDeltaLoser)}</span>}
       </span>
       <span className="flex-1 min-w-0 text-sm truncate pl-2">{playerName(m.player2)}</span>
       {m.tableNumber && <span className="ml-2 text-[10px] text-[#4d6480] shrink-0">{tableLabel} {m.tableNumber}</span>}

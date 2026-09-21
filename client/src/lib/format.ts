@@ -62,10 +62,24 @@ export function setsPlayed(m: { setsWon1?: number; setsWon2?: number }): number 
   return (m?.setsWon1 ?? 0) + (m?.setsWon2 ?? 0);
 }
 
-// A rating change as "+12" / "−12" (true minus sign), for results and standings.
+// Ratings are fractional (FNTR pays (100 - gap) / 10 * KT points), so a rating shows
+// one decimal only when it has one: "102" stays "102", "102.5" stays "102.5".
+export function formatRating(n?: number | null): string {
+  return n == null ? "" : String(Math.round(n * 10) / 10);
+}
+
+// A rating change as "+12" / "−2.5" (true minus sign), for results and standings.
+// Changes carry up to two decimals (a loser gives up half of what the winner gains).
 export function formatDelta(n?: number | null): string {
-  if (!n) return "0";
-  return n > 0 ? `+${n}` : `−${Math.abs(n)}`;
+  const v = n ? Math.round(n * 100) / 100 : 0;
+  if (!v) return "0";
+  return v > 0 ? `+${v}` : `−${Math.abs(v)}`;
+}
+
+// The rating a settled match moved for one side: the winner's gain or the loser's
+// loss. The FNTR exchange is not zero-sum, so the loser's figure is its own column.
+export function matchDelta(m: { eloDelta?: number | null; eloDeltaLoser?: number | null }, mine: number, theirs: number): number {
+  return mine > theirs ? (m.eloDelta ?? 0) : mine < theirs ? (m.eloDeltaLoser ?? 0) : 0;
 }
 
 // Green for a gain, red for a loss, muted for no change.

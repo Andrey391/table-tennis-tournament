@@ -4,14 +4,25 @@
 // point-by-point board and are not coming back by accident — see CLAUDE.md.
 // What remains is the rating maths, which is still applied when a match is settled.
 
-const ELO_K = 32;
+export const DEFAULT_RATING_WEIGHT = 0.5;
+const RATING_CUTOFF = 100;
 
-// Standard Elo update: expected score from the rating gap, actual score is 1/0
-// for win/loss, delta is symmetric (winner's gain equals loser's loss).
-export function computeEloDelta(winnerRating: number, loserRating: number, k: number = ELO_K): { winnerDelta: number; loserDelta: number } {
-  const expectedWinner = 1 / (1 + Math.pow(10, (loserRating - winnerRating) / 400));
-  const winnerDelta = Math.round(k * (1 - expectedWinner));
-  return { winnerDelta, loserDelta: -winnerDelta };
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+// The FNTR (Russian Table Tennis Federation) rating update, applied per match:
+//   winner gains  (100 - (Rw - Rl)) / 10 * KT
+//   loser  loses  half of that
+// Rw/Rl are the two players' ratings, KT the tournament's significance coefficient
+// (0.1-1, FNTR default 0.5). A win over someone more than 100 points weaker is worth
+// nothing to either side; without that cut-off the formula would go negative and the
+// winner would lose points. Unlike Elo the exchange is not zero-sum, so both deltas
+// are returned and stored. `loserDelta` is <= 0. Values are kept to two decimals.
+export function computeFntrDelta(winnerRating: number, loserRating: number, weight: number = DEFAULT_RATING_WEIGHT): { winnerDelta: number; loserDelta: number } {
+  const gap = winnerRating - loserRating;
+  if (gap > RATING_CUTOFF) return { winnerDelta: 0, loserDelta: 0 };
+  const winnerDelta = round2(((RATING_CUTOFF - gap) / 10) * weight);
+  const half = round2(winnerDelta / 2);
+  return { winnerDelta, loserDelta: half === 0 ? 0 : -half };
 }
 
 // Checks an optional rally score typed in for a set ("11:7"). Both numbers or

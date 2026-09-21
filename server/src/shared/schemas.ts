@@ -26,6 +26,8 @@ export const CreateTournamentSchema = z.object({
   endTime: z.string().datetime().optional(),
   minRating: z.number().int().min(0).max(5000).optional(),
   maxRating: z.number().int().min(0).max(5000).optional(),
+  // FNTR significance coefficient (KT): scales the rating this event's matches move.
+  ratingWeight: z.number().min(0.1).max(1).optional(),
 });
 
 export const UpdateTournamentSchema = z.object({
@@ -41,6 +43,7 @@ export const UpdateTournamentSchema = z.object({
   endTime: z.string().datetime().nullable().optional(),
   minRating: z.number().int().min(0).max(5000).nullable().optional(),
   maxRating: z.number().int().min(0).max(5000).nullable().optional(),
+  ratingWeight: z.number().min(0.1).max(1).optional(),
 });
 
 export const CreateClubSchema = z.object({
@@ -77,7 +80,7 @@ export const SubscribeSchema = z.object({
 });
 
 // Everything a person can change about themselves. `rating` is deliberately
-// absent: it is Elo, computed from settled matches, and letting it be posted
+// absent: it is computed from settled matches, and letting it be posted
 // would make the whole ladder meaningless. `role` is absent for the same reason
 // as at signup — it would be a free promotion to ADMIN.
 export const UpdateProfileSchema = z.object({

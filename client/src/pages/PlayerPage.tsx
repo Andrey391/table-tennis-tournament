@@ -6,7 +6,7 @@ import Avatar from "../components/Avatar";
 import Loader from "../components/Loader";
 import EmptyState from "../components/EmptyState";
 import { useT } from "../i18n";
-import { playerName, formatDelta, deltaTone } from "../lib/format";
+import { playerName, formatDelta, deltaTone, matchDelta } from "../lib/format";
 import { useAuth } from "../context/AuthContext";
 import PlayerStats, { HeadToHead } from "../components/PlayerStats";
 import { backLink, card, sectionLabel } from "../lib/ui";
@@ -71,7 +71,7 @@ export default function PlayerPage() {
                     {t("player.inEvent")} {m.tournament?.name}
                     {m.tournament?.kind === "GAME" && ` · ${t("games.unrated")}`}
                   </span>
-                  {m.eloDelta != null && <span className={`text-[11px] font-mono shrink-0 ${deltaTone(mine > theirs ? m.eloDelta : -m.eloDelta)}`}>{formatDelta(mine > theirs ? m.eloDelta : -m.eloDelta)}</span>}
+                  {m.eloDelta != null && <span className={`text-[11px] font-mono shrink-0 ${deltaTone(matchDelta(m, mine, theirs))}`}>{formatDelta(matchDelta(m, mine, theirs))}</span>}
                 </div>
               </Link>
             );

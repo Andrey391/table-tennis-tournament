@@ -9,7 +9,7 @@ import EventCard from "../components/EventCard";
 import SetsToWinPicker from "../components/SetsToWinPicker";
 import { useT } from "../i18n";
 import { useAuth } from "../context/AuthContext";
-import { playerName } from "../lib/format";
+import { playerName, formatRating } from "../lib/format";
 import { btnGhost, btnPrimary, card, errorBox, field, fieldLabel, pageTitle } from "../lib/ui";
 
 // A game is a tournament with kind=GAME: same roster, rounds and pairing, no Elo.
@@ -137,7 +137,7 @@ export default function GamesPage() {
                   <button key={p.id} type="button" onClick={() => { setQuick({ ...quick, opponentId: p.id }); setOppSearch(""); }}
                     className="w-full flex justify-between items-center py-2.5 text-left">
                     <span className="text-sm truncate">{p.firstName} {p.lastName}</span>
-                    <span className="text-xs font-mono text-[#3b82f6] shrink-0">{p.rating}</span>
+                    <span className="text-xs font-mono text-[#3b82f6] shrink-0">{formatRating(p.rating)}</span>
                   </button>
                 ))}
               </div>

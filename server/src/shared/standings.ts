@@ -11,8 +11,10 @@ export type StandingsMatch = {
   player2Id: string | null;
   setsWon1: number;
   setsWon2: number;
-  // What the winner gained (and the loser gave up); null for an unrated match.
+  // What the winner gained and what the loser gave up (FNTR is not zero-sum, so they
+  // differ); null for an unrated match.
   eloDelta?: number | null;
+  eloDeltaLoser?: number | null;
 };
 
 export type StandingsPlayer = {
@@ -42,13 +44,14 @@ export function computeStandings(players: StandingsPlayer[], matches: StandingsM
     if (!s1 || !s2) continue;
     s1.setsWon += m.setsWon1; s1.setsLost += m.setsWon2;
     s2.setsWon += m.setsWon2; s2.setsLost += m.setsWon1;
-    const delta = m.eloDelta ?? 0;
-    if (m.setsWon1 > m.setsWon2) { s1.wins++; s2.losses++; s1.ratingChange += delta; s2.ratingChange -= delta; }
-    else if (m.setsWon2 > m.setsWon1) { s2.wins++; s1.losses++; s2.ratingChange += delta; s1.ratingChange -= delta; }
+    const gain = m.eloDelta ?? 0, loss = m.eloDeltaLoser ?? 0;
+    if (m.setsWon1 > m.setsWon2) { s1.wins++; s2.losses++; s1.ratingChange += gain; s2.ratingChange += loss; }
+    else if (m.setsWon2 > m.setsWon1) { s2.wins++; s1.losses++; s2.ratingChange += gain; s1.ratingChange += loss; }
     opponents.get(m.player1Id)!.push(m.player2Id);
     opponents.get(m.player2Id)!.push(m.player1Id);
   }
   for (const row of stats.values()) {
+    row.ratingChange = Math.round(row.ratingChange * 100) / 100;
     row.buchholz = (opponents.get(row.userId) || []).reduce((sum, id) => sum + (stats.get(id)?.wins || 0), 0);
   }
   return Array.from(stats.values()).sort((a, b) =>

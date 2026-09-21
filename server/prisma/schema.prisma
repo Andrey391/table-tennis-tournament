@@ -38,7 +38,8 @@ model User {
   role             Role      @default(PLAYER)
   club             String?
   city             String?
-  rating           Int       @default(100)
+  // FNTR rating: fractional, because a win is worth (100 - gap) / 10 * KT points.
+  rating           Float     @default(100)
   dateOfBirth      DateTime?
   phone            String?
   // A throwaway account handed to someone trying the app out, together with the
@@ -127,6 +128,9 @@ model Tournament {
   endTime     DateTime?
   minRating   Int?
   maxRating   Int?
+  // FNTR significance coefficient (KT), 0.1-1, default 0.5: it scales every rating
+  // change made by this event's matches. Ignored for a GAME, which is unrated.
+  ratingWeight Float    @default(0.5)
   // Whether the event shows up in the public feed. Every table booking creates an
   // event, and a solo practice slot has no business sitting in the city feed next
   // to a club tournament — so a booking can keep its event to itself. Its own
@@ -224,6 +228,11 @@ model TournamentUser {
   userId       String
   user         User         @relation(fields: [userId], references: [id])
   seed         Int?
+  // The player's rating before their first rated match in this event. FNTR rates
+  // every match of a tournament against the ratings the players brought to it, not
+  // against ratings that earlier rounds have already moved. Written when their first
+  // match is settled (nothing in this event can have moved their rating before that).
+  ratingStart  Float?
   status       PlayerStatus @default(REGISTERED)
   joinedAt     DateTime     @default(now())
 
@@ -249,13 +258,17 @@ model Match {
   // cap. Only COMPLETED matches reach the statistics, the standings and Elo, and
   // a match is completed by /end, /forfeit or a walkover.
   setsToWin    Int         @default(3)
-  // The rating points the winner gained when this match was settled, kept so that
-  // undoing the point that ended it can hand them back exactly.
-  eloDelta     Int?
+  // The rating the winner gained (FNTR) and the loser gave up when this match was
+  // settled, kept so that reopening it can hand both back exactly. The FNTR exchange
+  // is not zero-sum, so the loser's change is its own column. Both are null for an
+  // unrated match (a game or a walkover) and 0 when the winner was over 100 ahead.
+  // The column names predate FNTR, when this was Elo.
+  eloDelta     Float?
+  eloDeltaLoser Float?
   // Both players' ratings at the moment the match was settled, so "best win" and
   // "beat someone 100+ above" compare against the rating they had then, not now.
-  rating1Before Int?
-  rating2Before Int?
+  rating1Before Float?
+  rating2Before Float?
   sets         MatchSet[]
   // Running tally of sets won. There is no fixed "best of N": sets are played
   // one after another and the judge ends the match, whoever leads takes it.
