@@ -1,7 +1,8 @@
 import React from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useT } from "../i18n";
-import { TOUR_STEPS, tourStep, tourNext, tourSkip, tourFinish, tourSubscribe } from "../lib/tour";
+import { TOUR_STEPS, tourStep, tourNext, tourSkip, tourFinish, tourSubscribe, stepPath } from "../lib/tour";
 
 // Walks a demo visitor through one club night on the real screens: the roster,
 // the pairing, their own match, recording a set, settling it, the table. A
@@ -13,6 +14,8 @@ import { TOUR_STEPS, tourStep, tourNext, tourSkip, tourFinish, tourSubscribe } f
 export default function Tour() {
   const { user } = useAuth();
   const { t } = useT();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [step, setStep] = React.useState(tourStep);
   const [rect, setRect] = React.useState<DOMRect | null>(null);
 
@@ -24,6 +27,10 @@ export default function Tour() {
   // so until that control exists there is nothing to say about it — the card
   // says where to go instead of describing something the visitor cannot see.
   const waiting = !rect;
+  // Where this step's control lives. The card takes the visitor there rather
+  // than telling them to find their own way back.
+  const path = current ? stepPath(current.target) : null;
+  const canGo = !!path && path !== location.pathname;
 
   // The anchor appears, moves and disappears as rounds are paired and polls come
   // in, so its box is re-measured on a timer rather than once on mount.
@@ -65,10 +72,15 @@ export default function Tour() {
           {/* No "next" while the step's control is off screen: it would walk the
               visitor past the one thing the step is about. Steps that end in an
               action advance themselves anyway (`doneBy`). */}
-          {!waiting && (
+          {!waiting ? (
             <button onClick={last ? tourFinish : tourNext}
               className="w-full mt-3 bg-[#ccff00] text-[#0a1628] py-2.5 rounded-lg text-sm font-bold">
               {last ? t("tour.finish") : t("tour.next")}
+            </button>
+          ) : canGo && (
+            <button onClick={() => navigate(path!)}
+              className="w-full mt-3 bg-[#ccff00] text-[#0a1628] py-2.5 rounded-lg text-sm font-bold">
+              {t("tour.go")}
             </button>
           )}
         </div>

@@ -6,7 +6,7 @@ import { HeadToHead } from "../components/PlayerStats";
 import { useT } from "../i18n";
 import { playerName } from "../lib/format";
 import SetsToWinPicker from "../components/SetsToWinPicker";
-import { tourDone } from "../lib/tour";
+import { tourDone, rememberDemoMatch } from "../lib/tour";
 
 // The unit of scoring is the set ("партия"), not the point. The judge marks who
 // took each set; nothing tracks the rally-by-rally score, so there is no deuce,
@@ -30,6 +30,10 @@ export default function MatchPage() {
   // or finished while it was on the wire.
   const pendingWrites = useRef(0);
   const writeGeneration = useRef(0);
+
+  // So the tour can bring a demo visitor back to this exact screen from wherever
+  // they wandered off to. Harmless for everyone else; only the tour reads it.
+  useEffect(() => { if (matchId) rememberDemoMatch(matchId); }, [matchId]);
 
   // Wraps every mutation so the poll knows one is happening.
   const write = useCallback(async (fn: () => Promise<void>) => {

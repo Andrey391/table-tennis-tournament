@@ -2,7 +2,7 @@ import React from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useT } from "../i18n";
-import { tourRestart } from "../lib/tour";
+import { tourRestart, rememberDemoTournament } from "../lib/tour";
 
 // The way in for someone who has never run a club night. It signs them in as a
 // throwaway account that already owns an event and drops them on it with the
@@ -19,6 +19,7 @@ export default function TryDemoButton({ variant = "solid" }: { variant?: "solid"
     try {
       setError("");
       const tournamentId = await startDemo();
+      rememberDemoTournament(tournamentId);
       tourRestart();
       navigate(`/tournament/${tournamentId}`);
     } catch (err: any) {

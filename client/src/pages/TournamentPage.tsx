@@ -7,7 +7,7 @@ import Avatar from "../components/Avatar";
 import SetsToWinPicker from "../components/SetsToWinPicker";
 import { useT } from "../i18n";
 import { field } from "../lib/ui";
-import { tourDone, requestClaim } from "../lib/tour";
+import { tourDone, requestClaim, rememberDemoTournament } from "../lib/tour";
 import { formatEventDay, formatTimeRange, playerName, matchScoreLine, formatDelta, deltaTone } from "../lib/format";
 
 export default function TournamentPage() {
@@ -37,6 +37,11 @@ export default function TournamentPage() {
   };
 
   useEffect(load, [id]);
+  // A demo visitor who opens their event from anywhere — a link, the feed, a
+  // reload — makes it the one the Dashboard and the tour offer to return to.
+  useEffect(() => {
+    if (id && user?.isDemo && tournament?.organizerId === user.id) rememberDemoTournament(id);
+  }, [id, user, tournament]);
   // Participants keep this page open during the event and expect it to move on its
   // own when the manager pairs a new round; without a poll it froze at whatever
   // was on screen when they opened it.
