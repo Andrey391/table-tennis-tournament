@@ -75,13 +75,18 @@ export function tourSkip() { set(-1); }
 export function tourRestart() { set(0); }
 export function tourFinish() { set(-1); }
 
-// Called by a screen right after the visitor does something. It only moves the
-// tour when that is the step actually being shown, so nothing jumps ahead when
-// the visitor wanders off the script.
+// Called by a screen right after the visitor does something. It moves the tour
+// past the step that was waiting for that action — including when the visitor
+// got there first and the step is still ahead of them. They pair the round while
+// the card is still on "the roster", and without this the tour would then park
+// on a pairing button that no longer exists, offering to take them to a screen
+// where it is not. Something already done is never walked back to.
 export function tourDone(action: string) {
   const i = tourStep();
-  if (i < 0 || TOUR_STEPS[i]?.doneBy !== action) return;
-  set(Math.min(i + 1, TOUR_STEPS.length - 1));
+  if (i < 0) return;
+  const target = TOUR_STEPS.findIndex((s) => s.doneBy === action);
+  if (target < i) return;
+  set(Math.min(target + 1, TOUR_STEPS.length - 1));
 }
 
 export function tourSubscribe(l: Listener) {
