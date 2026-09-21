@@ -18,6 +18,7 @@ import ProfilePage from "./pages/ProfilePage";
 import TournamentChatPage from "./pages/TournamentChatPage";
 import GamesPage from "./pages/GamesPage";
 import PlayerPage from "./pages/PlayerPage";
+import DemoJoin from "./pages/DemoJoin";
 import Tour from "./components/Tour";
 
 // Wraps the screens that write something. Everything else is readable by a guest:
@@ -36,6 +37,8 @@ function App() {
       <PollingProvider>
         <Routes>
           <Route path="/login" element={token ? <Navigate to="/" /> : <Login />} />
+          {/* The invitation to a demo match: open to anyone holding the link. */}
+          <Route path="/demo/join/:id" element={<DemoJoin />} />
           <Route path="/register" element={token ? <Navigate to="/" /> : <Register />} />
           {/* Guest-readable: the feed, the rating, results, events and their matches. */}
           <Route path="/" element={<Dashboard />} />

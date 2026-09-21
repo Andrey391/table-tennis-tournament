@@ -200,6 +200,17 @@ export default function TournamentPage() {
     } catch { /* dismissed share sheet or blocked clipboard — nothing to report */ }
   };
 
+  // The invitation to the demo match: whoever opens it takes the empty seat as a
+  // guest and plays the same match from their own phone (see /auth/demo/join).
+  const inviteUrl = `${window.location.origin}/demo/join/${id}`;
+  const shareInvite = async () => {
+    try {
+      if (navigator.share) { await navigator.share({ title: tournament.name, url: inviteUrl }); return; }
+      await navigator.clipboard.writeText(inviteUrl);
+      setNotice(t("demo.invite.copied"));
+    } catch { /* dismissed share sheet or blocked clipboard — the link is in the box to copy by hand */ }
+  };
+
   const removeTournament = async () => {
     if (!id) return;
     setBusy(true); setError("");
@@ -477,6 +488,17 @@ export default function TournamentPage() {
                   {isManager && <button onClick={() => addSelectedOne(p.userId)} className="text-xs text-[#ccff00] font-medium shrink-0">{t("tournament.add")}</button>}
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {isManager && isDemo && tournament.demoSeatOpen && (
+          <div className="mt-3 bg-[#142a44] border border-[#1c3350] rounded-lg p-3 space-y-2">
+            <p className="text-sm font-bold">{t("demo.invite.title")}</p>
+            <p className="text-xs text-[#93a8c2]">{t("demo.invite.text")}</p>
+            <div className="flex gap-2">
+              <input readOnly value={inviteUrl} onFocus={e => e.currentTarget.select()} className={`${field} min-w-0 flex-1 text-xs`} />
+              <button onClick={shareInvite} className="shrink-0 bg-[#ccff00] text-[#0a1628] px-3 rounded-lg text-xs font-bold">{t("demo.invite.share")}</button>
             </div>
           </div>
         )}

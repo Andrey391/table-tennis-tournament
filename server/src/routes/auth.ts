@@ -2,8 +2,8 @@ import { Router, Response } from "express";
 import { publicError } from "../shared/errors";
 import { prisma } from "../config/db";
 import { AuthenticatedRequest, authMiddleware, generateToken } from "../middleware/auth";
-import { LoginSchema, SelfRegisterSchema, ClaimDemoSchema } from "../shared/schemas";
-import { createDemoAccount, sweepExpiredDemos, DEMO_TTL_HOURS } from "../shared/demo";
+import { LoginSchema, SelfRegisterSchema, ClaimDemoSchema, DemoJoinSchema } from "../shared/schemas";
+import { createDemoAccount, sweepExpiredDemos, joinDemoSeat, DemoJoinError, DEMO_TTL_HOURS } from "../shared/demo";
 import bcrypt from "bcryptjs";
 
 export const authRouter = Router();
@@ -69,6 +69,21 @@ authRouter.post("/demo", async (_req: AuthenticatedRequest, res: Response) => {
     const user = await prisma.user.findUnique({ where: { id: demo.userId }, select: meSelect });
     res.status(201).json({ token: generateToken(demo.userId, demo.role), user, tournamentId: demo.tournamentId });
   } catch (err: any) {
+    res.status(400).json({ error: publicError(err) });
+  }
+});
+
+// The invitation link: a second visitor takes the sparring partner's seat in a
+// demo event as a guest account of their own, and lands in the same match the
+// manager sees. No credentials asked, like /demo — the link itself is the ticket.
+authRouter.post("/demo/join", async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { tournamentId } = DemoJoinSchema.parse(req.body);
+    const joined = await joinDemoSeat(tournamentId);
+    const user = await prisma.user.findUnique({ where: { id: joined.userId }, select: meSelect });
+    res.status(201).json({ token: generateToken(joined.userId, joined.role), user, tournamentId, matchId: joined.matchId });
+  } catch (err: any) {
+    if (err instanceof DemoJoinError) { res.status(err.status).json({ error: err.message }); return; }
     res.status(400).json({ error: publicError(err) });
   }
 });

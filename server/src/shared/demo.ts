@@ -29,7 +29,30 @@ const DEMO_OPPONENTS = [
   { firstName: "Гость", lastName: "2", rating: 260 },
 ];
 
-const demoEmail = () => `demo-${randomUUID()}@demo.local`;
+// The sparring partner's address starts with this, and it is the only thing that
+// tells an unfilled seat from a person who took it (a joined guest gets "guest-"):
+// the invitation link hands that seat to a real visitor, so "still the sparring
+// partner" is exactly "the seat is open". Kept in the address rather than a new
+// column so neither hand-maintained SQL file has to change.
+const SPARRING_PREFIX = "demo-";
+const GUEST_PREFIX = "guest-";
+const demoEmail = (prefix = SPARRING_PREFIX) => `${prefix}${randomUUID()}@demo.local`;
+
+// Where the invitation link goes wrong, with the HTTP status the route answers.
+export class DemoJoinError extends Error {
+  constructor(message: string, public status: number) { super(message); }
+}
+
+// True while the demo event still has its sparring partner in the roster — i.e.
+// while an invitation link can still be redeemed. Read on every event fetch so
+// the manager's invite card disappears the moment someone takes the seat.
+export async function hasOpenDemoSeat(tournamentId: string): Promise<boolean> {
+  const seat = await prisma.tournamentUser.findFirst({
+    where: { tournamentId, tournament: { organizer: { isDemo: true } }, user: { isDemo: true, email: { startsWith: SPARRING_PREFIX } } },
+    select: { id: true },
+  });
+  return !!seat;
+}
 
 // Everything a demo account owns is hidden from the rating list, the
 // leaderboards and the public feed. Spell the filter once so a new list cannot
@@ -101,6 +124,61 @@ export async function createDemoAccount(): Promise<DemoAccount> {
     throw err;
   }
   return { userId: guestId, role: guestData.role, tournamentId, expiresAt };
+}
+
+export interface DemoJoin { userId: string; role: string; matchId: string | null }
+
+// Redeems an invitation: a second person takes the sparring partner's seat in the
+// demo event, so the evening has two real players who each open the same match on
+// their own phone. The seat is *moved* rather than a third player added — the
+// roster row and any match already paired point at the new account, with the
+// sparring partner's rating, so nothing about the round changes but who is in it.
+// One seat, one taker: a second visitor with the same link is told it is taken.
+export async function joinDemoSeat(tournamentId: string): Promise<DemoJoin> {
+  const tournament = await prisma.tournament.findUnique({
+    where: { id: tournamentId },
+    select: { organizerId: true, status: true, organizer: { select: { isDemo: true, demoExpiresAt: true, city: true } } },
+  });
+  if (!tournament?.organizer.isDemo || tournament.status === "CANCELLED") throw new DemoJoinError("This invitation is no longer valid", 404);
+  const expiresAt = tournament.organizer.demoExpiresAt;
+  if (expiresAt && expiresAt < new Date()) throw new DemoJoinError("This demo has expired", 410);
+
+  const seat = await prisma.tournamentUser.findFirst({
+    where: { tournamentId, user: { isDemo: true, email: { startsWith: SPARRING_PREFIX } } },
+    select: { userId: true, user: { select: { rating: true } } },
+  });
+  if (!seat) throw new DemoJoinError("Someone has already joined this game", 409);
+
+  const guestId = randomUUID();
+  await prisma.user.create({
+    data: {
+      id: guestId, email: demoEmail(GUEST_PREFIX), password: await bcrypt.hash(randomUUID(), 10),
+      firstName: "Гость", lastName: "2", role: "PLAYER", city: tournament.organizer.city, rating: seat.user?.rating ?? 100,
+      // Owned by the manager and expiring with them, so claiming the account
+      // keeps this player (and their matches) instead of sweeping them away.
+      isDemo: true, demoOwnerId: tournament.organizerId, demoExpiresAt: expiresAt,
+    },
+  });
+  try {
+    // Fails (P2025) if another visitor took the seat between the read and here.
+    await prisma.tournamentUser.update({ where: { tournamentId_userId: { tournamentId, userId: seat.userId } }, data: { userId: guestId } });
+  } catch (err: any) {
+    await prisma.user.delete({ where: { id: guestId } }).catch(() => {});
+    if (err?.code === "P2025") throw new DemoJoinError("Someone has already joined this game", 409);
+    throw err;
+  }
+  // Round 1 may already be paired: the seat's matches and bye follow the new player.
+  await prisma.match.updateMany({ where: { tournamentId, player1Id: seat.userId }, data: { player1Id: guestId } });
+  await prisma.match.updateMany({ where: { tournamentId, player2Id: seat.userId }, data: { player2Id: guestId } });
+  await prisma.roundBye.updateMany({ where: { tournamentId, userId: seat.userId }, data: { userId: guestId } });
+  // The sparring partner has no rows left to hold it up.
+  await prisma.user.delete({ where: { id: seat.userId } }).catch(() => {});
+
+  const match = await prisma.match.findFirst({
+    where: { tournamentId, OR: [{ player1Id: guestId }, { player2Id: guestId }] },
+    orderBy: { round: "desc" }, select: { id: true },
+  });
+  return { userId: guestId, role: "PLAYER", matchId: match?.id ?? null };
 }
 
 // Deletes every demo set whose time is up, with the events they played. Called

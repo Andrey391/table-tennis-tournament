@@ -154,6 +154,8 @@ export const SelfRegisterSchema = z.object({
 // second one, so the event they ran comes with them.
 export const ClaimDemoSchema = SelfRegisterSchema;
 
+export const DemoJoinSchema = z.object({ tournamentId: z.string().min(1).max(100) });
+
 export const RegisterSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
