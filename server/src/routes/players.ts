@@ -51,7 +51,7 @@ playerRouter.get("/:id", async (req: AuthenticatedRequest, res: Response) => {
 });
 
 // A player edits their own profile. Rating is never client-settable — it only moves
-// through Elo after a match — and admins are the only ones who can edit someone else.
+// through the FNTR formula after a match — and admins are the only ones who can edit someone else.
 playerRouter.put("/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (req.params.id !== req.user!.userId && req.user!.role !== "ADMIN") {

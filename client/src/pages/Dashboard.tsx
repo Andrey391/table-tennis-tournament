@@ -6,7 +6,7 @@ import Layout from "../components/Layout";
 import ScopeToggle from "../components/ScopeToggle";
 import Loader from "../components/Loader";
 import { useT } from "../i18n";
-import { formatEventDay, formatTimeRange, playerName, matchScoreLine } from "../lib/format";
+import { formatEventDay, formatTimeRange, playerName, matchScoreLine, formatRating } from "../lib/format";
 import TryDemoButton from "../components/TryDemoButton";
 import { demoTournamentPath } from "../lib/tour";
 
@@ -227,7 +227,7 @@ function EventCard({ tr, t, lang }: { tr: any; t: (k: string, v?: any) => string
                 <div className="w-12 h-12 rounded-full bg-[#16283f] border border-[#24405e] flex items-center justify-center text-sm font-bold">
                   {`${p.user?.firstName?.[0] || ""}${p.user?.lastName?.[0] || ""}`.toUpperCase() || "?"}
                 </div>
-                <span className="absolute -top-1 -right-2 bg-[#ccff00] text-[#0a1628] text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none border-2 border-[#101f36]">{p.user?.rating}</span>
+                <span className="absolute -top-1 -right-2 bg-[#ccff00] text-[#0a1628] text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none border-2 border-[#101f36]">{formatRating(p.user?.rating)}</span>
               </div>
               <span className="mt-1.5 text-[11px] font-medium leading-tight max-w-full truncate">{p.user?.lastName}</span>
               <span className="text-[11px] text-[#93a8c2] leading-tight max-w-full truncate">{p.user?.firstName}</span>

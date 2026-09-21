@@ -9,7 +9,7 @@ export default function CreateTournament() {
   const navigate = useNavigate();
   const { t } = useT();
   const [clubs, setClubs] = React.useState<any[]>([]);
-  const [form, setForm] = React.useState({ name: "", description: "", clubId: "", startTime: "", endTime: "", tablesCount: 4, maxPlayers: "", minRating: "", maxRating: "", setsToWin: 3 });
+  const [form, setForm] = React.useState({ name: "", description: "", clubId: "", startTime: "", endTime: "", tablesCount: 4, maxPlayers: "", minRating: "", maxRating: "", setsToWin: 3, ratingWeight: "0.5" });
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
 
@@ -31,6 +31,7 @@ export default function CreateTournament() {
       maxPlayers: form.maxPlayers ? +form.maxPlayers : undefined,
       minRating: form.minRating ? +form.minRating : undefined,
       maxRating: form.maxRating ? +form.maxRating : undefined,
+      ratingWeight: form.ratingWeight ? +form.ratingWeight : undefined,
     };
     try { const r = await apiService.tournaments.create(payload); navigate(`/tournament/${r.data.id}`); }
     catch (err: any) { setError(err.response?.data?.error || t("common.failed")); }
@@ -93,6 +94,11 @@ export default function CreateTournament() {
             <input type="number" placeholder={t("create.max")} value={form.maxRating} onChange={e => set("maxRating", e.target.value)} className={field} />
           </div>
           <p className="text-xs text-[#4d6480] mt-1.5">{t("create.ratingHint")}</p>
+        </div>
+        <div>
+          <label className={label}>{t("create.ratingWeight")}</label>
+          <input type="number" min={0.1} max={1} step={0.1} value={form.ratingWeight} onChange={e => set("ratingWeight", e.target.value)} className={field} />
+          <p className="text-xs text-[#4d6480] mt-1.5">{t("create.ratingWeightHint")}</p>
         </div>
         <p className="text-xs text-[#4d6480]">{t("create.hint")}</p>
         <div className="flex gap-3 pt-1">

@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { apiService } from "../services/api";
 import Loader from "./Loader";
 import { useT } from "../i18n";
-import { playerName } from "../lib/format";
+import { playerName, formatRating } from "../lib/format";
 
 const card = "bg-[#101f36] rounded-2xl border border-[#1c3350]";
 const label = "text-xs font-medium text-[#6b84a0] uppercase tracking-wider";
@@ -82,7 +82,7 @@ export default function PlayerStats({ playerId }: { playerId: string }) {
         {s.bestWin && (
           <Link to={`/tournament/${s.bestWin.tournamentId}/match/${s.bestWin.matchId}`} className="px-4 py-2.5 flex justify-between gap-2">
             <span className="text-[#6b84a0] shrink-0">{t("stats.bestWin")}</span>
-            <span className="truncate text-right">{t("stats.bestWinLine", { name: playerName(s.bestWin.opponent), rating: s.bestWin.rating })} <span className="font-mono text-green-400">{s.bestWin.score}</span></span>
+            <span className="truncate text-right">{t("stats.bestWinLine", { name: playerName(s.bestWin.opponent), rating: formatRating(s.bestWin.rating) })} <span className="font-mono text-green-400">{s.bestWin.score}</span></span>
           </Link>
         )}
         {([["stats.nemesis", s.nemesis], ["stats.favourite", s.favourite]] as const).filter(([, r]) => r).map(([key, r]) => (

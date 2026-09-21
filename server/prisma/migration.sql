@@ -407,6 +407,22 @@ ALTER TABLE "MatchSet" ADD COLUMN IF NOT EXISTS "score1" INTEGER NOT NULL DEFAUL
 ALTER TABLE "MatchSet" ADD COLUMN IF NOT EXISTS "score2" INTEGER NOT NULL DEFAULT 0;
 
 
+-- 17. FNTR rating. A win is worth (100 - gap) / 10 * KT points and the loser gives
+-- up half of that, so ratings and deltas are fractional and the exchange is not
+-- zero-sum: the loser's change gets its own column. "ratingWeight" is the
+-- tournament's KT, "ratingStart" the rating a player brought to the tournament.
+-- Widening INTEGER to DOUBLE PRECISION keeps every value. Existing ratings are NOT
+-- recalculated here: run server/prisma/recalc-fntr.sql (a dry run until you set
+-- apply_changes to true) to replay all played matches under the FNTR rules.
+ALTER TABLE "User" ALTER COLUMN "rating" TYPE DOUBLE PRECISION;
+ALTER TABLE "Match" ALTER COLUMN "eloDelta" TYPE DOUBLE PRECISION;
+ALTER TABLE "Match" ALTER COLUMN "rating1Before" TYPE DOUBLE PRECISION;
+ALTER TABLE "Match" ALTER COLUMN "rating2Before" TYPE DOUBLE PRECISION;
+ALTER TABLE "Match" ADD COLUMN IF NOT EXISTS "eloDeltaLoser" DOUBLE PRECISION;
+ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "ratingWeight" DOUBLE PRECISION NOT NULL DEFAULT 0.5;
+ALTER TABLE "TournamentUser" ADD COLUMN IF NOT EXISTS "ratingStart" DOUBLE PRECISION;
+
+
 -- NOTE: an earlier iteration of this branch had a standalone "Game" table and a
 -- "Booking"."gameId" column. Games are Tournament rows now, so neither is used
 -- any more. They are deliberately left in place rather than dropped: nothing

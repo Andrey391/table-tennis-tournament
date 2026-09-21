@@ -1,3 +1,5 @@
+import { formatRating } from "../lib/format";
+
 export default function Avatar({ firstName, lastName, rating, size = "md" }: { firstName?: string; lastName?: string; rating?: number; size?: "sm" | "md" | "lg" }) {
   const initials = `${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase() || "?";
   const dim = size === "lg" ? "w-16 h-16 text-xl" : size === "sm" ? "w-8 h-8 text-[10px]" : "w-11 h-11 text-sm";
@@ -10,7 +12,7 @@ export default function Avatar({ firstName, lastName, rating, size = "md" }: { f
       </div>
       {rating != null && (
         <span className={`absolute bg-[#ccff00] text-[#0a1628] font-bold rounded-full leading-none border-2 border-[#0a1628] ${badge}`}>
-          {rating}
+          {formatRating(rating)}
         </span>
       )}
     </div>

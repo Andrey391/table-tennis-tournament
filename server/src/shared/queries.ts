@@ -44,7 +44,7 @@ export const PLAYED_STATUSES = { in: ["REGISTERED", "WITHDRAWN"] as ("REGISTERED
 // What computeStandings needs from a tournament.
 export const standingsInclude = {
   players: { where: { status: PLAYED_STATUSES }, include: { user: { select: playerSelect } } },
-  matches: { where: { status: "COMPLETED" as const }, select: { player1Id: true, player2Id: true, setsWon1: true, setsWon2: true, eloDelta: true } },
+  matches: { where: { status: "COMPLETED" as const }, select: { player1Id: true, player2Id: true, setsWon1: true, setsWon2: true, eloDelta: true, eloDeltaLoser: true } },
 };
 
 // An event at a club in that city, or one with no venue run by someone who lives

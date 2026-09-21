@@ -3,7 +3,7 @@ import { publicError } from "../shared/errors";
 import { prisma } from "../config/db";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
 import { MatchSettingsSchema, SetResultSchema, ForfeitSchema } from "../shared/schemas";
-import { computeEloDelta, checkSetScore, checkCanEnd } from "../shared/scoring";
+import { computeFntrDelta, DEFAULT_RATING_WEIGHT, checkSetScore, checkCanEnd } from "../shared/scoring";
 import { playerSelect, matchInclude } from "../shared/queries";
 import AuditLog from "../models/AuditLog";
 
@@ -11,7 +11,7 @@ export const matchRouter = Router();
 
 const findMatchToScore = (matchId: string) => prisma.match.findUnique({
   where: { id: matchId },
-  include: { tournament: { select: { organizerId: true, kind: true } }, sets: { orderBy: { index: "asc" } } },
+  include: { tournament: { select: { organizerId: true, kind: true, ratingWeight: true } }, sets: { orderBy: { index: "asc" } } },
 });
 
 // Loads the match and confirms the caller manages its tournament.
@@ -48,32 +48,52 @@ async function maybeCompleteTournament(tournamentId: string) {
   }
 }
 
-// Updates both players' global rating using the match result (Elo). Only rated
-// containers count: a GAME is deliberately unrated, so it never gets here.
-// Two single-statement writes rather than one `$transaction`: the pooled Postgres
+// Updates both players' global rating with the FNTR formula (see computeFntrDelta).
+// Only rated containers count: a GAME is deliberately unrated, so it never gets here.
+//
+// FNTR rates every match of a tournament against the ratings the players brought to
+// it, so the rating that goes into the formula is the player's TournamentUser.ratingStart,
+// not their rating right now. It is written the first time the player's match in this
+// event is settled: nothing here can have moved their rating before then. The change
+// itself is still applied to User.rating straight away, so the profile and the rating
+// list are current the moment a match is settled.
+//
+// Three single-statement writes rather than one `$transaction`: the pooled Postgres
 // this runs against drops the connection partway through a multi-statement
 // transaction, and this is the last step of settling a match — the one whose
 // failure used to leave the screen stuck on a match that was already half-settled.
-async function applyEloUpdate(kind: string, winnerId: string | null, loserId: string | null): Promise<number | null> {
-  if (kind !== "TOURNAMENT" || !winnerId || !loserId) return null;
-  const [winner, loser] = await Promise.all([
+type RatingChange = { winnerDelta: number; loserDelta: number };
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+async function applyRatingUpdate(tournament: { id: string; kind: string; ratingWeight: number }, winnerId: string | null, loserId: string | null): Promise<RatingChange | null> {
+  if (tournament.kind !== "TOURNAMENT" || !winnerId || !loserId) return null;
+  const [winner, loser, starts] = await Promise.all([
     prisma.user.findUnique({ where: { id: winnerId }, select: { rating: true } }),
     prisma.user.findUnique({ where: { id: loserId }, select: { rating: true } }),
+    prisma.tournamentUser.findMany({ where: { tournamentId: tournament.id, userId: { in: [winnerId, loserId] } }, select: { userId: true, ratingStart: true } }),
   ]);
   if (!winner || !loser) return null;
-  const { winnerDelta, loserDelta } = computeEloDelta(winner.rating, loser.rating);
-  await prisma.user.update({ where: { id: winnerId }, data: { rating: winner.rating + winnerDelta } });
-  await prisma.user.update({ where: { id: loserId }, data: { rating: Math.max(0, loser.rating + loserDelta) } });
-  // Returned (and stored on the match) so undoing the point that settled the match
-  // can hand back exactly what was given, rather than recomputing from ratings that
-  // have already moved.
-  return winnerDelta;
+  // Remember what each side brought to the event, if this is their first match in it.
+  const startOf = async (userId: string, current: number) => {
+    const known = starts.find(r => r.userId === userId);
+    if (known?.ratingStart != null) return known.ratingStart;
+    if (known) await prisma.tournamentUser.updateMany({ where: { tournamentId: tournament.id, userId, ratingStart: null }, data: { ratingStart: current } });
+    return current;
+  };
+  const [winnerBase, loserBase] = await Promise.all([startOf(winnerId, winner.rating), startOf(loserId, loser.rating)]);
+  const { winnerDelta, loserDelta } = computeFntrDelta(winnerBase, loserBase, tournament.ratingWeight);
+  const loserAfter = Math.max(0, round2(loser.rating + loserDelta));
+  await prisma.user.update({ where: { id: winnerId }, data: { rating: round2(winner.rating + winnerDelta) } });
+  await prisma.user.update({ where: { id: loserId }, data: { rating: loserAfter } });
+  // The loser's change as actually applied: it is what a reopen has to hand back,
+  // and the floor at 0 can make it smaller than the formula's.
+  return { winnerDelta, loserDelta: round2(loserAfter - loser.rating) };
 }
 
-// Takes back the rating change a match applied, when the point that ended it is
-// undone. The loser's rating was floored at 0 on the way down, so it is floored
-// again on the way back rather than trusted to be symmetric.
-async function revertEloUpdate(match: { player1Id: string | null; player2Id: string | null; setsWon1: number; setsWon2: number; eloDelta: number | null }) {
+// Takes back the rating change a match applied, when the match is reopened. The
+// winner's rating is floored at 0 on the way back rather than trusted to be
+// symmetric, in case it has been reset since.
+async function revertRatingUpdate(match: { player1Id: string | null; player2Id: string | null; setsWon1: number; setsWon2: number; eloDelta: number | null; eloDeltaLoser: number | null }) {
   if (match.eloDelta == null || match.setsWon1 === match.setsWon2) return;
   const p1Won = match.setsWon1 > match.setsWon2;
   const winnerId = p1Won ? match.player1Id : match.player2Id;
@@ -84,31 +104,31 @@ async function revertEloUpdate(match: { player1Id: string | null; player2Id: str
     prisma.user.findUnique({ where: { id: loserId }, select: { rating: true } }),
   ]);
   if (!winner || !loser) return;
-  await prisma.user.update({ where: { id: winnerId }, data: { rating: Math.max(0, winner.rating - match.eloDelta) } });
-  await prisma.user.update({ where: { id: loserId }, data: { rating: loser.rating + match.eloDelta } });
+  await prisma.user.update({ where: { id: winnerId }, data: { rating: Math.max(0, round2(winner.rating - match.eloDelta)) } });
+  await prisma.user.update({ where: { id: loserId }, data: { rating: round2(loser.rating - (match.eloDeltaLoser ?? 0)) } });
 }
 
 // Ends a match and settles the result: whoever has won more sets takes it (/end
 // refuses an equal tally). `rated` is false for a walkover — a no-show says nothing
-// about how well either player plays, so it moves nobody's Elo.
+// about how well either player plays, so it moves nobody's rating.
 //
 // The order is the point. The rating moves first and the match is marked COMPLETED
 // by a single write that also carries `eloDelta`, so a failure can never leave a
 // COMPLETED match whose rating change was lost: either the match is settled with
 // its points, or it is still open and the judge can press "end" again. (Marking it
-// COMPLETED first and moving Elo afterwards did exactly that: the request failed,
+// COMPLETED first and moving the rating afterwards did exactly that: the request failed,
 // the screen never left the match, and the table showed no points.)
-async function finishMatch(match: { id: string; tournamentId: string; player1Id: string | null; player2Id: string | null; setsWon1: number; setsWon2: number; startedAt: Date | null; tournament: { kind: string } | null }, rated = true) {
-  const tournamentKind = match.tournament?.kind ?? "TOURNAMENT";
-  // Snapshot both ratings before Elo moves them: the statistics judge a win by the
+async function finishMatch(match: { id: string; tournamentId: string; player1Id: string | null; player2Id: string | null; setsWon1: number; setsWon2: number; startedAt: Date | null; tournament: { kind: string; ratingWeight: number } | null }, rated = true) {
+  const tournament = { id: match.tournamentId, kind: match.tournament?.kind ?? "TOURNAMENT", ratingWeight: match.tournament?.ratingWeight ?? DEFAULT_RATING_WEIGHT };
+  // Snapshot both ratings before the match moves them: the statistics judge a win by the
   // opponent's rating at the time, not by wherever it has drifted since.
   const [r1, r2] = await Promise.all([match.player1Id, match.player2Id].map(id =>
     id ? prisma.user.findUnique({ where: { id }, select: { rating: true } }) : null));
 
-  let delta: number | null = null;
+  let change: RatingChange | null = null;
   if (rated && match.setsWon1 !== match.setsWon2) {
     const p1Won = match.setsWon1 > match.setsWon2;
-    delta = await applyEloUpdate(tournamentKind, p1Won ? match.player1Id : match.player2Id, p1Won ? match.player2Id : match.player1Id);
+    change = await applyRatingUpdate(tournament, p1Won ? match.player1Id : match.player2Id, p1Won ? match.player2Id : match.player1Id);
   }
   try {
     await prisma.match.update({
@@ -116,12 +136,12 @@ async function finishMatch(match: { id: string; tournamentId: string; player1Id:
       data: {
         status: "COMPLETED", startedAt: match.startedAt ?? new Date(), endedAt: new Date(),
         rating1Before: r1?.rating ?? null, rating2Before: r2?.rating ?? null,
-        ...(delta != null ? { eloDelta: delta } : {}),
+        ...(change ? { eloDelta: change.winnerDelta, eloDeltaLoser: change.loserDelta } : {}),
       },
     });
   } catch (err) {
     // The match stayed open, so the rating that just moved has to go back.
-    if (delta != null) await revertEloUpdate({ ...match, eloDelta: delta }).catch((e) => console.error("[ELO revert]", e?.message));
+    if (change) await revertRatingUpdate({ ...match, eloDelta: change.winnerDelta, eloDeltaLoser: change.loserDelta }).catch((e) => console.error("[RATING revert]", e?.message));
     throw err;
   }
 
@@ -263,8 +283,8 @@ matchRouter.post("/:id/undo", authMiddleware, async (req: AuthenticatedRequest, 
     if (match.status === "COMPLETED") {
       // Reopening a settled result is the manager's call, not the players'.
       if (!match.isManager) { res.status(403).json({ error: "Only the tournament manager can reopen a finished match" }); return; }
-      await revertEloUpdate(match);
-      await prisma.match.update({ where: { id: match.id }, data: { status: "IN_PROGRESS", endedAt: null, eloDelta: null } });
+      await revertRatingUpdate(match);
+      await prisma.match.update({ where: { id: match.id }, data: { status: "IN_PROGRESS", endedAt: null, eloDelta: null, eloDeltaLoser: null } });
       // The event was flipped to COMPLETED by this match; it is live again.
       await prisma.tournament.updateMany({ where: { id: match.tournamentId, status: "COMPLETED" }, data: { status: "ACTIVE" } });
     }
@@ -327,7 +347,7 @@ matchRouter.post("/:id/forfeit", authMiddleware, async (req: AuthenticatedReques
 
     const settled = await prisma.match.findUnique({
       where: { id: match.id },
-      include: { tournament: { select: { kind: true } } },
+      include: { tournament: { select: { kind: true, ratingWeight: true } } },
     });
     if (settled) await finishMatch({ ...settled, tournament: settled.tournament }, false);
     else await maybeCompleteTournament(match.tournamentId);

@@ -6,7 +6,7 @@ import Avatar from "../components/Avatar";
 import Layout from "../components/Layout";
 import Loader from "../components/Loader";
 import { useT, type Lang } from "../i18n";
-import { playerName, formatDelta, deltaTone } from "../lib/format";
+import { playerName, formatDelta, deltaTone, matchDelta, formatRating } from "../lib/format";
 import { field } from "../lib/ui";
 import PlayerStats from "../components/PlayerStats";
 
@@ -189,7 +189,7 @@ export default function ProfilePage() {
               <p className={label}>{t("profile.rating")}</p>
               <p className="text-[11px] text-[#4d6480] mt-0.5">{t("profile.ratingReadOnly")}</p>
             </div>
-            <span className="text-lg font-bold text-[#ccff00] shrink-0 ml-3">{user?.rating}</span>
+            <span className="text-lg font-bold text-[#ccff00] shrink-0 ml-3">{formatRating(user?.rating)}</span>
           </div>
 
           <div className="border-t border-[#1c3350] pt-3 space-y-2">
@@ -213,7 +213,7 @@ export default function ProfilePage() {
         <Tile value={stats?.events.tournaments ?? "—"} caption={t("stats.tournaments")} />
         <Tile value={stats?.events.games ?? "—"} caption={t("stats.games")} />
         <div className={`${card} p-3 text-center`}>
-          <p className="text-xl font-bold text-[#ccff00]">{user?.rating}</p>
+          <p className="text-xl font-bold text-[#ccff00]">{formatRating(user?.rating)}</p>
           <p className="text-[11px] text-[#6b84a0] uppercase tracking-wider mt-0.5">{t("profile.rating")}</p>
         </div>
       </div>
@@ -251,7 +251,7 @@ export default function ProfilePage() {
                     {t("player.inEvent")} {m.tournament?.name}
                     {m.tournament?.kind === "GAME" && ` · ${t("games.unrated")}`}
                   </p>
-                  {m.eloDelta != null && <span className={`text-[11px] font-mono shrink-0 ${deltaTone(mine > theirs ? m.eloDelta : -m.eloDelta)}`}>{formatDelta(mine > theirs ? m.eloDelta : -m.eloDelta)}</span>}
+                  {m.eloDelta != null && <span className={`text-[11px] font-mono shrink-0 ${deltaTone(matchDelta(m, mine, theirs))}`}>{formatDelta(matchDelta(m, mine, theirs))}</span>}
                 </div>
               </Link>
             );
