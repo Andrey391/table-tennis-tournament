@@ -1,5 +1,5 @@
 // Player statistics, head-to-head and leaderboards, all computed live from
-// completed matches (mirrored inline in api/index.ts). Nothing here is cached or
+// completed matches. Nothing here is cached or
 // denormalised onto User: a reopened match simply drops out of the next read.
 
 export type StatPlayer = { id: string; firstName: string; lastName: string; rating: number };
@@ -163,4 +163,25 @@ export function periodStart(period: string | undefined, now = new Date()): Date 
   if (period === "month") return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
   if (period === "year") return new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
   return null;
+}
+
+// Match and set tallies from one player's side, straight off the matches' set
+// counters (the rally-by-rally score is not recorded, so sets are all there is).
+export function summariseMatches(matches: { player1Id: string | null; setsWon1: number; setsWon2: number }[], userId: string) {
+  const matchTally = { played: 0, wins: 0, losses: 0 };
+  const setTally = { played: 0, wins: 0, losses: 0 };
+  for (const m of matches) {
+    const isP1 = m.player1Id === userId;
+    const mine = isP1 ? m.setsWon1 : m.setsWon2;
+    const theirs = isP1 ? m.setsWon2 : m.setsWon1;
+
+    matchTally.played++;
+    if (mine > theirs) matchTally.wins++;
+    else if (theirs > mine) matchTally.losses++;
+
+    setTally.played += mine + theirs;
+    setTally.wins += mine;
+    setTally.losses += theirs;
+  }
+  return { matches: matchTally, sets: setTally };
 }

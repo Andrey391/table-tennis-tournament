@@ -1,8 +1,9 @@
 import { Router, Response } from "express";
-import { publicError } from "../shared/errors.js";
-import { prisma } from "../config/db.js";
-import { AuthenticatedRequest, authMiddleware } from "../middleware/auth.js";
-import { SubscribeSchema } from "../shared/schemas.js";
+import { publicError } from "../shared/errors";
+import { prisma } from "../config/db";
+import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
+import { SubscribeSchema } from "../shared/schemas";
+import { clubSelect } from "../shared/queries";
 
 export const subscriptionRouter = Router();
 
@@ -10,7 +11,7 @@ export const subscriptionRouter = Router();
 subscriptionRouter.get("/mine", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const subscriptions = await prisma.subscription.findMany({
     where: { userId: req.user!.userId },
-    include: { club: { select: { id: true, name: true, city: true, address: true } } },
+    include: { club: { select: clubSelect } },
     orderBy: { createdAt: "desc" },
   });
   res.json(subscriptions);
@@ -23,7 +24,7 @@ subscriptionRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, r
     if (!club) { res.status(404).json({ error: "Club not found" }); return; }
     const subscription = await prisma.subscription.create({
       data: { userId: req.user!.userId, clubId },
-      include: { club: { select: { id: true, name: true, city: true, address: true } } },
+      include: { club: { select: clubSelect } },
     });
     res.status(201).json(subscription);
   } catch (err: any) {

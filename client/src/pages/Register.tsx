@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import Logo from "../components/Logo";
 import { useT } from "../i18n";
+import { field, fieldLabel } from "../lib/ui";
 
 export default function Register() {
   const { register } = useAuth();
@@ -33,35 +34,35 @@ export default function Register() {
           {error && <div className="bg-red-500/10 text-red-400 p-3 rounded text-sm border border-red-500/20">{error}</div>}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("auth.firstName")}</label>
+              <label className={fieldLabel}>{t("auth.firstName")}</label>
               <input type="text" value={form.firstName} onChange={set("firstName")}
-                className="w-full px-3 py-2.5 bg-[#0a1628] rounded border border-[#1c3350] text-sm focus:border-[#ccff00] focus:outline-none" required />
+                className={field} required />
             </div>
             <div>
-              <label className="block text-xs font-medium text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("auth.lastName")}</label>
+              <label className={fieldLabel}>{t("auth.lastName")}</label>
               <input type="text" value={form.lastName} onChange={set("lastName")}
-                className="w-full px-3 py-2.5 bg-[#0a1628] rounded border border-[#1c3350] text-sm focus:border-[#ccff00] focus:outline-none" required />
+                className={field} required />
             </div>
           </div>
           <div>
-            <label className="block text-xs font-medium text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("auth.email")}</label>
+            <label className={fieldLabel}>{t("auth.email")}</label>
             <input type="email" value={form.email} onChange={set("email")}
-              className="w-full px-3 py-2.5 bg-[#0a1628] rounded border border-[#1c3350] text-sm focus:border-[#ccff00] focus:outline-none" required />
+              className={field} required />
           </div>
           <div>
-            <label className="block text-xs font-medium text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("auth.password")}</label>
+            <label className={fieldLabel}>{t("auth.password")}</label>
             <input type="password" value={form.password} onChange={set("password")}
-              className="w-full px-3 py-2.5 bg-[#0a1628] rounded border border-[#1c3350] text-sm focus:border-[#ccff00] focus:outline-none" required minLength={6} />
+              className={field} required minLength={6} />
           </div>
           <div>
-            <label className="block text-xs font-medium text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("auth.club")}</label>
+            <label className={fieldLabel}>{t("auth.club")}</label>
             <input type="text" value={form.club} onChange={set("club")} placeholder={t("auth.optional")}
-              className="w-full px-3 py-2.5 bg-[#0a1628] rounded border border-[#1c3350] text-sm focus:border-[#ccff00] focus:outline-none" />
+              className={field} />
           </div>
           <div>
-            <label className="block text-xs font-medium text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("auth.city")}</label>
+            <label className={fieldLabel}>{t("auth.city")}</label>
             <input type="text" value={form.city} onChange={set("city")} placeholder={t("auth.optional")}
-              className="w-full px-3 py-2.5 bg-[#0a1628] rounded border border-[#1c3350] text-sm focus:border-[#ccff00] focus:outline-none" />
+              className={field} />
           </div>
           <button type="submit" disabled={loading}
             className="w-full bg-[#ccff00] text-[#0a1628] py-3 rounded-lg text-sm font-bold hover:bg-[#d8ff33] disabled:opacity-50 transition-colors">

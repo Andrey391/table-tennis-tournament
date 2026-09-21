@@ -1,13 +1,13 @@
 import { Router, Response } from "express";
-import { prisma } from "../config/db.js";
+import { prisma } from "../config/db";
+import { publicError } from "../shared/errors";
+import { matchInclude, clubSelect, standingsInclude } from "../shared/queries";
+import { computeStandings } from "../shared/standings";
 
 // Unauthenticated read-only views: the courtside live board and the shareable
 // tournament page. Mounted at /api/live and /api/public.
 export const liveRouter = Router();
 export const publicRouter = Router();
-
-const playerSelect = { id: true, firstName: true, lastName: true, club: true, rating: true };
-const matchInclude = { player1: { select: playerSelect }, player2: { select: playerSelect }, sets: { orderBy: { index: "asc" as const } } };
 
 liveRouter.get("/:tournamentId", async (req, res: Response) => {
   const matches = await prisma.match.findMany({
@@ -20,7 +20,7 @@ liveRouter.get("/:tournamentId", async (req, res: Response) => {
 publicRouter.get("/tournament/:id", async (req, res: Response) => {
   const tournament = await prisma.tournament.findUnique({
     where: { id: req.params.id },
-    select: { id: true, kind: true, name: true, status: true, tablesCount: true, startTime: true, endTime: true, club: { select: { id: true, name: true, city: true, address: true } } },
+    select: { id: true, kind: true, name: true, status: true, tablesCount: true, startTime: true, endTime: true, club: { select: clubSelect } },
   });
   if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
   const matches = await prisma.match.findMany({
@@ -33,34 +33,16 @@ publicRouter.get("/tournament/:id", async (req, res: Response) => {
   res.json({ tournament, live, recent, totalMatches: matches.length });
 });
 
+// The public board ranks on wins, then set difference. computeStandings also ranks by
+// Buchholz between the two (the event page's table does), so its result is re-sorted
+// to keep this board's order; the sort is stable, so Buchholz only settles exact ties.
 publicRouter.get("/tournament/:id/standings", async (req, res: Response) => {
-  const tournament = await prisma.tournament.findUnique({
-    where: { id: req.params.id },
-    include: {
-      // A player who left mid-event keeps the matches they already played.
-      players: { where: { status: { in: ["REGISTERED", "WITHDRAWN"] } }, include: { user: { select: playerSelect } } },
-      matches: { where: { status: "COMPLETED" }, select: { player1Id: true, player2Id: true, setsWon1: true, setsWon2: true, eloDelta: true } },
-    },
-  });
-  if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
-
-  const stats = new Map<string, { userId: string; firstName: string; lastName: string; club: string | null; rating: number; wins: number; losses: number; setsWon: number; setsLost: number }>();
-  for (const p of tournament.players) {
-    if (!p.user) continue;
-    stats.set(p.userId, { userId: p.userId, firstName: p.user.firstName, lastName: p.user.lastName, club: p.user.club, rating: p.user.rating, wins: 0, losses: 0, setsWon: 0, setsLost: 0 });
+  try {
+    const tournament = await prisma.tournament.findUnique({ where: { id: req.params.id }, include: standingsInclude });
+    if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
+    res.json(computeStandings(tournament.players, tournament.matches).sort((a, b) =>
+      b.wins - a.wins || (b.setsWon - b.setsLost) - (a.setsWon - a.setsLost)));
+  } catch (err: any) {
+    res.status(400).json({ error: publicError(err) });
   }
-  // Matches are won on sets, and sets are all there is to aggregate — the
-  // rally-by-rally score is not recorded any more.
-  for (const m of tournament.matches) {
-    if (!m.player1Id || !m.player2Id) continue;
-    const s1 = stats.get(m.player1Id);
-    const s2 = stats.get(m.player2Id);
-    if (!s1 || !s2) continue;
-    s1.setsWon += m.setsWon1; s1.setsLost += m.setsWon2;
-    s2.setsWon += m.setsWon2; s2.setsLost += m.setsWon1;
-    if (m.setsWon1 > m.setsWon2) { s1.wins++; s2.losses++; }
-    else if (m.setsWon2 > m.setsWon1) { s2.wins++; s1.losses++; }
-  }
-  res.json(Array.from(stats.values()).sort((a, b) =>
-    b.wins - a.wins || (b.setsWon - b.setsLost) - (a.setsWon - a.setsLost)));
 });

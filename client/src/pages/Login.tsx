@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import Logo from "../components/Logo";
 import { useT } from "../i18n";
+import { field, fieldLabel } from "../lib/ui";
 
 export default function Login() {
   const { login } = useAuth();
@@ -31,14 +32,14 @@ export default function Login() {
         <form onSubmit={handleSubmit} className="space-y-4 bg-[#101f36] p-6 rounded-lg border border-[#1c3350]">
           {error && <div className="bg-red-500/10 text-red-400 p-3 rounded text-sm border border-red-500/20">{error}</div>}
           <div>
-            <label className="block text-xs font-medium text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("auth.email")}</label>
+            <label className={fieldLabel}>{t("auth.email")}</label>
             <input type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)}
-              className="w-full px-3 py-2.5 bg-[#0a1628] rounded border border-[#1c3350] text-sm focus:border-[#ccff00] focus:outline-none transition-colors" required />
+              className={`${field} transition-colors`} required />
           </div>
           <div>
-            <label className="block text-xs font-medium text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("auth.password")}</label>
+            <label className={fieldLabel}>{t("auth.password")}</label>
             <input type="password" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)}
-              className="w-full px-3 py-2.5 bg-[#0a1628] rounded border border-[#1c3350] text-sm focus:border-[#ccff00] focus:outline-none transition-colors" required />
+              className={`${field} transition-colors`} required />
           </div>
           <button type="submit" disabled={loading}
             className="w-full bg-[#ccff00] text-[#0a1628] py-3 rounded-lg text-sm font-bold hover:bg-[#d8ff33] disabled:opacity-50 transition-colors">

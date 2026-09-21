@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { apiService } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import Layout from "../components/Layout";
+import ScopeToggle from "../components/ScopeToggle";
 import { useT } from "../i18n";
 import { formatEventDay, formatTimeRange, playerName, matchScoreLine } from "../lib/format";
 
@@ -111,16 +112,7 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {!isGuest && (
-        <div className="flex gap-2 mb-3">
-          {(["all", "mine"] as const).map(sc => (
-            <button key={sc} onClick={() => setScope(sc)}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium border ${
-                scope === sc ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00]" : "bg-[#101f36] text-[#93a8c2] border-[#1c3350]"
-              }`}>{t(sc === "all" ? "home.scopeAll" : "home.scopeMine")}</button>
-          ))}
-        </div>
-      )}
+      <ScopeToggle scope={scope} onChange={setScope} labels={[t("home.scopeAll"), t("home.scopeMine")]} hidden={isGuest} />
 
       <div className="flex justify-between items-baseline mb-2.5">
         <h2 className="text-xs font-medium text-[#6b84a0] uppercase tracking-wider">{t("home.tournaments")}</h2>

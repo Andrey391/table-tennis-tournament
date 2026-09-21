@@ -1,18 +1,13 @@
 import { Router, Response } from "express";
-import { publicError } from "../shared/errors.js";
-import { prisma } from "../config/db.js";
-import { AuthenticatedRequest, authMiddleware } from "../middleware/auth.js";
-import { CreateBookingSchema } from "../shared/schemas.js";
-import { startOfUtcDay, bookingStartsAt, bookingEndsAt } from "../shared/booking.js";
-import { findBookingConflict } from "./clubs.js";
+import { publicError } from "../shared/errors";
+import { prisma } from "../config/db";
+import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
+import { CreateBookingSchema } from "../shared/schemas";
+import { startOfUtcDay, bookingStartsAt, bookingEndsAt } from "../shared/booking";
+import { findBookingConflict } from "./clubs";
+import { bookingInclude } from "../shared/queries";
 
 export const bookingRouter = Router();
-
-const bookingInclude = {
-  club: { select: { id: true, name: true, city: true, address: true, phone: true } },
-  table: { select: { id: true, number: true, indoor: true } },
-  tournament: { select: { id: true, kind: true, name: true, status: true } },
-};
 
 // Table reservations — no payment processing, this just records who booked what/when.
 bookingRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {

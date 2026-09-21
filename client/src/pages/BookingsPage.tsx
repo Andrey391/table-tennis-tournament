@@ -6,6 +6,7 @@ import { useAuth } from "../context/AuthContext";
 import SetsToWinPicker from "../components/SetsToWinPicker";
 import { useT } from "../i18n";
 import { formatShortDate, formatSlot } from "../lib/format";
+import { field } from "../lib/ui";
 
 const DURATIONS = [1, 1.5, 2, 3];
 
@@ -132,7 +133,6 @@ export default function BookingsPage() {
     try { await apiService.subscriptions.unsubscribe(clubId); load(); } catch (err: any) { setError(err.response?.data?.error || t("common.failed")); }
   };
 
-  const field = "w-full px-3 py-2.5 bg-[#0a1628] rounded border border-[#1c3350] text-sm focus:border-[#ccff00] focus:outline-none";
   const sectionLabel = "text-xs font-medium text-[#6b84a0] uppercase tracking-wider mb-2";
 
   return (

@@ -1,29 +1,23 @@
 import { Router, Response } from "express";
-import { publicError } from "../shared/errors.js";
-import { prisma } from "../config/db.js";
-import { AuthenticatedRequest, authMiddleware } from "../middleware/auth.js";
-import { MatchSettingsSchema, SetResultSchema, ForfeitSchema } from "../shared/schemas.js";
-import { computeEloDelta, checkSetScore, checkCanEnd } from "../shared/scoring.js";
-import AuditLog from "../models/AuditLog.js";
+import { publicError } from "../shared/errors";
+import { prisma } from "../config/db";
+import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
+import { MatchSettingsSchema, SetResultSchema, ForfeitSchema } from "../shared/schemas";
+import { computeEloDelta, checkSetScore, checkCanEnd } from "../shared/scoring";
+import { playerSelect, matchInclude } from "../shared/queries";
+import AuditLog from "../models/AuditLog";
 
 export const matchRouter = Router();
 
-const playerSelect = { id: true, firstName: true, lastName: true, club: true, rating: true };
-const matchInclude = {
-  player1: { select: playerSelect },
-  player2: { select: playerSelect },
-  judge: { select: { id: true, firstName: true, lastName: true } },
-  tournament: { select: { organizerId: true, kind: true } },
-  sets: { orderBy: { index: "asc" as const } },
-};
+const findMatchToScore = (matchId: string) => prisma.match.findUnique({
+  where: { id: matchId },
+  include: { tournament: { select: { organizerId: true, kind: true } }, sets: { orderBy: { index: "asc" } } },
+});
 
 // Loads the match and confirms the caller manages its tournament.
 // Sends the appropriate error response and returns null when the caller can't proceed.
 async function loadOwnedMatch(res: Response, matchId: string, userId: string) {
-  const match = await prisma.match.findUnique({
-    where: { id: matchId },
-    include: { tournament: { select: { organizerId: true, kind: true } }, sets: { orderBy: { index: "asc" } } },
-  });
+  const match = await findMatchToScore(matchId);
   if (!match) { res.status(404).json({ error: "Not found" }); return null; }
   if (!match.tournament || match.tournament.organizerId !== userId) { res.status(403).json({ error: "Only the tournament manager can record this match" }); return null; }
   return match;
@@ -35,10 +29,7 @@ async function loadOwnedMatch(res: Response, matchId: string, userId: string) {
 // score sheet at the table works); the manager keeps the last word — walkovers and
 // reopening a settled match stay with them (see loadOwnedMatch).
 async function loadScorableMatch(res: Response, matchId: string, userId: string) {
-  const match = await prisma.match.findUnique({
-    where: { id: matchId },
-    include: { tournament: { select: { organizerId: true, kind: true } }, sets: { orderBy: { index: "asc" } } },
-  });
+  const match = await findMatchToScore(matchId);
   if (!match) { res.status(404).json({ error: "Not found" }); return null; }
   const isManager = match.tournament?.organizerId === userId;
   const isPlayer = match.player1Id === userId || match.player2Id === userId;

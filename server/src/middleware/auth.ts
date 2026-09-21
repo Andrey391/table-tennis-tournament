@@ -1,18 +1,22 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
-import { prisma } from "../config/db.js";
 
 export interface AuthenticatedRequest extends Request {
   user?: { userId: string; role: string };
 }
 
 // No fallback: a default secret baked into the code lets anyone sign their own
-// token for any account. Refuse to start instead.
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) throw new Error("JWT_SECRET is not set");
+// token for any account. It is read on use rather than at import, so a deployment
+// without it still serves the public pages and only token operations fail;
+// server/src/index.ts calls it at startup to refuse to boot instead.
+export function jwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error("JWT_SECRET is not set");
+  return secret;
+}
 
 export function generateToken(userId: string, role: string): string {
-  return jwt.sign({ userId, role }, JWT_SECRET!, { expiresIn: "24h" });
+  return jwt.sign({ userId, role }, jwtSecret(), { expiresIn: "24h" });
 }
 
 export function authMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
@@ -24,7 +28,7 @@ export function authMiddleware(req: AuthenticatedRequest, res: Response, next: N
 
   try {
     const token = header.split(" ")[1];
-    const decoded = jwt.verify(token, JWT_SECRET!) as { userId: string; role: string };
+    const decoded = jwt.verify(token, jwtSecret()) as { userId: string; role: string };
     req.user = decoded;
     next();
   } catch {

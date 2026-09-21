@@ -1,16 +1,15 @@
 import { Router, Response } from "express";
-import { publicError } from "../shared/errors.js";
-import { prisma } from "../config/db.js";
-import { AuthenticatedRequest, authMiddleware } from "../middleware/auth.js";
-import { CreateTournamentSchema, UpdateTournamentSchema, AddPlayersSchema, ChatMessageSchema, SeedingSchema, QuickGameSchema } from "../shared/schemas.js";
-import { computeStandings } from "../shared/standings.js";
-import { checkCanEnd } from "../shared/scoring.js";
-import { generateRoundPairings } from "../shared/scheduler.js";
-import AuditLog from "../models/AuditLog.js";
+import { publicError } from "../shared/errors";
+import { prisma } from "../config/db";
+import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
+import { CreateTournamentSchema, UpdateTournamentSchema, AddPlayersSchema, ChatMessageSchema, SeedingSchema, QuickGameSchema } from "../shared/schemas";
+import { computeStandings } from "../shared/standings";
+import { checkCanEnd } from "../shared/scoring";
+import { generateRoundPairings } from "../shared/scheduler";
+import { playerSelect, clubSelect, matchInclude, feedInclude, standingsInclude, inCity, queryString } from "../shared/queries";
+import AuditLog from "../models/AuditLog";
 
 export const tournamentRouter = Router();
-
-const playerSelect = { id: true, firstName: true, lastName: true, club: true, rating: true };
 
 // Loads the tournament and confirms the caller is the one managing it (its creator).
 // Sends the appropriate error response and returns null when the caller can't proceed.
@@ -85,14 +84,6 @@ tournamentRouter.post("/quick-game", authMiddleware, async (req: AuthenticatedRe
   }
 });
 
-const clubSelect = { id: true, name: true, city: true, address: true, phone: true };
-// "9/9 players" counts approved participants only — pending requests don't fill the tournament.
-const feedInclude = {
-  organizer: { select: { id: true, firstName: true, lastName: true } },
-  club: { select: clubSelect },
-  _count: { select: { matches: true, players: { where: { status: "REGISTERED" as const } } } },
-};
-
 // Event feed. Every filter is optional; with none of them this is the plain
 // "all tournaments" list the dashboard used to show.
 tournamentRouter.get("/", async (req, res: Response) => {
@@ -104,10 +95,7 @@ tournamentRouter.get("/", async (req, res: Response) => {
       isPublic: true,
       ...(kind ? { kind } : {}),
       ...(clubId ? { clubId } : {}),
-      // An event at a club in that city, or one with no venue run by someone who
-      // lives there — otherwise `User.city`, which every account is asked for at
-      // signup, would decide nothing at all.
-      ...(city ? { OR: [{ club: { city } }, { clubId: null, organizer: { city } }] } : {}),
+      ...(city ? inCity(city) : {}),
       ...(status ? { status: { in: status.split(",") } } : {}),
       ...(from || to ? { startTime: { ...(from ? { gte: new Date(from) } : {}), ...(to ? { lte: new Date(to) } : {}) } } : {}),
       ...(q ? { name: { contains: q, mode: "insensitive" as const } } : {}),
@@ -122,7 +110,7 @@ tournamentRouter.get("/", async (req, res: Response) => {
 // membership row attached so the client can split pending requests from entries.
 tournamentRouter.get("/mine", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.user!.userId;
-  const kind = typeof req.query.kind === "string" && req.query.kind ? req.query.kind : undefined;
+  const kind = queryString(req.query.kind);
   const tournaments = await prisma.tournament.findMany({
     where: { ...(kind ? { kind } : {}), OR: [{ organizerId: userId }, { players: { some: { userId } } }] },
     include: { ...feedInclude, players: { where: { userId }, select: { status: true } } },
@@ -139,7 +127,7 @@ tournamentRouter.get("/:id", async (req, res: Response) => {
       club: { select: clubSelect },
       players: { include: { user: { select: playerSelect } }, orderBy: { seed: "asc" } },
       byes: { include: { user: { select: playerSelect } } },
-      matches: { include: { player1: { select: playerSelect }, player2: { select: playerSelect }, judge: { select: { firstName: true, lastName: true } } }, orderBy: [{ round: "asc" }, { matchIndex: "asc" }] },
+      matches: { include: matchInclude, orderBy: [{ round: "asc" }, { matchIndex: "asc" }] },
     },
   });
   if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
@@ -463,12 +451,7 @@ tournamentRouter.get("/:id/standings", async (req, res: Response) => {
   try {
     const tournament = await prisma.tournament.findUnique({
       where: { id: req.params.id },
-      include: {
-        // Someone who left mid-event keeps the matches they already played, so
-        // WITHDRAWN rows still belong in the table.
-        players: { where: { status: { in: ["REGISTERED", "WITHDRAWN"] } }, include: { user: { select: playerSelect } } },
-        matches: { where: { status: "COMPLETED" }, select: { player1Id: true, player2Id: true, setsWon1: true, setsWon2: true, eloDelta: true } },
-      },
+      include: standingsInclude,
     });
     if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
     res.json(computeStandings(tournament.players, tournament.matches));

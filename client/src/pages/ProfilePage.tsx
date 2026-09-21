@@ -6,6 +6,7 @@ import Avatar from "../components/Avatar";
 import Layout from "../components/Layout";
 import { useT, type Lang } from "../i18n";
 import { playerName, formatDelta, deltaTone } from "../lib/format";
+import { field } from "../lib/ui";
 import PlayerStats from "../components/PlayerStats";
 
 type Tally = { played: number; wins: number; losses: number };
@@ -90,7 +91,6 @@ export default function ProfilePage() {
   };
 
   const card = "bg-[#101f36] rounded-lg border border-[#1c3350]";
-  const field = "w-full px-3 py-2.5 bg-[#0a1628] rounded border border-[#1c3350] text-sm focus:border-[#ccff00] focus:outline-none";
   const label = "text-xs font-medium text-[#6b84a0] uppercase tracking-wider";
   const rate = (t2: Tally | undefined) => (t2 && t2.played > 0 ? Math.round((t2.wins / t2.played) * 100) : 0);
 

@@ -1,8 +1,9 @@
 import { Router, Response } from "express";
-import { publicError } from "../shared/errors.js";
-import { prisma } from "../config/db.js";
-import { AuthenticatedRequest, authMiddleware } from "../middleware/auth.js";
-import { UpdateProfileSchema } from "../shared/schemas.js";
+import { publicError } from "../shared/errors";
+import { prisma } from "../config/db";
+import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
+import { UpdateProfileSchema } from "../shared/schemas";
+import { summariseMatches } from "../shared/stats";
 import bcrypt from "bcryptjs";
 
 export const playerRouter = Router();
@@ -42,13 +43,7 @@ playerRouter.get("/:id", async (req: AuthenticatedRequest, res: Response) => {
   });
 
   // Rated matches only move the rating, but the record covers everything played.
-  let wins = 0, losses = 0;
-  for (const m of matches) {
-    const isP1 = m.player1Id === player.id;
-    const mine = isP1 ? m.setsWon1 : m.setsWon2;
-    const theirs = isP1 ? m.setsWon2 : m.setsWon1;
-    if (mine > theirs) wins++; else if (theirs > mine) losses++;
-  }
+  const { wins, losses } = summariseMatches(matches, player.id).matches;
   res.json({ player, matches, recent: { wins, losses } });
 });
 

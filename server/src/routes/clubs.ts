@@ -1,9 +1,10 @@
 import { Router, Response } from "express";
-import { publicError } from "../shared/errors.js";
-import { prisma } from "../config/db.js";
-import { AuthenticatedRequest, authMiddleware } from "../middleware/auth.js";
-import { CreateClubSchema, UpdateClubSchema, CreateClubTableSchema } from "../shared/schemas.js";
-import { bookingsOverlap, startOfUtcDay } from "../shared/booking.js";
+import { publicError } from "../shared/errors";
+import { prisma } from "../config/db";
+import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
+import { CreateClubSchema, UpdateClubSchema, CreateClubTableSchema } from "../shared/schemas";
+import { bookingsOverlap, startOfUtcDay } from "../shared/booking";
+import { queryString } from "../shared/queries";
 
 export const clubRouter = Router();
 
@@ -16,8 +17,8 @@ async function loadOwnedClub(res: Response, clubId: string, userId: string) {
 }
 
 clubRouter.get("/", async (req, res: Response) => {
-  const city = typeof req.query.city === "string" && req.query.city ? req.query.city : undefined;
-  const q = typeof req.query.q === "string" && req.query.q ? req.query.q : undefined;
+  const city = queryString(req.query.city);
+  const q = queryString(req.query.q);
   const clubs = await prisma.club.findMany({
     where: {
       ...(city ? { city } : {}),
