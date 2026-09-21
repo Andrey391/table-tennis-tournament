@@ -72,3 +72,6 @@ export function formatDelta(n?: number | null): string {
 export function deltaTone(n?: number | null): string {
   return !n ? "text-[#4d6480]" : n > 0 ? "text-green-400" : "text-red-400";
 }
+
+// Two spellings of one city ("Москва", "москва ", "Москва") share this key.
+export const cityKey = (s: string) => s.trim().replace(/\s+/g, " ").toLocaleLowerCase();

@@ -6,6 +6,7 @@ import Logo from "../components/Logo";
 import { useT } from "../i18n";
 import { playerName } from "../lib/format";
 import { tourSkip, rememberDemoTournament, rememberDemoMatch } from "../lib/tour";
+import { btnPrimary, btnSecondary, card, errorBox } from "../lib/ui";
 
 // The page behind a demo invitation link. The manager of a demo evening sends it
 // to a second person, who takes the empty seat as a guest and lands in the same
@@ -56,14 +57,14 @@ export default function DemoJoin() {
     <div className="min-h-screen bg-[#0a1628] flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8"><Logo size="lg" as="plain" /></div>
-        <div className="bg-[#101f36] p-6 rounded-lg border border-[#1c3350] space-y-4 text-center">
+        <div className={`${card} p-6 space-y-4 text-center`}>
           {!tournament && !missing ? (
             <p className="text-sm text-[#6b84a0]">{t("common.loading")}</p>
           ) : invalid ? (
             <>
               <p className="text-base font-bold">{t("demoJoin.invalidTitle")}</p>
               <p className="text-sm text-[#93a8c2]">{missing ? t("demoJoin.invalid") : t("demoJoin.taken")}</p>
-              <Link to="/" className="block w-full bg-[#1c3350] text-[#93a8c2] py-2.5 rounded-lg text-sm font-medium">{t("demoJoin.toHome")}</Link>
+              <Link to="/" className={`${btnSecondary} block w-full`}>{t("demoJoin.toHome")}</Link>
             </>
           ) : (
             <>
@@ -71,9 +72,9 @@ export default function DemoJoin() {
               <p className="text-xl font-bold">{t("demoJoin.title", { name: playerName(tournament.organizer) })}</p>
               <p className="text-sm text-[#93a8c2] leading-relaxed">{t("demoJoin.text")}</p>
               {user && !user.isDemo && <p className="text-xs text-yellow-400">{t("demoJoin.replacesSession", { name: playerName(user) })}</p>}
-              {error && <div className="bg-red-500/10 text-red-400 p-3 rounded text-sm border border-red-500/20">{error}</div>}
+              {error && <div className={errorBox}>{error}</div>}
               <button onClick={join} disabled={loading}
-                className="w-full bg-[#ccff00] text-[#0a1628] py-3 rounded-lg text-sm font-bold disabled:opacity-50">
+                className={`${btnPrimary} w-full`}>
                 {loading ? t("demoJoin.joining") : t("demoJoin.join")}
               </button>
             </>

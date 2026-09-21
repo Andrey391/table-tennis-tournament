@@ -4,9 +4,8 @@ import { apiService } from "../services/api";
 import Loader from "./Loader";
 import { useT } from "../i18n";
 import { playerName } from "../lib/format";
+import { card, sectionLabel } from "../lib/ui";
 
-const card = "bg-[#101f36] rounded-2xl border border-[#1c3350]";
-const label = "text-xs font-medium text-[#6b84a0] uppercase tracking-wider";
 const pct = (won: number, played: number) => (played ? Math.round((won / played) * 100) : 0);
 
 // A player's statistics block: rating chart, form, rates, streaks, best win,
@@ -29,7 +28,7 @@ export default function PlayerStats({ playerId }: { playerId: string }) {
     <div className="space-y-3 mb-5">
       <div className={`${card} p-4`}>
         <div className="flex items-baseline justify-between mb-2">
-          <h2 className={label}>{t("stats.ratingChart")}</h2>
+          <h2 className={sectionLabel}>{t("stats.ratingChart")}</h2>
           {values.length > 1 && <span className="text-[11px] text-[#4d6480] font-mono">{min} &ndash; {max}</span>}
         </div>
         {values.length > 1 ? (
@@ -42,7 +41,7 @@ export default function PlayerStats({ playerId }: { playerId: string }) {
       </div>
 
       <div className={`${card} p-4`}>
-        <h2 className={`${label} mb-2`}>{t("stats.form")}</h2>
+        <h2 className={`${sectionLabel} mb-2`}>{t("stats.form")}</h2>
         {s.form.length === 0 ? <p className="text-xs text-[#6b84a0]">{t("profile.noneYet")}</p> : (
           <div className="flex gap-1.5">
             {s.form.map((r: string, i: number) => (
@@ -97,7 +96,7 @@ export default function PlayerStats({ playerId }: { playerId: string }) {
       </div>
 
       <div className={`${card} p-4`}>
-        <h2 className={`${label} mb-3`}>{t("stats.achievements")}</h2>
+        <h2 className={`${sectionLabel} mb-3`}>{t("stats.achievements")}</h2>
         <div className="grid grid-cols-3 gap-2">
           {s.achievements.map((a: any) => (
             <div key={a.key} className={`rounded-lg border p-2 text-center ${a.earned ? "border-[#ccff00]/40 bg-[#ccff00]/5" : "border-[#1c3350] opacity-40"}`}>
@@ -125,7 +124,7 @@ export function HeadToHead({ playerId, otherId, compact = false }: { playerId: s
 
   return (
     <div className={`${card} p-4 mb-5`}>
-      <h2 className={`${label} mb-2`}>{t("h2h.withYou")}</h2>
+      <h2 className={`${sectionLabel} mb-2`}>{t("h2h.withYou")}</h2>
       {h.played === 0 ? <p className="text-xs text-[#6b84a0]">{t("h2h.none")}</p> : (
         <>
           <p className="text-3xl font-bold font-mono">

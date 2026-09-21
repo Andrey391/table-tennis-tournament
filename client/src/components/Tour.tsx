@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useT } from "../i18n";
 import { TOUR_STEPS, tourStep, tourNext, tourSkip, tourFinish, tourSubscribe, stepPath, pressStep } from "../lib/tour";
+import { btnPrimary } from "../lib/ui";
 
 // Walks a demo visitor through one club night on the real screens: the roster,
 // the pairing, their own match, recording a set, settling it, the table. A
@@ -85,12 +86,12 @@ export default function Tour() {
               action advance themselves anyway (`doneBy`). */}
           {!waiting ? (
             <button onClick={onNext} disabled={pressing}
-              className="w-full mt-3 bg-[#ccff00] text-[#0a1628] py-2.5 rounded-lg text-sm font-bold disabled:opacity-60">
+              className={`${btnPrimary} w-full mt-3`}>
               {last ? t("tour.finish") : t("tour.next")}
             </button>
           ) : canGo && (
             <button onClick={() => navigate(path!)}
-              className="w-full mt-3 bg-[#ccff00] text-[#0a1628] py-2.5 rounded-lg text-sm font-bold">
+              className={`${btnPrimary} w-full mt-3`}>
               {t("tour.go")}
             </button>
           )}

@@ -1,7 +1,11 @@
 import { z } from "zod";
+import { normalizeCity } from "./city";
 
 // Booking start times are "HH:MM" — the overlap check parses them as minutes.
 const TimeOfDay = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Expected HH:MM");
+
+// Cities are typed by hand; store them tidy so they compare and list as one.
+const City = z.string().max(120).transform(normalizeCity);
 
 // A "game" is a tournament that isn't rated — same roster, rounds and pairing.
 export const CreateTournamentSchema = z.object({
@@ -41,7 +45,7 @@ export const UpdateTournamentSchema = z.object({
 
 export const CreateClubSchema = z.object({
   name: z.string().min(1).max(200),
-  city: z.string().min(1).max(120),
+  city: z.string().trim().min(1).max(120).transform(normalizeCity),
   address: z.string().max(300).optional(),
   phone: z.string().max(40).optional(),
 });
@@ -81,7 +85,7 @@ export const UpdateProfileSchema = z.object({
   lastName: z.string().min(1).max(100).optional(),
   email: z.string().email().optional(),
   club: z.string().max(100).nullable().optional(),
-  city: z.string().max(120).nullable().optional(),
+  city: City.nullable().optional(),
   phone: z.string().max(40).nullable().optional(),
   dateOfBirth: z.string().datetime().nullable().optional(),
   // A new password is only accepted together with the current one, so a borrowed
@@ -146,7 +150,7 @@ export const SelfRegisterSchema = z.object({
   firstName: z.string().min(1).max(100),
   lastName: z.string().min(1).max(100),
   club: z.string().max(100).optional(),
-  city: z.string().max(120).optional(),
+  city: City.optional(),
 });
 
 // Signing up from inside a demo. Same fields as a fresh signup — the point is
@@ -162,7 +166,7 @@ export const RegisterSchema = z.object({
   firstName: z.string().min(1).max(100),
   lastName: z.string().min(1).max(100),
   club: z.string().max(100).optional(),
-  city: z.string().max(120).optional(),
+  city: City.optional(),
   rating: z.number().int().min(0).max(5000).optional(),
   role: z.enum(["ADMIN", "ORGANIZER", "JUDGE", "PLAYER", "VIEWER"]).optional(),
 });

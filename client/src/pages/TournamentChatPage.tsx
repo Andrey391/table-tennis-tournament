@@ -4,6 +4,7 @@ import { apiService } from "../services/api";
 import Loader from "../components/Loader";
 import { useT } from "../i18n";
 import { useAuth } from "../context/AuthContext";
+import { btnPrimary, searchField } from "../lib/ui";
 
 export default function TournamentChatPage() {
   const { id } = useParams<{ id: string }>();
@@ -62,8 +63,8 @@ export default function TournamentChatPage() {
 
       <form onSubmit={send} className="p-3 border-t border-[#1c3350] flex gap-2 pb-[env(safe-area-inset-bottom)]">
         <input type="text" value={text} onChange={e => setText(e.target.value)} placeholder={t("chat.placeholder")}
-          className="flex-1 px-3 py-2.5 bg-[#101f36] rounded-lg border border-[#1c3350] text-sm focus:border-[#ccff00] focus:outline-none" />
-        <button type="submit" className="px-4 py-2.5 bg-[#ccff00] text-[#0a1628] rounded-lg text-sm font-bold">{t("chat.send")}</button>
+          className={`${searchField} flex-1`} />
+        <button type="submit" className={btnPrimary}>{t("chat.send")}</button>
       </form>
     </div>
   );
