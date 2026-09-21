@@ -20,6 +20,10 @@ export default function Tour() {
 
   const current = step >= 0 ? TOUR_STEPS[step] : undefined;
   const anchor = current?.anchor;
+  // Null until the step's element is on screen. Every step is about a control,
+  // so until that control exists there is nothing to say about it — the card
+  // says where to go instead of describing something the visitor cannot see.
+  const waiting = !rect;
 
   // The anchor appears, moves and disappears as rounds are paired and polls come
   // in, so its box is re-measured on a timer rather than once on mount.
@@ -57,11 +61,16 @@ export default function Tour() {
             <button onClick={tourSkip} className="text-xs text-[#6b84a0]">{t("tour.skip")}</button>
           </div>
           <div className="text-sm font-bold text-white mb-1">{t(`tour.${current.id}.title`)}</div>
-          <p className="text-xs text-[#93a8c2] leading-relaxed">{t(`tour.${current.id}.text`)}</p>
-          <button onClick={last ? tourFinish : tourNext}
-            className="w-full mt-3 bg-[#ccff00] text-[#0a1628] py-2.5 rounded-lg text-sm font-bold">
-            {last ? t("tour.finish") : t("tour.next")}
-          </button>
+          <p className="text-xs text-[#93a8c2] leading-relaxed">{waiting ? t(`tour.${current.id}.wait`) : t(`tour.${current.id}.text`)}</p>
+          {/* No "next" while the step's control is off screen: it would walk the
+              visitor past the one thing the step is about. Steps that end in an
+              action advance themselves anyway (`doneBy`). */}
+          {!waiting && (
+            <button onClick={last ? tourFinish : tourNext}
+              className="w-full mt-3 bg-[#ccff00] text-[#0a1628] py-2.5 rounded-lg text-sm font-bold">
+              {last ? t("tour.finish") : t("tour.next")}
+            </button>
+          )}
         </div>
       </div>
     </>
