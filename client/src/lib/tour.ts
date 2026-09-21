@@ -60,3 +60,16 @@ export function tourSubscribe(l: Listener) {
   listeners.add(l);
   return () => { listeners.delete(l); };
 }
+
+// A demo visitor reaching for something a throwaway account cannot do — adding
+// real players to the roster, above all — is the moment to offer them a real
+// one. The offer lives in the demo strip at the top of the screen (it holds the
+// form), so a screen asks for it through this rather than growing a second copy.
+const claimListeners = new Set<Listener>();
+
+export function requestClaim() { claimListeners.forEach((l) => l()); }
+
+export function onClaimRequested(l: Listener) {
+  claimListeners.add(l);
+  return () => { claimListeners.delete(l); };
+}

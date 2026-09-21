@@ -15,18 +15,18 @@ import { prisma } from "../config/db";
 // evening, short enough that nobody expects it to be storage.
 export const DEMO_TTL_HOURS = 24;
 
-// One opponent, so the demo is the shortest complete evening there is: two
-// players, one pair, one match to score and settle. A fuller roster only adds
-// matches the visitor has no reason to play, and every one of them would block
-// the "next round" step until it was resolved.
+// One opponent: the demo starts as the shortest complete evening there is —
+// one pair, one match to score and settle — rather than four matches the
+// visitor has no reason to play, each of which would block the next round.
+// The roster is not capped, though: a club night is Swiss-style and takes
+// whoever turns up, so `maxPlayers` stays unset and more players can join the
+// demo event like any other.
 //
-// They are named "Гость 1"/"Гость 2" rather than given invented personal names,
-// which would read as real club members in the roster and the match history. An
-// empty `lastName` is deliberate: `playerName` appends a surname initial when
-// there is one, and "Гость 2 Д." helps nobody. The ratings differ so round-1
-// seeding, which sorts by rating, visibly does something.
+// "Гость 1" / "Гость 2" rather than invented personal names, which would read
+// as real club members in the roster and the match history. The ratings differ
+// so round-1 seeding, which sorts by rating, visibly does something.
 const DEMO_OPPONENTS = [
-  { firstName: "Гость 2", lastName: "", rating: 260 },
+  { firstName: "Гость", lastName: "2", rating: 260 },
 ];
 
 const demoEmail = () => `demo-${randomUUID()}@demo.local`;
@@ -65,7 +65,7 @@ export async function createDemoAccount(): Promise<DemoAccount> {
   // connection pooler in front of the database does not reliably survive. A
   // batch is just as atomic and is one round trip.
   const guestData = {
-    id: guestId, email: demoEmail(), password, firstName: "Гость 1", lastName: "", role: "ORGANIZER" as const,
+    id: guestId, email: demoEmail(), password, firstName: "Гость", lastName: "1", role: "ORGANIZER" as const,
     city: "Москва", rating: 220, isDemo: true, demoExpiresAt: expiresAt,
   };
   const tournamentId = randomUUID();
@@ -77,10 +77,7 @@ export async function createDemoAccount(): Promise<DemoAccount> {
     prisma.tournament.create({
       data: {
         id: tournamentId,
-        name: "Демо-вечер", kind: "TOURNAMENT", status: "DRAFT", tablesCount: 1, setsToWin: 3,
-        // Two players is the whole demo: the visitor and the one opponent they
-        // are paired against.
-        maxPlayers: 2,
+        name: "Демо-вечер", kind: "TOURNAMENT", status: "DRAFT", tablesCount: 2, setsToWin: 3,
         description: "Тренировочный турнир, чтобы попробовать приложение. Его никто, кроме тебя, не видит.",
         // Out of the city feed: a visitor poking at the app is not an event
         // anyone can turn up to.
