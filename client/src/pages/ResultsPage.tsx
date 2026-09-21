@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { apiService } from "../services/api";
 import Layout from "../components/Layout";
 import Avatar from "../components/Avatar";
+import Loader from "../components/Loader";
 import { useT } from "../i18n";
 import { useAuth } from "../context/AuthContext";
 import { playerName, formatEventDay, formatDelta, deltaTone } from "../lib/format";
@@ -66,7 +67,7 @@ export default function ResultsPage() {
             className="w-full px-3 py-2.5 bg-[#101f36] rounded border border-[#1c3350] text-sm focus:outline-none mb-4" />
 
           {events === null ? (
-            <div className="text-center py-12 text-[#6b84a0] text-sm">{t("common.loading")}</div>
+            <Loader />
           ) : events.length === 0 ? (
             <div className="text-center py-12 bg-[#101f36] rounded-lg border border-[#1c3350]"><p className="text-[#6b84a0] text-sm">{t("results.emptyFeed")}</p></div>
           ) : (
@@ -117,7 +118,7 @@ export default function ResultsPage() {
           {metric === "rating" && <p className="text-[11px] text-[#4d6480] -mt-2 mb-3">{t("leaders.hintRating")}</p>}
 
           {leaders === null ? (
-            <div className="text-center py-12 text-[#6b84a0] text-sm">{t("common.loading")}</div>
+            <Loader />
           ) : leaders.length === 0 ? (
             <div className="text-center py-12 bg-[#101f36] rounded-lg border border-[#1c3350]"><p className="text-[#6b84a0] text-sm">{t("leaders.empty")}</p></div>
           ) : (

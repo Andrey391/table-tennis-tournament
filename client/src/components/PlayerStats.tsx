@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiService } from "../services/api";
+import Loader from "./Loader";
 import { useT } from "../i18n";
 import { playerName } from "../lib/format";
 
@@ -15,7 +16,7 @@ export default function PlayerStats({ playerId }: { playerId: string }) {
   const [s, setS] = useState<any>(null);
 
   useEffect(() => { apiService.stats.player(playerId).then(r => setS(r.data)).catch(console.error); }, [playerId]);
-  if (!s) return null;
+  if (!s) return <Loader className="py-8 mb-5" />;
 
   const history: any[] = s.ratingHistory || [];
   const values = history.map(h => h.rating);

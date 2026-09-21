@@ -6,6 +6,7 @@ import { HeadToHead } from "../components/PlayerStats";
 import { useT } from "../i18n";
 import { playerName } from "../lib/format";
 import SetsToWinPicker from "../components/SetsToWinPicker";
+import Loader from "../components/Loader";
 import { tourDone, rememberDemoMatch } from "../lib/tour";
 
 // The unit of scoring is the set ("партия"), not the point. The judge marks who
@@ -108,7 +109,7 @@ export default function MatchPage() {
     try { await apiService.matches.forfeit(matchId!, { loserSide }); navigate(`/tournament/${id}`); } catch (e) { fail(e); }
   });
 
-  if (!match) return <div className="min-h-screen bg-[#0a1628] flex items-center justify-center text-[#6b84a0] text-sm">{t("common.loading")}</div>;
+  if (!match) return <div className="min-h-screen bg-[#0a1628] flex items-center justify-center"><Loader className="" /></div>;
 
   const played: any[] = (match.sets || []).filter((s: any) => s.status === "COMPLETED").sort((a: any, b: any) => a.index - b.index);
   const isManager = !!user && match.tournament?.organizerId === user.id;

@@ -1,17 +1,19 @@
 import { useParams } from "react-router-dom";
 import { useEffect, useState, useCallback } from "react";
 import { apiService } from "../services/api";
+import Loader from "../components/Loader";
 import { useT } from "../i18n";
 import { playerName, setsPlayed } from "../lib/format";
 
 export default function LiveScore() {
   const { tournamentId } = useParams<{ tournamentId: string }>();
   const { t } = useT();
-  const [matches, setMatches] = useState<any[]>([]);
+  const [matches, setMatches] = useState<any[] | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!tournamentId) return;
-    try { const r = await apiService.live.get(tournamentId); setMatches(r.data); } catch (e) { console.error(e); }
+    try { const r = await apiService.live.get(tournamentId); setMatches(r.data); }
+    catch (e) { console.error(e); setMatches(m => m ?? []); }
   }, [tournamentId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -23,7 +25,9 @@ export default function LiveScore() {
         <h1 className="text-2xl font-bold text-center mb-1 tracking-tight">{t("live.title").toUpperCase()} <span className="text-[#ccff00]">{t("live.score")}</span></h1>
         <p className="text-center text-[#4d6480] text-xs mb-6">{t("live.updates")}</p>
 
-        {matches.length === 0 ? (
+        {matches === null ? (
+          <Loader className="py-16" />
+        ) : matches.length === 0 ? (
           <div className="text-center py-16">
             <p className="text-[#4d6480] text-sm">{t("live.noMatches")}</p>
           </div>

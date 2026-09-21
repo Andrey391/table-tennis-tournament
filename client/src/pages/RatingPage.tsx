@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { apiService } from "../services/api";
 import Layout from "../components/Layout";
 import Avatar from "../components/Avatar";
+import Loader from "../components/Loader";
 import { useT } from "../i18n";
 
 // The single list of players, ordered by rating. "Players" and "Rating" used to be
@@ -26,7 +27,7 @@ export default function RatingPage() {
       <input type="text" placeholder={t("players.search")} value={search} onChange={e => setSearch(e.target.value)}
         className="w-full px-3 py-2.5 bg-[#101f36] rounded border border-[#1c3350] text-sm focus:outline-none mb-3" />
       {loading ? (
-        <div className="text-center py-12 text-[#6b84a0] text-sm">{t("common.loading")}</div>
+        <Loader />
       ) : filtered.length === 0 ? (
         <div className="text-center py-16 bg-[#101f36] rounded-lg border border-[#1c3350]">
           <p className="text-[#6b84a0] text-sm">{t("rating.empty")}</p>

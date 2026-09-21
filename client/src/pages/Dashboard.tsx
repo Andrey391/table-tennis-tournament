@@ -4,6 +4,7 @@ import { apiService } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import Layout from "../components/Layout";
 import ScopeToggle from "../components/ScopeToggle";
+import Loader from "../components/Loader";
 import { useT } from "../i18n";
 import { formatEventDay, formatTimeRange, playerName, matchScoreLine } from "../lib/format";
 import TryDemoButton from "../components/TryDemoButton";
@@ -14,7 +15,8 @@ export default function Dashboard() {
   const { token, user } = useAuth();
   const isGuest = !token;
   const demoPath = demoTournamentPath();
-  const [tournaments, setTournaments] = useState<any[]>([]);
+  // null = the feed has not answered yet; [] = it did, and there is nothing in it.
+  const [tournaments, setTournaments] = useState<any[] | null>(null);
   const [cities, setCities] = useState<{ city: string; clubs: number }[]>([]);
   // Signup asks for a city; opening the app in someone else's city is not what
   // that answer meant. A stored choice still wins — it was made deliberately.
@@ -42,8 +44,13 @@ export default function Dashboard() {
     const fetch = scope === "mine" && !isGuest
       ? apiService.tournaments.getMine({ kind: "TOURNAMENT" })
       : apiService.tournaments.getAll({ kind: "TOURNAMENT", ...(city ? { city } : {}) });
-    fetch.then(r => setTournaments(r.data)).catch(console.error);
+    // Switching city or scope must not leave the previous list on screen as if it were
+    // the answer, and a slow earlier response must not overwrite a newer one.
+    let stale = false;
+    setTournaments(null);
+    fetch.then(r => { if (!stale) setTournaments(r.data); }).catch(e => { console.error(e); if (!stale) setTournaments([]); });
     if (cityTouched) { try { localStorage.setItem("city", city); } catch { /* choice just won't persist */ } }
+    return () => { stale = true; };
   }, [city, scope, cityTouched, isGuest]);
 
   // The feed arrives ordered by start time ascending, which puts last spring's
@@ -51,8 +58,8 @@ export default function Dashboard() {
   // "what's next": upcoming and undated first, the past below it, most recent first.
   const now = Date.now();
   const isPast = (tr: any) => !!tr.startTime && new Date(tr.endTime || tr.startTime).getTime() < now;
-  const upcoming = tournaments.filter(tr => !isPast(tr));
-  const past = tournaments.filter(isPast).reverse();
+  const upcoming = (tournaments ?? []).filter(tr => !isPast(tr));
+  const past = (tournaments ?? []).filter(isPast).reverse();
 
   return (
     <Layout>
@@ -136,10 +143,12 @@ export default function Dashboard() {
 
       <div className="flex justify-between items-baseline mb-2.5">
         <h2 className="text-xs font-medium text-[#6b84a0] uppercase tracking-wider">{t("home.tournaments")}</h2>
-        {tournaments.length > 0 && <span className="text-xs text-[#4d6480]">{tournaments.length}</span>}
+        {!!tournaments?.length && <span className="text-xs text-[#4d6480]">{tournaments.length}</span>}
       </div>
 
-      {tournaments.length === 0 ? (
+      {tournaments === null ? (
+        <Loader />
+      ) : tournaments.length === 0 ? (
         <div className="text-center py-14 bg-[#101f36] rounded-lg border border-[#1c3350] px-4">
           <p className="text-[#6b84a0] mb-4 text-sm">{t(scope === "mine" && !isGuest ? "home.mineEmpty" : "home.empty")}</p>
           {!isGuest && <Link to="/tournament/new" className="inline-block px-5 py-2.5 bg-[#ccff00] text-[#0a1628] rounded-lg text-sm font-bold">{t("home.createFirst")}</Link>}
