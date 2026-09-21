@@ -16,15 +16,19 @@ export interface TourStep {
   target: "tournament" | "match";
   /** Advances the tour when a screen reports this action. */
   doneBy?: string;
+  /** "Next" on this step presses the real control instead of skipping past it.
+   *  Without it, "Next" on the pairing step walked the visitor straight over the
+   *  one button the step is about, and nothing was ever paired. */
+  press?: boolean;
 }
 
 export const TOUR_STEPS: TourStep[] = [
   { id: "roster", anchor: "roster", target: "tournament" },
-  { id: "pair", anchor: "pair", target: "tournament", doneBy: "pair" },
-  { id: "myMatch", anchor: "my-match", target: "tournament", doneBy: "openMatch" },
-  { id: "start", anchor: "start", target: "match", doneBy: "start" },
-  { id: "score", anchor: "score", target: "match", doneBy: "score" },
-  { id: "finish", anchor: "finish", target: "match", doneBy: "end" },
+  { id: "pair", anchor: "pair", target: "tournament", doneBy: "pair", press: true },
+  { id: "myMatch", anchor: "my-match", target: "tournament", doneBy: "openMatch", press: true },
+  { id: "start", anchor: "start", target: "match", doneBy: "start", press: true },
+  { id: "score", anchor: "score", target: "match", doneBy: "score", press: true },
+  { id: "finish", anchor: "finish", target: "match", doneBy: "end", press: true },
   { id: "standings", anchor: "standings", target: "tournament" },
   { id: "claim", anchor: "claim", target: "tournament" },
 ];
@@ -87,6 +91,50 @@ export function tourDone(action: string) {
   const target = TOUR_STEPS.findIndex((s) => s.doneBy === action);
   if (target < i) return;
   set(Math.min(target + 1, TOUR_STEPS.length - 1));
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const find = (sel: string) => document.querySelector<HTMLElement>(sel);
+// A disabled button swallows a synthetic click, so it counts as "not there".
+const usable = (el: HTMLElement | null) => (el && !(el as HTMLButtonElement).disabled ? el : null);
+
+// Imitates the visitor pressing the control a step is about, by clicking the real
+// element — so the screen runs exactly the handler a finger would, and reports
+// `tourDone` itself. Returns false when the control is missing or disabled, in
+// which case "Next" does nothing rather than skip the step.
+export async function pressStep(id: string): Promise<boolean> {
+  const step = TOUR_STEPS.find((s) => s.id === id);
+  if (!step) return false;
+  const anchor = () => find(`[data-tour="${step.anchor}"]`);
+
+  if (id === "score") {
+    // Play the match out for the visitor's own side, one set at a time, until the
+    // screen reports the sets it is played to as won (it advances the tour then).
+    // Bounded, so a screen that never gets there cannot keep this looping.
+    let taps = 0;
+    while (TOUR_STEPS[tourStep()]?.id === "score" && taps < 12) {
+      const button = usable(find('[data-tour="score"] [data-mine]') ?? find('[data-tour="score"] button'));
+      if (!button) { await sleep(150); taps++; continue; }
+      button.click();
+      taps++;
+      await sleep(550);
+    }
+    return true;
+  }
+
+  const el = usable(anchor());
+  if (!el) return false;
+  el.click();
+  if (id === "finish") {
+    // Ending a match asks first, in place; the visitor's "Next" answers it too.
+    for (let i = 0; i < 10; i++) {
+      await sleep(100);
+      const confirm = usable(find('[data-tour="confirm-end"]'));
+      if (confirm) { confirm.click(); return true; }
+    }
+    return false;
+  }
+  return true;
 }
 
 export function tourSubscribe(l: Listener) {

@@ -2,7 +2,7 @@ import React from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useT } from "../i18n";
-import { TOUR_STEPS, tourStep, tourNext, tourSkip, tourFinish, tourSubscribe, stepPath } from "../lib/tour";
+import { TOUR_STEPS, tourStep, tourNext, tourSkip, tourFinish, tourSubscribe, stepPath, pressStep } from "../lib/tour";
 
 // Walks a demo visitor through one club night on the real screens: the roster,
 // the pairing, their own match, recording a set, settling it, the table. A
@@ -18,6 +18,7 @@ export default function Tour() {
   const location = useLocation();
   const [step, setStep] = React.useState(tourStep);
   const [rect, setRect] = React.useState<DOMRect | null>(null);
+  const [pressing, setPressing] = React.useState(false);
 
   React.useEffect(() => tourSubscribe(() => setStep(tourStep())), []);
 
@@ -53,6 +54,16 @@ export default function Tour() {
   if (!user?.isDemo || !current) return null;
   const last = step === TOUR_STEPS.length - 1;
 
+  // On a step that ends in an action, "Next" performs it (see `pressStep`); the
+  // screen then reports it done and the tour moves on by itself.
+  const onNext = async () => {
+    if (last) { tourFinish(); return; }
+    if (!current.press) { tourNext(); return; }
+    if (pressing) return;
+    setPressing(true);
+    try { await pressStep(current.id); } finally { setPressing(false); }
+  };
+
   return (
     <>
       {/* A ring around the thing being talked about, not an overlay: the visitor
@@ -73,8 +84,8 @@ export default function Tour() {
               visitor past the one thing the step is about. Steps that end in an
               action advance themselves anyway (`doneBy`). */}
           {!waiting ? (
-            <button onClick={last ? tourFinish : tourNext}
-              className="w-full mt-3 bg-[#ccff00] text-[#0a1628] py-2.5 rounded-lg text-sm font-bold">
+            <button onClick={onNext} disabled={pressing}
+              className="w-full mt-3 bg-[#ccff00] text-[#0a1628] py-2.5 rounded-lg text-sm font-bold disabled:opacity-60">
               {last ? t("tour.finish") : t("tour.next")}
             </button>
           ) : canGo && (

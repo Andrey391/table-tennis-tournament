@@ -76,7 +76,10 @@ export default function MatchPage() {
         const r = await apiService.matches.score(matchId!, typed ? { side, score1: +setScore.a, score2: +setScore.b } : { side });
         setMatch(r.data.match);
         setSetScore({ a: "", b: "" });
-        tourDone("score");
+        // The tour's "record sets" step is done once a side has the sets the match
+        // is played to — the moment the end button lights up — not on the first set.
+        const m = r.data.match;
+        if (Math.max(m.setsWon1, m.setsWon2) >= (m.setsToWin ?? 3)) tourDone("score");
       } catch (e) { fail(e); }
     });
     setBusy(false);
@@ -86,7 +89,18 @@ export default function MatchPage() {
     try { const r = await apiService.matches.undo(matchId!); setMatch(r.data.match); } catch (e) { fail(e); }
   });
   const endMatch = () => write(async () => {
-    try { await apiService.matches.end(matchId!); tourDone("end"); navigate(`/tournament/${id}`); } catch (e) { fail(e); setConfirming(null); }
+    try { await apiService.matches.end(matchId!); tourDone("end"); navigate(`/tournament/${id}`); }
+    catch (e) {
+      // The request can fail after the match was in fact settled (or the answer can
+      // be lost on the way back). Staying on a finished match's scoreboard with an
+      // error is the worst outcome, so look before reporting: if it is settled, the
+      // judge belongs on the event page like after any other end.
+      try {
+        const r = await apiService.matches.getById(matchId!);
+        if (r.data.status === "COMPLETED") { tourDone("end"); navigate(`/tournament/${id}`); return; }
+      } catch { /* fall through to the original error */ }
+      fail(e); setConfirming(null);
+    }
   });
   // Same exit as ending a match: the result is settled, back to the round.
   const forfeit = (loserSide: 1 | 2) => write(async () => {
@@ -105,6 +119,7 @@ export default function MatchPage() {
   const targetReached = Math.max(match.setsWon1, match.setsWon2) >= target;
   const level = match.setsWon1 === match.setsWon2;
   const suggestEnd = canScore && match.status === "IN_PROGRESS" && targetReached && !level;
+  const leader = match.setsWon1 > match.setsWon2 ? match.player1 : match.player2;
   const endBlockedReason = played.length === 0 ? t("match.noSetsYet") : level ? t("match.drawBlocked") : "";
 
   const sides = [
@@ -217,9 +232,19 @@ export default function MatchPage() {
                   <p className="text-[11px] text-[#4d6480] mt-2">{t("match.setScoreHint")}</p>
                 </div>
 
+                {/* Nothing ends the match by itself, but the sets it is played to are
+                    in: say so, and say that playing on is fine — every set is recorded. */}
+                {suggestEnd && (
+                  <div className="bg-[#ccff00]/10 border border-[#ccff00]/40 rounded-lg p-3 text-center">
+                    <p className="text-sm font-bold text-[#ccff00]">{t("match.reachedTitle", { name: playerName(leader, t("common.none")), n: target })}</p>
+                    <p className="text-[11px] text-[#93a8c2] mt-1">{t("match.reachedHint")}</p>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-2" data-tour="score">
                   {sides.map(sd => (
                     <button key={sd.n} onClick={() => addSet(sd.n)} disabled={busy} style={{ backgroundColor: sd.color }}
+                      data-mine={(sd.n === 1 ? match.player1Id : match.player2Id) === user?.id ? "true" : undefined}
                       className="text-white py-6 rounded-lg text-base font-bold active:scale-[0.97] transition-transform disabled:opacity-60">
                       {playerName(sd.player, sd.fallback)}
                       <span className="block text-xs font-medium opacity-90 mt-0.5">{t("match.tookSet")}</span>
@@ -275,12 +300,13 @@ export default function MatchPage() {
               <div className="bg-[#101f36] border border-red-500/30 rounded-lg p-3 space-y-2">
                 <p className="text-sm text-[#93a8c2] text-center">
                   {confirming === "end"
-                    ? t("match.endConfirm")
+                    ? (targetReached ? t("match.endConfirm") : t("match.endEarlyConfirm", { n: target }))
                     : t("match.forfeitConfirm", { name: playerName(confirming === "forfeit1" ? match.player1 : match.player2, "P" + confirming.slice(-1)) })}
                 </p>
                 <div className="flex gap-2">
                   <button onClick={() => setConfirming(null)} className="flex-1 bg-[#1c3350] text-[#93a8c2] py-2.5 rounded-lg text-sm font-medium">{t("common.cancel")}</button>
                   <button onClick={() => (confirming === "end" ? endMatch() : forfeit(confirming === "forfeit1" ? 1 : 2))}
+                    data-tour={confirming === "end" ? "confirm-end" : undefined}
                     className="flex-1 bg-red-500 text-white py-2.5 rounded-lg text-sm font-bold">{t("common.confirm")}</button>
                 </div>
               </div>

@@ -50,6 +50,10 @@ async function maybeCompleteTournament(tournamentId: string) {
 
 // Updates both players' global rating using the match result (Elo). Only rated
 // containers count: a GAME is deliberately unrated, so it never gets here.
+// Two single-statement writes rather than one `$transaction`: the pooled Postgres
+// this runs against drops the connection partway through a multi-statement
+// transaction, and this is the last step of settling a match — the one whose
+// failure used to leave the screen stuck on a match that was already half-settled.
 async function applyEloUpdate(kind: string, winnerId: string | null, loserId: string | null): Promise<number | null> {
   if (kind !== "TOURNAMENT" || !winnerId || !loserId) return null;
   const [winner, loser] = await Promise.all([
@@ -58,10 +62,8 @@ async function applyEloUpdate(kind: string, winnerId: string | null, loserId: st
   ]);
   if (!winner || !loser) return null;
   const { winnerDelta, loserDelta } = computeEloDelta(winner.rating, loser.rating);
-  await prisma.$transaction([
-    prisma.user.update({ where: { id: winnerId }, data: { rating: winner.rating + winnerDelta } }),
-    prisma.user.update({ where: { id: loserId }, data: { rating: Math.max(0, loser.rating + loserDelta) } }),
-  ]);
+  await prisma.user.update({ where: { id: winnerId }, data: { rating: winner.rating + winnerDelta } });
+  await prisma.user.update({ where: { id: loserId }, data: { rating: Math.max(0, loser.rating + loserDelta) } });
   // Returned (and stored on the match) so undoing the point that settled the match
   // can hand back exactly what was given, rather than recomputing from ratings that
   // have already moved.
@@ -82,36 +84,59 @@ async function revertEloUpdate(match: { player1Id: string | null; player2Id: str
     prisma.user.findUnique({ where: { id: loserId }, select: { rating: true } }),
   ]);
   if (!winner || !loser) return;
-  await prisma.$transaction([
-    prisma.user.update({ where: { id: winnerId }, data: { rating: Math.max(0, winner.rating - match.eloDelta) } }),
-    prisma.user.update({ where: { id: loserId }, data: { rating: loser.rating + match.eloDelta } }),
-  ]);
+  await prisma.user.update({ where: { id: winnerId }, data: { rating: Math.max(0, winner.rating - match.eloDelta) } });
+  await prisma.user.update({ where: { id: loserId }, data: { rating: loser.rating + match.eloDelta } });
 }
 
 // Ends a match and settles the result: whoever has won more sets takes it (/end
 // refuses an equal tally). `rated` is false for a walkover — a no-show says nothing
 // about how well either player plays, so it moves nobody's Elo.
+//
+// The order is the point. The rating moves first and the match is marked COMPLETED
+// by a single write that also carries `eloDelta`, so a failure can never leave a
+// COMPLETED match whose rating change was lost: either the match is settled with
+// its points, or it is still open and the judge can press "end" again. (Marking it
+// COMPLETED first and moving Elo afterwards did exactly that: the request failed,
+// the screen never left the match, and the table showed no points.)
 async function finishMatch(match: { id: string; tournamentId: string; player1Id: string | null; player2Id: string | null; setsWon1: number; setsWon2: number; startedAt: Date | null; tournament: { kind: string } | null }, rated = true) {
   const tournamentKind = match.tournament?.kind ?? "TOURNAMENT";
   // Snapshot both ratings before Elo moves them: the statistics judge a win by the
   // opponent's rating at the time, not by wherever it has drifted since.
   const [r1, r2] = await Promise.all([match.player1Id, match.player2Id].map(id =>
     id ? prisma.user.findUnique({ where: { id }, select: { rating: true } }) : null));
-  await prisma.match.update({
-    where: { id: match.id },
-    data: { status: "COMPLETED", startedAt: match.startedAt ?? new Date(), endedAt: new Date(), rating1Before: r1?.rating ?? null, rating2Before: r2?.rating ?? null },
-  });
-  // Abandon a set that was still open when the match ended.
-  await prisma.matchSet.updateMany({
-    where: { matchId: match.id, status: { not: "COMPLETED" } },
-    data: { status: "CANCELLED", endedAt: new Date() },
-  });
+
+  let delta: number | null = null;
   if (rated && match.setsWon1 !== match.setsWon2) {
     const p1Won = match.setsWon1 > match.setsWon2;
-    const delta = await applyEloUpdate(tournamentKind, p1Won ? match.player1Id : match.player2Id, p1Won ? match.player2Id : match.player1Id);
-    if (delta != null) await prisma.match.update({ where: { id: match.id }, data: { eloDelta: delta } });
+    delta = await applyEloUpdate(tournamentKind, p1Won ? match.player1Id : match.player2Id, p1Won ? match.player2Id : match.player1Id);
   }
-  await maybeCompleteTournament(match.tournamentId);
+  try {
+    await prisma.match.update({
+      where: { id: match.id },
+      data: {
+        status: "COMPLETED", startedAt: match.startedAt ?? new Date(), endedAt: new Date(),
+        rating1Before: r1?.rating ?? null, rating2Before: r2?.rating ?? null,
+        ...(delta != null ? { eloDelta: delta } : {}),
+      },
+    });
+  } catch (err) {
+    // The match stayed open, so the rating that just moved has to go back.
+    if (delta != null) await revertEloUpdate({ ...match, eloDelta: delta }).catch((e) => console.error("[ELO revert]", e?.message));
+    throw err;
+  }
+
+  // From here the match is settled. What is left is housekeeping, and a failure in
+  // it must not turn a settled match into an error on the judge's screen.
+  try {
+    // Abandon a set that was still open when the match ended.
+    await prisma.matchSet.updateMany({
+      where: { matchId: match.id, status: { not: "COMPLETED" } },
+      data: { status: "CANCELLED", endedAt: new Date() },
+    });
+    await maybeCompleteTournament(match.tournamentId);
+  } catch (err: any) {
+    console.error("[FINISH]", err?.message);
+  }
 }
 
 matchRouter.get("/tournament/:tournamentId", async (req, res: Response) => {
