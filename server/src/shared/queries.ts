@@ -2,6 +2,8 @@
 // be re-declared file by file (and a third time in api/index.ts), which is how two
 // copies of the same response ended up with different fields.
 
+import { normalizeCity } from "./city";
+
 export const playerSelect = { id: true, firstName: true, lastName: true, club: true, rating: true };
 
 export const clubSelect = { id: true, name: true, city: true, address: true, phone: true };
@@ -50,7 +52,9 @@ export const standingsInclude = {
 // An event at a club in that city, or one with no venue run by someone who lives
 // there — otherwise `User.city`, which every account is asked for at signup, would
 // decide nothing at all.
-export const inCity = (city: string) => ({ OR: [{ club: { city } }, { clubId: null, organizer: { city } }] });
+// Case-insensitive, because the city is free text and "москва" is Moscow too.
+export const cityIs = (city: string) => ({ equals: normalizeCity(city), mode: "insensitive" as const });
+export const inCity = (city: string) => ({ OR: [{ club: { city: cityIs(city) } }, { clubId: null, organizer: { city: cityIs(city) } }] });
 
 // Optional string query parameter: absent, repeated or empty all mean "not given".
 export const queryString = (v: unknown): string | undefined => (typeof v === "string" && v ? v : undefined);

@@ -1,7 +1,7 @@
 import React from "react";
 import { useAuth } from "../context/AuthContext";
 import { useT } from "../i18n";
-import { field, fieldLabel } from "../lib/ui";
+import { btnPrimary, field, fieldLabel } from "../lib/ui";
 import { onClaimRequested } from "../lib/tour";
 
 // Says out loud that this account is temporary, and offers the one thing that
@@ -55,7 +55,7 @@ export default function DemoBanner() {
       {open && (
         <form onSubmit={submit} className="mt-3 space-y-3 pb-1">
           <p className="text-[11px] text-[#93a8c2]">{t("demo.claimHint")}</p>
-          {error && <div className="bg-red-500/10 text-red-400 p-2 rounded text-xs border border-red-500/20">{error}</div>}
+          {error && <div className="bg-red-500/10 text-red-400 p-2 rounded-lg text-xs border border-red-500/20">{error}</div>}
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className={fieldLabel}>{t("auth.firstName")}</label>
@@ -75,7 +75,7 @@ export default function DemoBanner() {
             <input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} className={field} minLength={6} required />
           </div>
           <button type="submit" disabled={saving}
-            className="w-full bg-[#ccff00] text-[#0a1628] py-2.5 rounded-lg text-sm font-bold disabled:opacity-50">
+            className={`${btnPrimary} w-full`}>
             {saving ? t("demo.claiming") : t("demo.claim")}
           </button>
         </form>

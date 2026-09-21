@@ -112,8 +112,9 @@ tournamentRouter.get("/", async (req, res: Response) => {
 tournamentRouter.get("/mine", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.user!.userId;
   const kind = queryString(req.query.kind);
+  const status = queryString(req.query.status);
   const tournaments = await prisma.tournament.findMany({
-    where: { ...(kind ? { kind } : {}), OR: [{ organizerId: userId }, { players: { some: { userId } } }] },
+    where: { ...(kind ? { kind } : {}), ...(status ? { status: { in: status.split(",") } } : {}), OR: [{ organizerId: userId }, { players: { some: { userId } } }] },
     // The caller's own row (for `myStatus`) plus everyone approved (for the card's
     // faces) in one relation, since a relation can only be filtered one way.
     include: { ...feedInclude, players: { where: { OR: [{ userId }, { status: "REGISTERED" }] }, select: { userId: true, status: true, user: { select: playerSelect } } } },

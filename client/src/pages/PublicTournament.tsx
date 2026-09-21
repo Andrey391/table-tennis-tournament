@@ -5,6 +5,8 @@ import { useT } from "../i18n";
 import { playerName, matchScoreLine } from "../lib/format";
 import Logo from "../components/Logo";
 import Loader from "../components/Loader";
+import EmptyState from "../components/EmptyState";
+import { card, sectionLabel } from "../lib/ui";
 
 export default function PublicTournament() {
   const { id } = useParams<{ id: string }>();
@@ -42,7 +44,7 @@ export default function PublicTournament() {
 
         {data.live.length > 0 && (
           <div className="mb-6">
-            <h2 className="text-xs font-medium text-yellow-400 uppercase tracking-wider mb-3">{t("results.live")}</h2>
+            <h2 className="text-xs font-medium text-yellow-400 uppercase tracking-wider mb-2">{t("results.live")}</h2>
             <div className="space-y-3">
               {data.live.map((m: any) => (
                 <div key={m.id} className="bg-[#101f36] border border-yellow-500/20 rounded-lg p-4 text-center">
@@ -59,10 +61,10 @@ export default function PublicTournament() {
 
         {data.recent.length > 0 && (
           <div className="mb-6">
-            <h2 className="text-xs font-medium text-[#6b84a0] uppercase tracking-wider mb-3">{t("public.recent")}</h2>
+            <h2 className={`${sectionLabel} mb-2`}>{t("public.recent")}</h2>
             <div className="space-y-2">
               {data.recent.map((m: any) => (
-                <div key={m.id} className="bg-[#101f36] p-3 rounded-lg flex justify-between items-center border border-[#1c3350]">
+                <div key={m.id} className={`${card} flex justify-between items-center p-3`}>
                   <span className="flex-1 min-w-0 text-right text-sm text-[#93a8c2] truncate pr-2">{playerName(m.player1, t("common.none"))}</span>
                   <span className="px-3 shrink-0 text-center">
                     <span className="block font-mono font-bold text-sm">{matchScoreLine(m)}</span>
@@ -76,8 +78,8 @@ export default function PublicTournament() {
 
         {standings.length > 0 && (
           <div>
-            <h2 className="text-xs font-medium text-[#6b84a0] uppercase tracking-wider mb-3">{t("public.standings")}</h2>
-            <div className="bg-[#101f36] rounded-lg border border-[#1c3350] divide-y divide-[#1c3350]/50">
+            <h2 className={`${sectionLabel} mb-2`}>{t("public.standings")}</h2>
+            <div className={`${card} divide-y divide-[#1c3350]/50`}>
               {standings.map((s: any, i: number) => (
                 <div key={s.userId} className="flex items-center justify-between px-3 py-2 text-sm">
                   <span className="flex items-center gap-2 min-w-0">
@@ -97,9 +99,7 @@ export default function PublicTournament() {
         )}
 
         {data.live.length === 0 && data.recent.length === 0 && (
-          <div className="text-center py-16 bg-[#101f36] rounded-lg border border-[#1c3350]">
-            <p className="text-[#6b84a0] text-sm">{t("tournament.noMatches")}</p>
-          </div>
+          <EmptyState text={t("tournament.noMatches")} />
         )}
       </div>
     </div>

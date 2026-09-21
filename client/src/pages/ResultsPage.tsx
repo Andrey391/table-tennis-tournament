@@ -4,12 +4,11 @@ import { apiService } from "../services/api";
 import Layout from "../components/Layout";
 import Avatar from "../components/Avatar";
 import Loader from "../components/Loader";
+import EmptyState from "../components/EmptyState";
 import { useT } from "../i18n";
 import { useAuth } from "../context/AuthContext";
 import { playerName, formatEventDay, formatDelta, deltaTone } from "../lib/format";
-
-const MEDALS = ["#ccff00", "#93a8c2", "#c08457"];
-const chip = (on: boolean) => `px-3 py-1.5 rounded-full text-xs font-medium border shrink-0 ${on ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00]" : "bg-[#101f36] text-[#93a8c2] border-[#1c3350]"}`;
+import { MEDALS, card, cardFeature, chip, pageTitle, searchField } from "../lib/ui";
 
 // Two views of what has been played: a feed of events with their podiums, and
 // leaderboards over a period. The match-by-match detail lives on the event page.
@@ -45,8 +44,8 @@ export default function ResultsPage() {
 
   return (
     <Layout>
-      <h1 className="text-2xl font-bold tracking-tight mb-3">{t("results.title")}</h1>
-      <div className="grid grid-cols-2 gap-1 bg-[#101f36] border border-[#1c3350] rounded-lg p-1 mb-4">
+      <h1 className={`${pageTitle} mb-4`}>{t("results.title")}</h1>
+      <div className={`${card} grid grid-cols-2 gap-1 p-1 mb-4`}>
         {(["events", "leaders"] as const).map(k => (
           <button key={k} onClick={() => setTab(k)} className={`py-2 rounded text-sm font-medium ${tab === k ? "bg-[#1c3350] text-white" : "text-[#6b84a0]"}`}>
             {t(k === "events" ? "results.tabEvents" : "results.tabLeaders")}
@@ -64,19 +63,19 @@ export default function ResultsPage() {
             ))}
           </div>
           <input type="text" placeholder={t("results.search")} value={search} onChange={e => setSearch(e.target.value)}
-            className="w-full px-3 py-2.5 bg-[#101f36] rounded border border-[#1c3350] text-sm focus:outline-none mb-4" />
+            className={`${searchField} mb-4`} />
 
           {events === null ? (
             <Loader />
           ) : events.length === 0 ? (
-            <div className="text-center py-12 bg-[#101f36] rounded-lg border border-[#1c3350]"><p className="text-[#6b84a0] text-sm">{t("results.emptyFeed")}</p></div>
+            <EmptyState text={t("results.emptyFeed")} />
           ) : (
             <div className="space-y-3">
               {events.map(e => (
-                <Link key={e.id} to={`/tournament/${e.id}`} className="block bg-[#101f36] rounded-2xl border border-[#1c3350] p-4 active:bg-[#1c3350] transition-colors">
+                <Link key={e.id} to={`/tournament/${e.id}`} className={`${cardFeature} block overflow-hidden p-4 active:brightness-110 transition`}>
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="font-semibold truncate">{e.name}</p>
+                      <p className="font-bold text-lg leading-tight truncate">{e.name}</p>
                       <p className="text-[11px] text-[#4d6480] truncate mt-0.5">
                         {formatEventDay(e.startTime || e.createdAt, lang)}
                         {e.club && ` · ${e.club.name}`}
@@ -120,9 +119,9 @@ export default function ResultsPage() {
           {leaders === null ? (
             <Loader />
           ) : leaders.length === 0 ? (
-            <div className="text-center py-12 bg-[#101f36] rounded-lg border border-[#1c3350]"><p className="text-[#6b84a0] text-sm">{t("leaders.empty")}</p></div>
+            <EmptyState text={t("leaders.empty")} />
           ) : (
-            <div className="bg-[#101f36] rounded-lg border border-[#1c3350] divide-y divide-[#1c3350]/50">
+            <div className={`${card} divide-y divide-[#1c3350]/50`}>
               {leaders.map((r, i) => (
                 <Link key={r.player.id} to={`/player/${r.player.id}`} className="flex items-center gap-3 px-3 py-2.5">
                   <span className={`text-xs w-5 shrink-0 font-bold ${i < 3 ? "text-[#ccff00]" : "text-[#4d6480]"}`}>{i + 1}</span>
