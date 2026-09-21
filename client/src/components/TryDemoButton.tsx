@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useT } from "../i18n";
 import { tourRestart, rememberDemoTournament } from "../lib/tour";
+import { btnPrimary } from "../lib/ui";
 
 // The way in for someone who has never run a club night. It signs them in as a
 // throwaway account that already owns an event and drops them on it with the
@@ -30,9 +31,7 @@ export default function TryDemoButton({ variant = "solid" }: { variant?: "solid"
   return (
     <>
       <button type="button" onClick={start} disabled={loading}
-        className={variant === "solid"
-          ? "w-full bg-[#ccff00] text-[#0a1628] py-3 rounded-lg text-sm font-bold disabled:opacity-50"
-          : "w-full bg-transparent text-[#ccff00] py-2.5 rounded-lg text-sm font-bold border border-[#ccff00]/40 disabled:opacity-50"}>
+        className={`w-full ${variant === "solid" ? btnPrimary : "py-3 px-5 rounded-lg text-sm transition bg-transparent text-[#ccff00] font-bold border border-[#ccff00]/40 active:bg-[#ccff00]/10 disabled:opacity-50"}`}>
         {loading ? t("demo.starting") : t("demo.try")}
       </button>
       {error && <p className="text-xs text-red-400 mt-2">{error}</p>}

@@ -8,6 +8,7 @@ import { playerName } from "../lib/format";
 import SetsToWinPicker from "../components/SetsToWinPicker";
 import Loader from "../components/Loader";
 import { tourDone, rememberDemoMatch } from "../lib/tour";
+import { backLink, btnDanger, btnPrimaryLg, btnSecondary, card, errorBox } from "../lib/ui";
 
 // The unit of scoring is the set ("партия"), not the point. The judge marks who
 // took each set; nothing tracks the rally-by-rally score, so there is no deuce,
@@ -127,14 +128,14 @@ export default function MatchPage() {
     { n: 1 as const, player: match.player1, won: match.setsWon1, color: "#3b82f6", fallback: "P1" },
     { n: 2 as const, player: match.player2, won: match.setsWon2, color: "#ef4444", fallback: "P2" },
   ];
-  const scoreField = "w-16 px-2 py-2 bg-[#0a1628] rounded border border-[#1c3350] text-center text-base focus:border-[#ccff00] focus:outline-none";
+  const scoreField = "w-16 px-2 py-2 bg-[#0a1628] rounded-lg border border-[#1c3350] text-center text-base focus:border-[#ccff00] focus:outline-none";
 
   return (
     <div className="min-h-screen bg-[#0a1628] p-3 pb-8">
       <div className="max-w-sm mx-auto">
-        <button onClick={() => navigate(`/tournament/${id}`)} className="text-[#6b84a0] mb-3 text-sm">&larr; {t("common.back")}</button>
+        <button onClick={() => navigate(`/tournament/${id}`)} className={backLink}>&larr; {t("common.back")}</button>
 
-        {error && <div className="bg-red-500/10 text-red-400 p-3 rounded text-sm border border-red-500/20 mb-3">{error}</div>}
+        {error && <div className={`${errorBox} mb-3`}>{error}</div>}
 
         <div className="bg-[#101f36] rounded-lg p-4 mb-3 border border-[#1c3350] text-center">
           <p className="text-[11px] text-[#4d6480] uppercase tracking-wider mb-1">
@@ -201,27 +202,27 @@ export default function MatchPage() {
               <div className="bg-[#101f36] border border-red-500/30 rounded-lg p-3 space-y-2">
                 <p className="text-sm text-[#93a8c2] text-center">{t("match.reopenHint")}</p>
                 <div className="flex gap-2">
-                  <button onClick={() => setConfirming(null)} className="flex-1 bg-[#1c3350] text-[#93a8c2] py-2.5 rounded-lg text-sm font-medium">{t("common.cancel")}</button>
-                  <button onClick={undo} className="flex-1 bg-red-500 text-white py-2.5 rounded-lg text-sm font-bold">{t("common.confirm")}</button>
+                  <button onClick={() => setConfirming(null)} className={`${btnSecondary} flex-1`}>{t("common.cancel")}</button>
+                  <button onClick={undo} className={`${btnDanger} flex-1`}>{t("common.confirm")}</button>
                 </div>
               </div>
             ) : (
-              <button onClick={() => setConfirming("reopen")} className="w-full bg-[#1c3350] text-[#93a8c2] py-2.5 rounded-lg text-sm border border-[#1c3350]">{t("match.reopen")}</button>
+              <button onClick={() => setConfirming("reopen")} className={`${btnSecondary} w-full`}>{t("match.reopen")}</button>
             ))}
           </div>
         ) : !canScore ? (
-          <p className="text-center py-3 text-sm text-[#6b84a0] bg-[#101f36] rounded-lg border border-[#1c3350]">
+          <p className={`${card} text-center py-3 text-sm text-[#6b84a0]`}>
             {t("match.onlyManager")}
           </p>
         ) : (
           <div className="space-y-2">
             {match.status === "NOT_STARTED" ? (
-              <button onClick={startMatch} data-tour="start" className="w-full bg-[#ccff00] text-[#0a1628] py-4 rounded-lg text-base font-bold active:scale-[0.98] transition-transform">
+              <button onClick={startMatch} data-tour="start" className={`${btnPrimaryLg} w-full`}>
                 {t("match.start")}
               </button>
             ) : (
               <>
-                <div className="bg-[#101f36] rounded-lg border border-[#1c3350] p-3 text-center">
+                <div className={`${card} p-3 text-center`}>
                   <p className="text-[11px] text-[#4d6480] uppercase tracking-wider mb-2">{t("match.setScore")}</p>
                   <div className="flex items-center justify-center gap-2">
                     <input type="number" inputMode="numeric" min={0} max={99} value={setScore.a} onChange={e => setSetScore({ ...setScore, a: e.target.value })}
@@ -267,7 +268,7 @@ export default function MatchPage() {
                 {endBlockedReason && <p className="text-center text-[11px] text-yellow-400">{endBlockedReason}</p>}
 
                 <button onClick={undo} disabled={played.length === 0}
-                  className="w-full bg-[#1c3350] text-[#93a8c2] py-2.5 rounded-lg text-sm border border-[#1c3350] disabled:opacity-40">
+                  className={`${btnSecondary} w-full`}>
                   {t("match.undoSet")}
                 </button>
                 <p className="text-center text-[11px] text-[#4d6480]">{t("match.endHint")}</p>
@@ -305,10 +306,10 @@ export default function MatchPage() {
                     : t("match.forfeitConfirm", { name: playerName(confirming === "forfeit1" ? match.player1 : match.player2, "P" + confirming.slice(-1)) })}
                 </p>
                 <div className="flex gap-2">
-                  <button onClick={() => setConfirming(null)} className="flex-1 bg-[#1c3350] text-[#93a8c2] py-2.5 rounded-lg text-sm font-medium">{t("common.cancel")}</button>
+                  <button onClick={() => setConfirming(null)} className={`${btnSecondary} flex-1`}>{t("common.cancel")}</button>
                   <button onClick={() => (confirming === "end" ? endMatch() : forfeit(confirming === "forfeit1" ? 1 : 2))}
                     data-tour={confirming === "end" ? "confirm-end" : undefined}
-                    className="flex-1 bg-red-500 text-white py-2.5 rounded-lg text-sm font-bold">{t("common.confirm")}</button>
+                    className={`${btnDanger} flex-1`}>{t("common.confirm")}</button>
                 </div>
               </div>
             )}

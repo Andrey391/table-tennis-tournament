@@ -44,7 +44,7 @@ export default function LiveScore() {
                     <p className="text-sm font-medium text-[#3b82f6] truncate px-1">{playerName(m.player1, t("common.none"))}</p>
                     <p className="text-5xl font-bold mt-2 text-[#3b82f6]">{m.setsWon1}</p>
                   </div>
-                  <p className="text-xl text-[#333] px-2">:</p>
+                  <p className="text-xl text-[#4d6480] px-2">:</p>
                   <div className="text-center flex-1">
                     <p className="text-sm font-medium text-[#ef4444] truncate px-1">{playerName(m.player2, t("common.none"))}</p>
                     <p className="text-5xl font-bold mt-2 text-[#ef4444]">{m.setsWon2}</p>

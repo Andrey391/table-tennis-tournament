@@ -4,17 +4,19 @@ import { apiService } from "../services/api";
 import Layout from "../components/Layout";
 import ScopeToggle from "../components/ScopeToggle";
 import Loader from "../components/Loader";
+import EmptyState from "../components/EmptyState";
+import EventCard from "../components/EventCard";
 import SetsToWinPicker from "../components/SetsToWinPicker";
 import { useT } from "../i18n";
 import { useAuth } from "../context/AuthContext";
-import { formatEventDay, formatTimeRange, playerName, formatRating } from "../lib/format";
-import { field } from "../lib/ui";
+import { playerName, formatRating } from "../lib/format";
+import { btnGhost, btnPrimary, card, errorBox, field, fieldLabel, pageTitle } from "../lib/ui";
 
 // A game is a tournament with kind=GAME: same roster, rounds and pairing, no Elo.
 // This screen is the game-shaped view of the same feed; opening one lands on the
 // usual tournament page.
 export default function GamesPage() {
-  const { t, lang } = useT();
+  const { t } = useT();
   const { token, user } = useAuth();
   const navigate = useNavigate();
   const isGuest = !token;
@@ -98,7 +100,7 @@ export default function GamesPage() {
   return (
     <Layout>
       <div className="flex items-start justify-between gap-2 mb-1">
-        <h1 className="text-2xl font-bold tracking-tight">{t("games.title")}</h1>
+        <h1 className={pageTitle}>{t("games.title")}</h1>
         {isGuest ? (
           <Link to="/login" className="text-sm text-[#ccff00] font-bold shrink-0 mt-1">{t("auth.signIn")}</Link>
         ) : (
@@ -109,21 +111,21 @@ export default function GamesPage() {
       </div>
       <p className="text-xs text-[#6b84a0] mb-4">{t("games.subtitle")}</p>
 
-      {error && <div className="bg-red-500/10 text-red-400 p-3 rounded text-sm border border-red-500/20 mb-4">{error}</div>}
+      {error && <div className={`${errorBox} mb-4`}>{error}</div>}
 
       {/* Two people who just played do not want an event with rounds; they want to
           write down "3:1". This is that, in one screen. */}
       {!isGuest && !showCreate && (
         <button onClick={() => setShowQuick(v => !v)}
-          className={`w-full mb-4 py-3 rounded-lg text-sm font-bold border ${showQuick ? "bg-[#101f36] text-[#93a8c2] border-[#1c3350]" : "bg-[#ccff00] text-[#0a1628] border-[#ccff00]"}`}>
+          className={`${showQuick ? btnGhost : btnPrimary} w-full mb-4`}>
           {showQuick ? t("common.cancel") : t("games.quick")}
         </button>
       )}
       {showQuick && !isGuest && !showCreate && (
-        <div className="bg-[#101f36] p-4 rounded-lg border border-[#1c3350] space-y-3 mb-4">
+        <div className={`${card} p-4 space-y-3 mb-4`}>
           <p className="text-xs text-[#6b84a0]">{t("games.quickHint")}</p>
           {opponent ? (
-            <div className="flex justify-between items-center bg-[#0a1628] rounded border border-[#1c3350] px-3 py-2.5">
+            <div className="flex justify-between items-center bg-[#0a1628] rounded-lg border border-[#1c3350] px-3 py-2.5">
               <span className="text-sm truncate">{opponent.firstName} {opponent.lastName}</span>
               <button type="button" onClick={() => setQuick({ ...quick, opponentId: "" })} className="text-xs text-[#ccff00] shrink-0">{t("common.remove")}</button>
             </div>
@@ -154,14 +156,14 @@ export default function GamesPage() {
           </div>
           {quickLevel && <p className="text-center text-xs text-yellow-400">{t("match.drawBlocked")}</p>}
           <button type="button" onClick={saveQuick} disabled={busy || !quick.opponentId || quickLevel}
-            className="w-full bg-[#ccff00] text-[#0a1628] py-3 rounded-lg text-sm font-bold disabled:opacity-40">
+            className={`${btnPrimary} w-full`}>
             {t("games.save")}
           </button>
         </div>
       )}
 
       {showCreate && !isGuest && (
-        <form onSubmit={create} className="bg-[#101f36] p-4 rounded-lg border border-[#1c3350] space-y-3 mb-4">
+        <form onSubmit={create} className={`${card} p-4 space-y-3 mb-4`}>
           <input type="text" placeholder={t("games.namePlaceholder")} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className={field} required />
           <select value={form.clubId} onChange={e => setForm({ ...form, clubId: e.target.value })} className={field}>
             <option value="">{t("create.noClub")}</option>
@@ -169,14 +171,14 @@ export default function GamesPage() {
           </select>
           <input type="datetime-local" value={form.startTime} onChange={e => setForm({ ...form, startTime: e.target.value })} className={field} />
           <div>
-            <label className="block text-xs text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("create.tables")}</label>
+            <label className={fieldLabel}>{t("create.tables")}</label>
             <input type="number" min={1} value={form.tablesCount} onChange={e => setForm({ ...form, tablesCount: +e.target.value })} className={field} />
           </div>
           <div>
-            <label className="block text-xs text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("create.setsToWin")}</label>
+            <label className={fieldLabel}>{t("create.setsToWin")}</label>
             <SetsToWinPicker value={form.setsToWin} onChange={n => setForm({ ...form, setsToWin: n })} />
           </div>
-          <button type="submit" disabled={busy} className="w-full bg-[#ccff00] text-[#0a1628] py-2.5 rounded-lg text-sm font-bold disabled:opacity-50">
+          <button type="submit" disabled={busy} className={`${btnPrimary} w-full`}>
             {busy ? t("games.creating") : t("games.create")}
           </button>
         </form>
@@ -187,32 +189,10 @@ export default function GamesPage() {
       {games === null ? (
         <Loader />
       ) : games.length === 0 ? (
-        <div className="text-center py-14 bg-[#101f36] rounded-lg border border-[#1c3350]">
-          <p className="text-[#6b84a0] text-sm">{t("games.empty")}</p>
-        </div>
+        <EmptyState text={t("games.empty")} />
       ) : (
         <div className="space-y-2">
-          {games.map(g => (
-            <Link key={g.id} to={`/tournament/${g.id}`}
-              className="relative block overflow-hidden bg-[#101f36] p-3.5 pl-4 rounded-lg border border-[#1c3350] active:bg-[#1c3350] transition-colors">
-              <span className={`absolute left-0 top-0 bottom-0 w-1 ${
-                g.status === "ACTIVE" ? "bg-yellow-400" : g.status === "COMPLETED" ? "bg-green-500" : "bg-[#24405e]"
-              }`} />
-              <div className="flex justify-between items-start gap-2">
-                <div className="min-w-0">
-                  <h3 className="font-semibold text-base truncate">{g.name}</h3>
-                  {g.startTime && <p className="text-xs text-[#93a8c2] mt-1">{formatEventDay(g.startTime, lang)} &middot; {formatTimeRange(g.startTime, g.endTime, lang)}</p>}
-                  {g.club && <p className="text-xs text-[#6b84a0] mt-0.5 truncate">{g.club.name} &middot; {g.club.city}</p>}
-                  <p className="text-xs text-[#6b84a0] mt-0.5">
-                    {g._count?.players || 0} {t("common.players")} &middot; {g._count?.matches || 0} {t("stats.matches").toLowerCase()}
-                  </p>
-                </div>
-                <span className="shrink-0 px-2 py-0.5 rounded text-[11px] font-medium bg-[#1c3350] text-[#93a8c2] whitespace-nowrap">
-                  {t(`status.${g.status}`)}
-                </span>
-              </div>
-            </Link>
-          ))}
+          {games.map(g => <EventCard key={g.id} tr={g} />)}
         </div>
       )}
     </Layout>

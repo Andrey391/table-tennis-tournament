@@ -34,7 +34,7 @@ export const apiService = {
   tournaments: {
     // `kind` picks rated tournaments ("TOURNAMENT") or unrated games ("GAME").
     getAll: (params?: { kind?: string; city?: string; clubId?: string; status?: string; from?: string; to?: string; q?: string }) => api.get("/tournaments", { params }),
-    getMine: (params?: { kind?: string }) => api.get("/tournaments/mine", { params }),
+    getMine: (params?: { kind?: string; status?: string }) => api.get("/tournaments/mine", { params }),
     getById: (id: string) => api.get(`/tournaments/${id}`),
     create: (d: any) => api.post("/tournaments", d),
     update: (id: string, d: any) => api.put(`/tournaments/${id}`, d),

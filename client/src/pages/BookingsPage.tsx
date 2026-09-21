@@ -5,9 +5,10 @@ import Layout from "../components/Layout";
 import { useAuth } from "../context/AuthContext";
 import SetsToWinPicker from "../components/SetsToWinPicker";
 import Loader from "../components/Loader";
+import EmptyState from "../components/EmptyState";
 import { useT } from "../i18n";
 import { formatShortDate, formatSlot } from "../lib/format";
-import { field } from "../lib/ui";
+import { btnPrimary, btnSecondary, card, errorBox, field, fieldLabel, pageTitle, sectionLabel } from "../lib/ui";
 
 const DURATIONS = [1, 1.5, 2, 3];
 
@@ -137,35 +138,33 @@ export default function BookingsPage() {
     try { await apiService.subscriptions.unsubscribe(clubId); load(); } catch (err: any) { setError(err.response?.data?.error || t("common.failed")); }
   };
 
-  const sectionLabel = "text-xs font-medium text-[#6b84a0] uppercase tracking-wider mb-2";
-
   return (
     <Layout>
-      <h1 className="text-2xl font-bold tracking-tight mb-4">{t("play.title")}</h1>
-      {error && <div className="bg-red-500/10 text-red-400 p-3 rounded text-sm border border-red-500/20 mb-4">{error}</div>}
+      <h1 className={`${pageTitle} mb-4`}>{t("play.title")}</h1>
+      {error && <div className={`${errorBox} mb-4`}>{error}</div>}
 
       <section className="mb-6">
         <div className="flex items-center justify-between mb-2">
-          <h2 className={sectionLabel + " mb-0"}>{t("play.book")}</h2>
+          <h2 className={sectionLabel}>{t("play.book")}</h2>
           <button onClick={() => setShowAddClub(v => !v)} className="text-xs text-[#ccff00] font-medium">{t("play.addClub")}</button>
         </div>
 
         {showAddClub && (
-          <form onSubmit={addClub} className="bg-[#101f36] p-4 rounded-lg border border-[#1c3350] space-y-3 mb-3">
+          <form onSubmit={addClub} className={`${card} p-4 space-y-3 mb-3`}>
             <input type="text" placeholder={t("play.clubName")} value={newClub.name} onChange={e => setNewClub({ ...newClub, name: e.target.value })} className={field} required />
             <input type="text" placeholder={t("common.city")} value={newClub.city} onChange={e => setNewClub({ ...newClub, city: e.target.value })} className={field} required />
             <input type="text" placeholder={t("play.clubAddress")} value={newClub.address} onChange={e => setNewClub({ ...newClub, address: e.target.value })} className={field} />
             <input type="text" placeholder={t("play.clubPhone")} value={newClub.phone} onChange={e => setNewClub({ ...newClub, phone: e.target.value })} className={field} />
-            <button type="submit" className="w-full bg-[#ccff00] text-[#0a1628] py-2.5 rounded-lg text-sm font-bold">{t("common.save")}</button>
+            <button type="submit" className={`${btnPrimary} w-full`}>{t("common.save")}</button>
           </form>
         )}
 
         {clubs === null ? (
           <Loader className="py-8" />
         ) : clubs.length === 0 ? (
-          <p className="text-center py-8 text-sm text-[#6b84a0] bg-[#101f36] rounded-lg border border-[#1c3350] px-4">{t("play.noClubs")}</p>
+          <EmptyState text={t("play.noClubs")} />
         ) : (
-          <form onSubmit={createBooking} className="bg-[#101f36] p-4 rounded-lg border border-[#1c3350] space-y-3">
+          <form onSubmit={createBooking} className={`${card} p-4 space-y-3`}>
             <select value={form.clubId} onChange={e => set("clubId", e.target.value)} className={field} required>
               <option value="">{t("play.selectClub")}</option>
               {clubs.map(c => <option key={c.id} value={c.id}>{c.name} &middot; {c.city}</option>)}
@@ -173,7 +172,7 @@ export default function BookingsPage() {
 
             {form.clubId && (
               <div>
-                <label className="block text-xs text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("play.tables")}</label>
+                <label className={fieldLabel}>{t("play.tables")}</label>
                 {club?.tables?.length ? (
                   <div className="flex flex-wrap gap-2 mb-2">
                     {club.tables.map((tbl: any) => (
@@ -193,7 +192,7 @@ export default function BookingsPage() {
                     <input type="number" min={1} placeholder={t("play.tableNumber")} value={newTable} onChange={e => setNewTable(e.target.value)}
                       className={field + " flex-1"} />
                     <button type="button" onClick={addTable} disabled={!newTable}
-                      className="px-4 py-2.5 bg-[#1c3350] text-[#93a8c2] rounded-lg text-sm font-medium border border-[#1c3350] shrink-0 disabled:opacity-40">
+                      className={`${btnSecondary} shrink-0`}>
                       {t("play.addTable")}
                     </button>
                   </div>
@@ -209,7 +208,7 @@ export default function BookingsPage() {
             </div>
 
             <div>
-              <label className="block text-xs text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("common.hours")}</label>
+              <label className={fieldLabel}>{t("common.hours")}</label>
               <div className="flex gap-2">
                 {DURATIONS.map(d => (
                   <button key={d} type="button" onClick={() => set("durationHours", d)}
@@ -222,7 +221,7 @@ export default function BookingsPage() {
 
             {availability.length > 0 && (
               <div>
-                <label className="block text-xs text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("common.table")}</label>
+                <label className={fieldLabel}>{t("common.table")}</label>
                 <div className="flex flex-wrap gap-2">
                   <button type="button" onClick={() => set("tableId", "")}
                     className={`px-3 py-2 rounded-lg text-sm border ${!form.tableId ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00]" : "bg-[#0a1628] text-[#93a8c2] border-[#1c3350]"}`}>
@@ -244,7 +243,7 @@ export default function BookingsPage() {
             )}
 
             <div>
-              <label className="block text-xs text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("play.bookingFor")}</label>
+              <label className={fieldLabel}>{t("play.bookingFor")}</label>
               <div className="flex gap-2">
                 {(["GAME", "TOURNAMENT"] as const).map(kind => (
                   <button key={kind} type="button" onClick={() => set("eventType", kind)}
@@ -262,7 +261,7 @@ export default function BookingsPage() {
             </div>
 
             <div>
-              <label className="block text-xs text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("create.setsToWin")}</label>
+              <label className={fieldLabel}>{t("create.setsToWin")}</label>
               <SetsToWinPicker value={form.setsToWin} onChange={n => set("setsToWin", n)} />
             </div>
 
@@ -273,7 +272,7 @@ export default function BookingsPage() {
               {t("tournament.private")}
             </label>
 
-            <button type="submit" disabled={busy} className="w-full bg-[#ccff00] text-[#0a1628] py-2.5 rounded-lg text-sm font-bold disabled:opacity-50">
+            <button type="submit" disabled={busy} className={`${btnPrimary} w-full`}>
               {busy ? t("play.booking") : t("play.bookAction")}
             </button>
           </form>
@@ -281,15 +280,15 @@ export default function BookingsPage() {
       </section>
 
       <section className="mb-6">
-        <h2 className={sectionLabel}>{t("play.myBookings")}</h2>
+        <h2 className={`${sectionLabel} mb-2`}>{t("play.myBookings")}</h2>
         {bookings === null ? (
           <Loader className="py-8" />
         ) : bookings.length === 0 ? (
-          <p className="text-center py-8 text-sm text-[#6b84a0] bg-[#101f36] rounded-lg border border-[#1c3350]">{t("play.noBookings")}</p>
+          <EmptyState text={t("play.noBookings")} />
         ) : (
           <div className="space-y-2">
             {bookings.map(b => (
-              <div key={b.id} className="flex justify-between items-center bg-[#101f36] p-3 rounded-lg border border-[#1c3350]">
+              <div key={b.id} className={`${card} flex justify-between items-center p-3`}>
                 <div className="min-w-0">
                   <p className="text-sm font-medium truncate">{b.club?.name}</p>
                   <p className="text-xs text-[#93a8c2]">{formatShortDate(b.date, lang)} &middot; {formatSlot(b.startTime, b.durationHours)}{b.table ? ` · ${t("common.table")} №${b.table.number}` : ""}</p>
@@ -310,18 +309,18 @@ export default function BookingsPage() {
       </section>
 
       <section>
-        <h2 className={sectionLabel}>{t("play.mySubscriptions")}</h2>
+        <h2 className={`${sectionLabel} mb-2`}>{t("play.mySubscriptions")}</h2>
         <form onSubmit={subscribe} className="flex gap-2 mb-3">
           <select value={subClubId} onChange={e => setSubClubId(e.target.value)} className={field + " flex-1"}>
             <option value="">{t("play.followClub")}</option>
             {(clubs ?? []).map(c => <option key={c.id} value={c.id}>{c.name} &middot; {c.city}</option>)}
           </select>
-          <button type="submit" className="px-4 py-2.5 bg-[#ccff00] text-[#0a1628] rounded-lg text-sm font-bold shrink-0">{t("play.follow")}</button>
+          <button type="submit" className={`${btnPrimary} shrink-0`}>{t("play.follow")}</button>
         </form>
         {subscriptions === null ? (
           <Loader className="py-8" />
         ) : subscriptions.length === 0 ? (
-          <p className="text-center py-8 text-sm text-[#6b84a0] bg-[#101f36] rounded-lg border border-[#1c3350]">{t("play.noSubscriptions")}</p>
+          <EmptyState text={t("play.noSubscriptions")} />
         ) : (
           <div className="flex flex-wrap gap-2">
             {subscriptions.map(s => (

@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import Logo from "../components/Logo";
 import { useT } from "../i18n";
-import { field, fieldLabel } from "../lib/ui";
+import { btnPrimary, card, errorBox, field, fieldLabel } from "../lib/ui";
 
 export default function Register() {
   const { register } = useAuth();
@@ -30,8 +30,8 @@ export default function Register() {
           <Logo size="lg" as="plain" />
           <p className="text-[#6b84a0] text-sm mt-3">{t("auth.createSubtitle")}</p>
         </div>
-        <form onSubmit={handleSubmit} className="space-y-4 bg-[#101f36] p-6 rounded-lg border border-[#1c3350]">
-          {error && <div className="bg-red-500/10 text-red-400 p-3 rounded text-sm border border-red-500/20">{error}</div>}
+        <form onSubmit={handleSubmit} className={`${card} space-y-4 p-6`}>
+          {error && <div className={errorBox}>{error}</div>}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className={fieldLabel}>{t("auth.firstName")}</label>
@@ -65,7 +65,7 @@ export default function Register() {
               className={field} />
           </div>
           <button type="submit" disabled={loading}
-            className="w-full bg-[#ccff00] text-[#0a1628] py-3 rounded-lg text-sm font-bold hover:bg-[#d8ff33] disabled:opacity-50 transition-colors">
+            className={`${btnPrimary} w-full`}>
             {loading ? t("auth.creating") : t("auth.createAccount")}
           </button>
           <p className="text-center text-sm text-[#6b84a0]">

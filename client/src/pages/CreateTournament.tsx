@@ -4,6 +4,7 @@ import { apiService } from "../services/api";
 import Layout from "../components/Layout";
 import SetsToWinPicker from "../components/SetsToWinPicker";
 import { useT } from "../i18n";
+import { btnPrimary, btnSecondary, card, errorBox, field, fieldLabel, pageTitle } from "../lib/ui";
 
 export default function CreateTournament() {
   const navigate = useNavigate();
@@ -38,24 +39,21 @@ export default function CreateTournament() {
     finally { setLoading(false); }
   };
 
-  const field = "w-full px-3 py-3 bg-[#0a1628] rounded border border-[#1c3350] focus:border-[#ccff00] focus:outline-none";
-  const label = "block text-xs font-medium text-[#6b84a0] mb-1.5 uppercase tracking-wider";
-
   return (
     <Layout>
-      <h1 className="text-2xl font-bold tracking-tight mb-4">{t("create.title")}</h1>
-      <form onSubmit={handleSubmit} className="space-y-4 bg-[#101f36] p-4 rounded-lg border border-[#1c3350]">
-        {error && <div className="bg-red-500/10 text-red-400 p-3 rounded text-sm border border-red-500/20">{error}</div>}
+      <h1 className={`${pageTitle} mb-4`}>{t("create.title")}</h1>
+      <form onSubmit={handleSubmit} className={`${card} space-y-4 p-4`}>
+        {error && <div className={errorBox}>{error}</div>}
         <div>
-          <label className={label}>{t("create.name")}</label>
+          <label className={fieldLabel}>{t("create.name")}</label>
           <input type="text" placeholder={t("create.namePlaceholder")} value={form.name} onChange={e => set("name", e.target.value)} className={field} required />
         </div>
         <div>
-          <label className={label}>{t("create.description")} <span className="normal-case text-[#4d6480]">({t("common.optional")})</span></label>
+          <label className={fieldLabel}>{t("create.description")} <span className="normal-case text-[#4d6480]">({t("common.optional")})</span></label>
           <textarea rows={3} placeholder={t("create.descriptionPlaceholder")} value={form.description} onChange={e => set("description", e.target.value)} className={field} />
         </div>
         <div>
-          <label className={label}>{t("create.club")}</label>
+          <label className={fieldLabel}>{t("create.club")}</label>
           <select value={form.clubId} onChange={e => set("clubId", e.target.value)} className={field}>
             <option value="">{t("create.noClub")}</option>
             {clubs.map(c => <option key={c.id} value={c.id}>{c.name} &middot; {c.city}</option>)}
@@ -63,32 +61,32 @@ export default function CreateTournament() {
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className={label}>{t("create.start")}</label>
+            <label className={fieldLabel}>{t("create.start")}</label>
             <input type="datetime-local" value={form.startTime} onChange={e => set("startTime", e.target.value)} className={field} />
           </div>
           <div>
-            <label className={label}>{t("create.end")}</label>
+            <label className={fieldLabel}>{t("create.end")}</label>
             <input type="datetime-local" value={form.endTime} onChange={e => set("endTime", e.target.value)} className={field} />
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className={label}>{t("create.tables")}</label>
+            <label className={fieldLabel}>{t("create.tables")}</label>
             <input type="number" min={1} value={form.tablesCount} onChange={e => set("tablesCount", +e.target.value)} className={field} />
           </div>
           <div>
-            <label className={label}>{t("create.maxPlayers")}</label>
+            <label className={fieldLabel}>{t("create.maxPlayers")}</label>
             <input type="number" min={2} placeholder="—" value={form.maxPlayers} onChange={e => set("maxPlayers", e.target.value)} className={field} />
           </div>
         </div>
         <p className="text-xs text-[#4d6480] -mt-2">{t("create.maxPlayersHint")}</p>
         <div>
-          <label className={label}>{t("create.setsToWin")}</label>
+          <label className={fieldLabel}>{t("create.setsToWin")}</label>
           <SetsToWinPicker value={form.setsToWin} onChange={n => set("setsToWin", n)} />
           <p className="text-xs text-[#4d6480] mt-1.5">{t("create.setsToWinHint")}</p>
         </div>
         <div>
-          <label className={label}>{t("create.ratingRange")} <span className="normal-case text-[#4d6480]">({t("common.optional")})</span></label>
+          <label className={fieldLabel}>{t("create.ratingRange")} <span className="normal-case text-[#4d6480]">({t("common.optional")})</span></label>
           <div className="grid grid-cols-2 gap-3">
             <input type="number" placeholder={t("create.min")} value={form.minRating} onChange={e => set("minRating", e.target.value)} className={field} />
             <input type="number" placeholder={t("create.max")} value={form.maxRating} onChange={e => set("maxRating", e.target.value)} className={field} />
@@ -96,14 +94,14 @@ export default function CreateTournament() {
           <p className="text-xs text-[#4d6480] mt-1.5">{t("create.ratingHint")}</p>
         </div>
         <div>
-          <label className={label}>{t("create.ratingWeight")}</label>
+          <label className={fieldLabel}>{t("create.ratingWeight")}</label>
           <input type="number" min={0.1} max={1} step={0.1} value={form.ratingWeight} onChange={e => set("ratingWeight", e.target.value)} className={field} />
           <p className="text-xs text-[#4d6480] mt-1.5">{t("create.ratingWeightHint")}</p>
         </div>
         <p className="text-xs text-[#4d6480]">{t("create.hint")}</p>
         <div className="flex gap-3 pt-1">
-          <button type="button" onClick={() => navigate("/")} className="flex-1 bg-[#1c3350] text-[#93a8c2] py-3 rounded text-sm font-medium">{t("common.cancel")}</button>
-          <button type="submit" disabled={loading} className="flex-1 bg-[#ccff00] text-[#0a1628] py-3 rounded-lg text-sm font-bold disabled:opacity-50">
+          <button type="button" onClick={() => navigate("/")} className={`${btnSecondary} flex-1`}>{t("common.cancel")}</button>
+          <button type="submit" disabled={loading} className={`${btnPrimary} flex-1`}>
             {loading ? t("common.creating") : t("common.create")}
           </button>
         </div>

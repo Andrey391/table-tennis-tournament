@@ -4,7 +4,8 @@ import { prisma } from "../config/db";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
 import { CreateClubSchema, UpdateClubSchema, CreateClubTableSchema } from "../shared/schemas";
 import { bookingsOverlap, startOfUtcDay } from "../shared/booking";
-import { queryString } from "../shared/queries";
+import { queryString, cityIs } from "../shared/queries";
+import { normalizeCity, cityKey } from "../shared/city";
 
 export const clubRouter = Router();
 
@@ -21,7 +22,7 @@ clubRouter.get("/", async (req, res: Response) => {
   const q = queryString(req.query.q);
   const clubs = await prisma.club.findMany({
     where: {
-      ...(city ? { city } : {}),
+      ...(city ? { city: cityIs(city) } : {}),
       ...(q ? { name: { contains: q, mode: "insensitive" as const } } : {}),
     },
     include: { _count: { select: { tables: true, subscriptions: true, tournaments: true } } },
@@ -31,9 +32,23 @@ clubRouter.get("/", async (req, res: Response) => {
 });
 
 // Powers the "your city" picker on the home screen — must stay above "/:id".
+// One entry per city however it was typed: "Москва", "москва" and "Москва " are the
+// same place. The label is the spelling most clubs used.
 clubRouter.get("/cities", async (_req, res: Response) => {
-  const rows = await prisma.club.groupBy({ by: ["city"], _count: { _all: true }, orderBy: { city: "asc" } });
-  res.json(rows.map(r => ({ city: r.city, clubs: r._count._all })));
+  const rows = await prisma.club.findMany({ select: { city: true } });
+  const byKey = new Map<string, Map<string, number>>();
+  for (const { city } of rows) {
+    const label = normalizeCity(city);
+    if (!label) continue;
+    const spellings = byKey.get(cityKey(label)) ?? new Map<string, number>();
+    spellings.set(label, (spellings.get(label) ?? 0) + 1);
+    byKey.set(cityKey(label), spellings);
+  }
+  const cities = [...byKey.values()].map(spellings => ({
+    city: [...spellings.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][0],
+    clubs: [...spellings.values()].reduce((n, c) => n + c, 0),
+  }));
+  res.json(cities.sort((a, b) => a.city.localeCompare(b.city)));
 });
 
 clubRouter.get("/:id", async (req, res: Response) => {

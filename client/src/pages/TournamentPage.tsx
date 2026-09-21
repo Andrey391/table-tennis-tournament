@@ -7,9 +7,10 @@ import Avatar from "../components/Avatar";
 import Loader from "../components/Loader";
 import SetsToWinPicker from "../components/SetsToWinPicker";
 import { useT } from "../i18n";
-import { field } from "../lib/ui";
+import { btnDanger, btnPrimary, btnPrimaryLg, btnSecondary, btnSmall, card, errorBox, field, fieldLabel, noticeBox, sectionLabel } from "../lib/ui";
 import { tourDone, requestClaim, rememberDemoTournament } from "../lib/tour";
 import { formatEventDay, formatTimeRange, playerName, matchScoreLine, formatDelta, deltaTone, formatRating } from "../lib/format";
+import EmptyState from "../components/EmptyState";
 
 export default function TournamentPage() {
   const { id } = useParams<{ id: string }>();
@@ -278,7 +279,7 @@ export default function TournamentPage() {
           </span>
           <span className="text-xs text-[#4d6480]">{t("tournament.tables", { n: tournament.tablesCount })}</span>
           {tournament.isPublic === false && (
-            <span className="text-xs text-[#6b84a0] border border-[#1c3350] rounded px-1.5 py-0.5">{t("tournament.privateBadge")}</span>
+            <span className="text-xs text-[#6b84a0] border border-[#1c3350] rounded-md px-1.5 py-0.5">{t("tournament.privateBadge")}</span>
           )}
           {hasRatingGate && (
             <span className="text-xs text-[#ccff00]">{t("profile.rating")} {tournament.minRating ?? 0}&ndash;{tournament.maxRating ?? "∞"}</span>
@@ -286,9 +287,9 @@ export default function TournamentPage() {
         </div>
       </div>
 
-      {notice && <div className="bg-[#ccff00]/10 text-[#ccff00] p-2.5 rounded text-sm border border-[#ccff00]/20 mb-3 text-center">{notice}</div>}
+      {notice && <div className={`${noticeBox} mb-3`}>{notice}</div>}
 
-      <div className="bg-[#101f36] rounded-lg border border-[#1c3350] p-4 mb-4 space-y-2">
+      <div className={`${card} p-4 mb-4 space-y-2`}>
         {isManager && (
           <div className="flex justify-end -mt-1 -mr-1">
             <button onClick={() => (edit ? setEdit(null) : openEdit())} className="text-xs text-[#ccff00] font-medium px-1">
@@ -316,7 +317,7 @@ export default function TournamentPage() {
       </div>
 
       {isManager && edit && (
-        <form onSubmit={saveEdit} className="bg-[#101f36] rounded-lg border border-[#1c3350] p-4 mb-4 space-y-3">
+        <form onSubmit={saveEdit} className={`${card} p-4 mb-4 space-y-3`}>
           <input type="text" value={edit.name} onChange={e => setEdit({ ...edit, name: e.target.value })} placeholder={t("create.name")} className={field} required />
           <textarea rows={2} value={edit.description} onChange={e => setEdit({ ...edit, description: e.target.value })} placeholder={t("create.description")} className={field} />
           <select value={edit.clubId} onChange={e => setEdit({ ...edit, clubId: e.target.value })} className={field}>
@@ -336,13 +337,13 @@ export default function TournamentPage() {
             <input type="number" value={edit.maxRating} onChange={e => setEdit({ ...edit, maxRating: e.target.value })} placeholder={t("create.max")} className={field} />
           </div>
           <div>
-            <label className="block text-xs text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("create.setsToWin")}</label>
+            <label className={fieldLabel}>{t("create.setsToWin")}</label>
             <SetsToWinPicker value={edit.setsToWin} onChange={n => setEdit({ ...edit, setsToWin: n })} />
             <p className="text-xs text-[#4d6480] mt-1.5">{t("create.setsToWinHint")}</p>
           </div>
           {tournament.kind === "TOURNAMENT" && (
             <div>
-              <label className="block text-xs text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("create.ratingWeight")}</label>
+              <label className={fieldLabel}>{t("create.ratingWeight")}</label>
               <input type="number" min={0.1} max={1} step={0.1} value={edit.ratingWeight} onChange={e => setEdit({ ...edit, ratingWeight: e.target.value })} className={field} />
               <p className="text-xs text-[#4d6480] mt-1.5">{t("create.ratingWeightHint")}</p>
             </div>
@@ -351,7 +352,7 @@ export default function TournamentPage() {
             <input type="checkbox" checked={!edit.isPublic} onChange={e => setEdit({ ...edit, isPublic: !e.target.checked })} className="w-4 h-4" />
             {t("tournament.private")}
           </label>
-          <button type="submit" disabled={busy} className="w-full bg-[#ccff00] text-[#0a1628] py-2.5 rounded-lg text-sm font-bold disabled:opacity-50">
+          <button type="submit" disabled={busy} className={`${btnPrimary} w-full`}>
             {busy ? t("common.creating") : t("common.save")}
           </button>
         </form>
@@ -381,10 +382,10 @@ export default function TournamentPage() {
       {/* The chat is how people agree when to meet, so it is there from the start;
           the scoreboards only mean something once a round exists. */}
       <div className="flex gap-2 mb-4">
-        {!isDraft && <Link to={`/live/${id}`} className="flex-1 text-center px-3 py-2 bg-[#1c3350] text-[#93a8c2] rounded text-sm border border-[#1c3350]">{t("tournament.live")}</Link>}
-        {!isDraft && <Link to={`/public/tournament/${id}`} className="flex-1 text-center px-3 py-2 bg-[#1c3350] text-[#93a8c2] rounded text-sm border border-[#1c3350]">{t("tournament.public")}</Link>}
+        {!isDraft && <Link to={`/live/${id}`} className={`${btnSmall} flex-1 text-center`}>{t("tournament.live")}</Link>}
+        {!isDraft && <Link to={`/public/tournament/${id}`} className={`${btnSmall} flex-1 text-center`}>{t("tournament.public")}</Link>}
         {!isGuest && (
-          <Link to={`/tournament/${id}/chat`} className={`${isDraft ? "flex-1 text-center" : ""} px-3 py-2 bg-[#1c3350] text-[#93a8c2] rounded text-sm border border-[#1c3350]`}>
+          <Link to={`/tournament/${id}/chat`} className={`${btnSmall} ${isDraft ? "flex-1 text-center" : ""}`}>
             {isDraft ? t("tournament.chat") : (
               <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-label={t("tournament.chat")}>
                 <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" />
@@ -393,15 +394,15 @@ export default function TournamentPage() {
           </Link>
         )}
         {!isDraft && (
-          <button onClick={share} className="px-3 py-2 bg-[#1c3350] text-[#93a8c2] rounded text-sm border border-[#1c3350]">{t("tournament.share")}</button>
+          <button onClick={share} className={btnSmall}>{t("tournament.share")}</button>
         )}
       </div>
 
-      {error && <div className="bg-red-500/10 text-red-400 p-3 rounded text-sm border border-red-500/20 mb-4">{error}</div>}
+      {error && <div className={`${errorBox} mb-4`}>{error}</div>}
 
       <section className="mb-6">
         <div className="flex justify-between items-center mb-2">
-          <h2 data-tour="roster" className="text-xs font-medium text-[#6b84a0] uppercase tracking-wider">{t("tournament.participants")} ({approved.length})</h2>
+          <h2 data-tour="roster" className={sectionLabel}>{t("tournament.participants")} ({approved.length})</h2>
           {/* Adding players means adding *real* ones, and a demo account has no
               business putting a throwaway event on someone's record — so there the
               button offers a real account instead of the roster picker. */}
@@ -415,14 +416,14 @@ export default function TournamentPage() {
             <h3 className="text-[11px] font-medium text-yellow-400 uppercase tracking-wider mb-2">{t("tournament.pending")} ({pending.length})</h3>
             <div className="space-y-1">
               {pending.map((p: any) => (
-                <div key={p.id} className="flex justify-between items-center bg-[#101f36] p-2.5 rounded border border-yellow-500/20">
+                <div key={p.id} className="flex justify-between items-center bg-[#101f36] p-2.5 rounded-lg border border-yellow-500/20">
                   <span className="flex items-center gap-2 min-w-0 text-sm truncate">
                     <Avatar firstName={p.user?.firstName} lastName={p.user?.lastName} rating={p.user?.rating} size="sm" />
                     {p.user?.firstName} {p.user?.lastName}
                   </span>
                   <div className="flex items-center gap-2 shrink-0">
-                    <button onClick={() => approvePlayer(p.userId)} className="text-xs text-green-400 font-medium px-2 py-1 bg-green-500/10 rounded border border-green-500/20">{t("tournament.approve")}</button>
-                    <button onClick={() => removePlayer(p.userId)} className="text-xs text-red-400 font-medium px-2 py-1 bg-red-500/10 rounded border border-red-500/20">{t("tournament.reject")}</button>
+                    <button onClick={() => approvePlayer(p.userId)} className="text-xs text-green-400 font-medium px-2 py-1 bg-green-500/10 rounded-lg border border-green-500/20">{t("tournament.approve")}</button>
+                    <button onClick={() => removePlayer(p.userId)} className="text-xs text-red-400 font-medium px-2 py-1 bg-red-500/10 rounded-lg border border-red-500/20">{t("tournament.reject")}</button>
                   </div>
                 </div>
               ))}
@@ -435,10 +436,10 @@ export default function TournamentPage() {
         )}
 
         {isManager && showAdd && !isDemo && (
-          <div className="bg-[#101f36] rounded-lg border border-[#1c3350] p-3 mb-3 space-y-2">
+          <div className={`${card} p-3 mb-3 space-y-2`}>
             {!isDraft && <p className="text-xs text-[#4d6480]">{t("tournament.addLate")}</p>}
             <input type="text" placeholder={t("tournament.searchPlayers")} value={search} onChange={e => setSearch(e.target.value)}
-              className="w-full px-3 py-2.5 bg-[#0a1628] rounded border border-[#1c3350] text-sm focus:outline-none" />
+              className={field} />
             <div className="max-h-64 overflow-y-auto divide-y divide-[#1c3350]">
               {candidates.length === 0 ? (
                 <p className="text-xs text-[#4d6480] py-3 text-center">{t("tournament.noMatching")}</p>
@@ -453,7 +454,7 @@ export default function TournamentPage() {
               ))}
             </div>
             <button onClick={addSelected} disabled={selected.size === 0 || busy}
-              className="w-full bg-[#ccff00] text-[#0a1628] py-2.5 rounded text-sm font-bold disabled:opacity-40">
+              className={`${btnPrimary} w-full`}>
               {t("tournament.add")} {selected.size > 0 ? `(${selected.size})` : ""}
             </button>
           </div>
@@ -461,9 +462,9 @@ export default function TournamentPage() {
 
         <div className="space-y-1">
           {approved.length === 0 ? (
-            <p className="text-center py-8 text-sm text-[#6b84a0] bg-[#101f36] rounded-lg border border-[#1c3350]">{t("tournament.noPlayers")}</p>
+            <EmptyState text={t("tournament.noPlayers")} />
           ) : (canSeed ? seeded : approved).map((p: any, idx: number) => (
-            <div key={p.id} className="flex justify-between items-center bg-[#101f36] p-2.5 rounded border border-[#1c3350]">
+            <div key={p.id} className="flex justify-between items-center bg-[#101f36] p-2.5 rounded-lg border border-[#1c3350]">
               <Link to={`/player/${p.userId}`} className="min-w-0 flex items-center gap-2">
                 <Avatar firstName={p.user?.firstName} lastName={p.user?.lastName} rating={p.user?.rating} size="sm" />
                 {canSeed ? <span className="text-[10px] bg-[#1c3350] text-[#93a8c2] px-1.5 py-0.5 rounded shrink-0">#{idx + 1}</span>
@@ -473,8 +474,8 @@ export default function TournamentPage() {
               <div className="flex items-center gap-1 shrink-0">
                 {canSeed && (
                   <>
-                    <button onClick={() => moveSeed(idx, -1)} disabled={idx === 0} aria-label={t("tournament.seedUp")} className="text-[#93a8c2] w-8 h-8 rounded border border-[#1c3350] disabled:opacity-30">&uarr;</button>
-                    <button onClick={() => moveSeed(idx, 1)} disabled={idx === seeded.length - 1} aria-label={t("tournament.seedDown")} className="text-[#93a8c2] w-8 h-8 rounded border border-[#1c3350] disabled:opacity-30">&darr;</button>
+                    <button onClick={() => moveSeed(idx, -1)} disabled={idx === 0} aria-label={t("tournament.seedUp")} className="text-[#93a8c2] w-8 h-8 rounded-lg border border-[#1c3350] disabled:opacity-30">&uarr;</button>
+                    <button onClick={() => moveSeed(idx, 1)} disabled={idx === seeded.length - 1} aria-label={t("tournament.seedDown")} className="text-[#93a8c2] w-8 h-8 rounded-lg border border-[#1c3350] disabled:opacity-30">&darr;</button>
                   </>
                 )}
                 {isManager && (
@@ -493,7 +494,7 @@ export default function TournamentPage() {
             <h3 className="text-[11px] font-medium text-[#4d6480] uppercase tracking-wider mb-2">{t("tournament.withdrawn")} ({withdrawn.length})</h3>
             <div className="space-y-1">
               {withdrawn.map((p: any) => (
-                <div key={p.id} className="flex justify-between items-center bg-[#101f36]/60 p-2.5 rounded border border-[#1c3350] text-[#6b84a0]">
+                <div key={p.id} className="flex justify-between items-center bg-[#101f36]/60 p-2.5 rounded-lg border border-[#1c3350] text-[#6b84a0]">
                   <span className="text-sm truncate line-through">{p.user?.firstName} {p.user?.lastName}</span>
                   {isManager && <button onClick={() => addSelectedOne(p.userId)} className="text-xs text-[#ccff00] font-medium shrink-0">{t("tournament.add")}</button>}
                 </div>
@@ -530,12 +531,12 @@ export default function TournamentPage() {
               <p className="text-red-400 font-medium mt-1">{t("tournament.yourRating", { rating: formatRating(user?.rating ?? 0) })}</p>
             </div>
           ) : isFull ? (
-            <p className="text-center py-3 mt-3 text-sm text-[#93a8c2] bg-[#101f36] rounded-lg border border-[#1c3350]">{t("tournament.full")}</p>
+            <p className={`${card} text-center py-3 mt-3 text-sm text-[#93a8c2]`}>{t("tournament.full")}</p>
           ) : (
             <>
               {!isDraft && <p className="text-xs text-[#4d6480] mt-3 text-center">{t("tournament.joinLate")}</p>}
               <button onClick={join} disabled={busy}
-                className="w-full mt-2 bg-[#ccff00] text-[#0a1628] py-3.5 rounded-lg text-base font-bold disabled:opacity-40 active:scale-[0.98] transition-transform">
+                className={`${btnPrimaryLg} w-full mt-2`}>
                 {busy ? t("tournament.requesting") : t("tournament.join")}
               </button>
             </>
@@ -544,7 +545,7 @@ export default function TournamentPage() {
 
         {isManager && isDraft && (
           <button onClick={pair} disabled={approved.length < 2 || busy} data-tour="pair"
-            className="w-full mt-3 bg-[#ccff00] text-[#0a1628] py-3.5 rounded-lg text-base font-bold disabled:opacity-40 active:scale-[0.98] transition-transform">
+            className={`${btnPrimaryLg} w-full mt-3`}>
             {busy ? t("tournament.pairing") : tournament.kind === "GAME" ? t("tournament.startGame") : t("tournament.lockAndPair")}
           </button>
         )}
@@ -554,14 +555,14 @@ export default function TournamentPage() {
         <section className="space-y-4">
           {isManager && (
             <button onClick={pair} disabled={!canStartNextRound || busy} data-tour="next-round"
-              className="w-full bg-[#ccff00] text-[#0a1628] py-3.5 rounded-lg text-base font-bold disabled:opacity-40 active:scale-[0.98] transition-transform">
+              className={`${btnPrimaryLg} w-full`}>
               {busy ? t("tournament.pairing") : canStartNextRound ? t("tournament.startRound", { n: currentRound + 1 }) : t("tournament.finishRoundFirst")}
             </button>
           )}
           {/* The round waits for its slowest table; say which one, so the manager
               can go and hurry it along (or record a walkover). */}
           {isManager && waitingOn.length > 0 && (
-            <div className="text-xs text-[#93a8c2] bg-[#101f36] rounded-lg border border-[#1c3350] p-3 space-y-1">
+            <div className={`${card} text-xs text-[#93a8c2] p-3 space-y-1`}>
               <p className="text-[#6b84a0]">{t("tournament.waitingOn")}</p>
               {waitingOn.map((m: any) => (
                 <Link key={m.id} to={`/tournament/${id}/match/${m.id}`} className="flex justify-between gap-2">
@@ -573,7 +574,7 @@ export default function TournamentPage() {
           )}
           {rounds.map((round) => (
             <div key={round}>
-              <h2 className="text-xs font-medium text-[#6b84a0] uppercase tracking-wider mb-2">{t("tournament.round", { n: round })}</h2>
+              <h2 className={`${sectionLabel} mb-2`}>{t("tournament.round", { n: round })}</h2>
               {matches.filter((m: any) => m.round === round).map((m: any) => <MatchRow key={m.id} m={m} tournamentId={id!} tableLabel={t("tournament.table")} />)}
               {byeOf(round) && (
                 <div className="flex items-center justify-between bg-[#101f36]/60 border border-dashed border-[#1c3350] p-3 rounded-lg mb-2 text-sm">
@@ -588,8 +589,8 @@ export default function TournamentPage() {
 
       {standings.length > 0 && matches.length > 0 && (
         <section className="mt-6" data-tour="standings">
-          <h2 className="text-xs font-medium text-[#6b84a0] uppercase tracking-wider mb-2">{t("tournament.standings")}</h2>
-          <div className="bg-[#101f36] rounded-lg border border-[#1c3350] divide-y divide-[#1c3350]/50">
+          <h2 className={`${sectionLabel} mb-2`}>{t("tournament.standings")}</h2>
+          <div className={`${card} divide-y divide-[#1c3350]/50`}>
             {standings.map((s: any, i: number) => (
               <div key={s.userId} className="flex items-center justify-between px-3 py-2 text-sm">
                 <Link to={`/player/${s.userId}`} className="flex items-center gap-2 min-w-0">
@@ -616,14 +617,14 @@ export default function TournamentPage() {
             <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 text-center space-y-2">
               <p className="text-sm text-[#93a8c2]">{t("tournament.deleteConfirm")}</p>
               <div className="flex gap-2">
-                <button onClick={() => setConfirmDelete(false)} className="flex-1 bg-[#1c3350] text-[#93a8c2] py-2.5 rounded-lg text-sm font-medium">{t("common.cancel")}</button>
-                <button onClick={removeTournament} disabled={busy} className="flex-1 bg-red-500 text-white py-2.5 rounded-lg text-sm font-bold disabled:opacity-50">
+                <button onClick={() => setConfirmDelete(false)} className={`${btnSecondary} flex-1`}>{t("common.cancel")}</button>
+                <button onClick={removeTournament} disabled={busy} className={`${btnDanger} flex-1`}>
                   {busy ? t("tournament.deleting") : t("common.delete")}
                 </button>
               </div>
             </div>
           ) : (
-            <button onClick={() => setConfirmDelete(true)} className="w-full text-red-400 py-2.5 rounded-lg text-sm border border-red-500/20 bg-red-500/5">
+            <button onClick={() => setConfirmDelete(true)} className="w-full text-red-400 py-3 rounded-lg text-sm border border-red-500/20 bg-red-500/5">
               {t("tournament.delete")}
             </button>
           )}
