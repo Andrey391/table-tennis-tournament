@@ -4,6 +4,7 @@ import { apiService } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import Layout from "../components/Layout";
 import Avatar from "../components/Avatar";
+import Loader from "../components/Loader";
 import SetsToWinPicker from "../components/SetsToWinPicker";
 import { useT } from "../i18n";
 import { field } from "../lib/ui";
@@ -75,7 +76,7 @@ export default function TournamentPage() {
     return () => clearTimeout(timer);
   }, [notice]);
 
-  if (!tournament) return <Layout><div className="text-center py-20 text-[#6b84a0] text-sm">{t("common.loading")}</div></Layout>;
+  if (!tournament) return <Layout><Loader className="py-20" /></Layout>;
 
   const isDraft = tournament.status === "DRAFT";
   const isManager = !!user && tournament.organizerId === user.id;

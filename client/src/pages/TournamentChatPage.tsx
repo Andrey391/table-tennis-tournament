@@ -1,6 +1,7 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { apiService } from "../services/api";
+import Loader from "../components/Loader";
 import { useT } from "../i18n";
 import { useAuth } from "../context/AuthContext";
 
@@ -9,7 +10,7 @@ export default function TournamentChatPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { t } = useT();
-  const [messages, setMessages] = useState<any[]>([]);
+  const [messages, setMessages] = useState<any[] | null>(null);
   const [text, setText] = useState("");
   const [error, setError] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -17,12 +18,12 @@ export default function TournamentChatPage() {
   const load = useCallback(async () => {
     if (!id) return;
     try { const r = await apiService.tournaments.getChat(id); setMessages(r.data); }
-    catch (e: any) { setError(e.response?.data?.error || t("common.failed")); }
+    catch (e: any) { setError(e.response?.data?.error || t("common.failed")); setMessages(m => m ?? []); }
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { const i = setInterval(load, 3000); return () => clearInterval(i); }, [load]);
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length]);
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages?.length]);
 
   const send = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,7 +42,9 @@ export default function TournamentChatPage() {
       {error && <div className="bg-red-500/10 text-red-400 p-3 text-sm border-b border-red-500/20">{error}</div>}
 
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
-        {messages.length === 0 ? (
+        {messages === null ? (
+          <Loader />
+        ) : messages.length === 0 ? (
           <p className="text-center py-12 text-sm text-[#6b84a0]">{t("chat.empty")}</p>
         ) : messages.map(m => {
           const mine = m.userId === user?.id;

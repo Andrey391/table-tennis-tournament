@@ -4,6 +4,7 @@ import { apiService } from "../services/api";
 import { useT } from "../i18n";
 import { playerName, matchScoreLine } from "../lib/format";
 import Logo from "../components/Logo";
+import Loader from "../components/Loader";
 
 export default function PublicTournament() {
   const { id } = useParams<{ id: string }>();
@@ -25,7 +26,7 @@ export default function PublicTournament() {
     return () => clearInterval(i);
   }, [load]);
 
-  if (!data) return <div className="min-h-screen bg-[#0a1628] flex items-center justify-center text-[#6b84a0] text-sm">{t("common.loading")}</div>;
+  if (!data) return <div className="min-h-screen bg-[#0a1628] flex items-center justify-center"><Loader className="" /></div>;
 
   return (
     <div className="min-h-screen bg-[#0a1628]">

@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { apiService } from "../services/api";
 import Avatar from "../components/Avatar";
 import Layout from "../components/Layout";
+import Loader from "../components/Loader";
 import { useT, type Lang } from "../i18n";
 import { playerName, formatDelta, deltaTone } from "../lib/format";
 import { field } from "../lib/ui";
@@ -22,7 +23,7 @@ export default function ProfilePage() {
   const { user, refreshUser, setUser } = useAuth();
   const { t, lang, setLang } = useT();
   const [stats, setStats] = useState<Stats | null>(null);
-  const [history, setHistory] = useState<any[]>([]);
+  const [history, setHistory] = useState<any[] | null>(null);
   const [edit, setEdit] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -38,7 +39,7 @@ export default function ProfilePage() {
   // Thursday" had no answer on this screen before.
   useEffect(() => {
     if (!user?.id) return;
-    apiService.players.getById(user.id).then(r => setHistory(r.data.matches || [])).catch(console.error);
+    apiService.players.getById(user.id).then(r => setHistory(r.data.matches || [])).catch(e => { console.error(e); setHistory(h => h ?? []); });
   }, [user?.id]);
 
   useEffect(() => {
@@ -225,7 +226,9 @@ export default function ProfilePage() {
       {user && <PlayerStats playerId={user.id} />}
 
       <h2 className={`${label} mb-2`}>{t("player.history")}</h2>
-      {history.length === 0 ? (
+      {history === null ? (
+        <Loader className="py-8 mb-5" />
+      ) : history.length === 0 ? (
         <div className={`${card} p-6 text-center mb-5`}>
           <p className="text-[#6b84a0] text-sm">{t("player.noHistory")}</p>
         </div>

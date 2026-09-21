@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { apiService } from "../services/api";
 import Layout from "../components/Layout";
 import ScopeToggle from "../components/ScopeToggle";
+import Loader from "../components/Loader";
 import SetsToWinPicker from "../components/SetsToWinPicker";
 import { useT } from "../i18n";
 import { useAuth } from "../context/AuthContext";
@@ -17,7 +18,7 @@ export default function GamesPage() {
   const { token, user } = useAuth();
   const navigate = useNavigate();
   const isGuest = !token;
-  const [games, setGames] = useState<any[]>([]);
+  const [games, setGames] = useState<any[] | null>(null);
   const [clubs, setClubs] = useState<any[]>([]);
   const [scope, setScope] = useState<"all" | "mine">("all");
   const [showCreate, setShowCreate] = useState(false);
@@ -30,14 +31,21 @@ export default function GamesPage() {
   const [oppSearch, setOppSearch] = useState("");
   const [quick, setQuick] = useState({ opponentId: "", setsWon1: 3, setsWon2: 0 });
 
-  const load = () => {
+  const fetchGames = () => (
     // "Mine" needs an account; a guest only ever sees the open feed.
-    const fetch = scope === "mine" && !isGuest
+    scope === "mine" && !isGuest
       ? apiService.tournaments.getMine({ kind: "GAME" })
-      : apiService.tournaments.getAll({ kind: "GAME" });
-    fetch.then(r => setGames(r.data)).catch(console.error);
-  };
-  useEffect(load, [scope, isGuest]);
+      : apiService.tournaments.getAll({ kind: "GAME" })
+  );
+  // A refresh after creating a game keeps the list on screen; only a change of scope
+  // goes back to the loader, so the old scope's rows are never shown as the new one's.
+  const load = () => { fetchGames().then(r => setGames(r.data)).catch(console.error); };
+  useEffect(() => {
+    let stale = false;
+    setGames(null);
+    fetchGames().then(r => { if (!stale) setGames(r.data); }).catch(e => { console.error(e); if (!stale) setGames([]); });
+    return () => { stale = true; };
+  }, [scope, isGuest]);
   useEffect(() => { apiService.clubs.getAll().then(r => setClubs(r.data)).catch(console.error); }, []);
   // GET /players is behind auth, and only the quick-result picker needs it.
   useEffect(() => {
@@ -176,7 +184,9 @@ export default function GamesPage() {
 
       <ScopeToggle scope={scope} onChange={setScope} labels={[t("games.all"), t("games.mine")]} hidden={isGuest} />
 
-      {games.length === 0 ? (
+      {games === null ? (
+        <Loader />
+      ) : games.length === 0 ? (
         <div className="text-center py-14 bg-[#101f36] rounded-lg border border-[#1c3350]">
           <p className="text-[#6b84a0] text-sm">{t("games.empty")}</p>
         </div>

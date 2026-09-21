@@ -4,6 +4,7 @@ import { apiService } from "../services/api";
 import Layout from "../components/Layout";
 import { useAuth } from "../context/AuthContext";
 import SetsToWinPicker from "../components/SetsToWinPicker";
+import Loader from "../components/Loader";
 import { useT } from "../i18n";
 import { formatShortDate, formatSlot } from "../lib/format";
 import { field } from "../lib/ui";
@@ -14,9 +15,10 @@ export default function BookingsPage() {
   const { t, lang } = useT();
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [clubs, setClubs] = useState<any[]>([]);
-  const [bookings, setBookings] = useState<any[]>([]);
-  const [subscriptions, setSubscriptions] = useState<any[]>([]);
+  // null until the first answer, so "no clubs" / "no bookings" only ever means it.
+  const [clubs, setClubs] = useState<any[] | null>(null);
+  const [bookings, setBookings] = useState<any[] | null>(null);
+  const [subscriptions, setSubscriptions] = useState<any[] | null>(null);
   const [availability, setAvailability] = useState<any[]>([]);
   const [form, setForm] = useState({
     clubId: "", tableId: "", date: "", startTime: "", durationHours: 1,
@@ -31,9 +33,11 @@ export default function BookingsPage() {
   const [error, setError] = useState("");
 
   const load = () => {
-    apiService.clubs.getAll().then(r => setClubs(r.data)).catch(console.error);
-    apiService.bookings.getMine().then(r => setBookings(r.data)).catch(console.error);
-    apiService.subscriptions.getMine().then(r => setSubscriptions(r.data)).catch(console.error);
+    // On failure a list settles to empty rather than spinning forever.
+    const failed = (set: (v: any[] | ((p: any[] | null) => any[])) => void) => (e: unknown) => { console.error(e); set(p => p ?? []); };
+    apiService.clubs.getAll().then(r => setClubs(r.data)).catch(failed(setClubs));
+    apiService.bookings.getMine().then(r => setBookings(r.data)).catch(failed(setBookings));
+    apiService.subscriptions.getMine().then(r => setSubscriptions(r.data)).catch(failed(setSubscriptions));
   };
   useEffect(load, []);
 
@@ -156,7 +160,9 @@ export default function BookingsPage() {
           </form>
         )}
 
-        {clubs.length === 0 ? (
+        {clubs === null ? (
+          <Loader className="py-8" />
+        ) : clubs.length === 0 ? (
           <p className="text-center py-8 text-sm text-[#6b84a0] bg-[#101f36] rounded-lg border border-[#1c3350] px-4">{t("play.noClubs")}</p>
         ) : (
           <form onSubmit={createBooking} className="bg-[#101f36] p-4 rounded-lg border border-[#1c3350] space-y-3">
@@ -276,7 +282,9 @@ export default function BookingsPage() {
 
       <section className="mb-6">
         <h2 className={sectionLabel}>{t("play.myBookings")}</h2>
-        {bookings.length === 0 ? (
+        {bookings === null ? (
+          <Loader className="py-8" />
+        ) : bookings.length === 0 ? (
           <p className="text-center py-8 text-sm text-[#6b84a0] bg-[#101f36] rounded-lg border border-[#1c3350]">{t("play.noBookings")}</p>
         ) : (
           <div className="space-y-2">
@@ -306,11 +314,13 @@ export default function BookingsPage() {
         <form onSubmit={subscribe} className="flex gap-2 mb-3">
           <select value={subClubId} onChange={e => setSubClubId(e.target.value)} className={field + " flex-1"}>
             <option value="">{t("play.followClub")}</option>
-            {clubs.map(c => <option key={c.id} value={c.id}>{c.name} &middot; {c.city}</option>)}
+            {(clubs ?? []).map(c => <option key={c.id} value={c.id}>{c.name} &middot; {c.city}</option>)}
           </select>
           <button type="submit" className="px-4 py-2.5 bg-[#ccff00] text-[#0a1628] rounded-lg text-sm font-bold shrink-0">{t("play.follow")}</button>
         </form>
-        {subscriptions.length === 0 ? (
+        {subscriptions === null ? (
+          <Loader className="py-8" />
+        ) : subscriptions.length === 0 ? (
           <p className="text-center py-8 text-sm text-[#6b84a0] bg-[#101f36] rounded-lg border border-[#1c3350]">{t("play.noSubscriptions")}</p>
         ) : (
           <div className="flex flex-wrap gap-2">

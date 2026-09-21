@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { apiService } from "../services/api";
 import Layout from "../components/Layout";
 import Avatar from "../components/Avatar";
+import Loader from "../components/Loader";
 import { useT } from "../i18n";
 import { playerName, formatDelta, deltaTone } from "../lib/format";
 import { useAuth } from "../context/AuthContext";
@@ -23,7 +24,7 @@ export default function PlayerPage() {
     apiService.players.getById(id).then(r => setData(r.data)).catch(console.error);
   }, [id]);
 
-  if (!data) return <Layout><div className="text-center py-20 text-[#6b84a0] text-sm">{t("common.loading")}</div></Layout>;
+  if (!data) return <Layout><Loader className="py-20" /></Layout>;
 
   const p = data.player;
   const matches: any[] = data.matches || [];
