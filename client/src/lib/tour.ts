@@ -11,20 +11,48 @@ export interface TourStep {
   /** The `data-tour` element this step is about. Every step has one: a card
    *  pointing at nothing is a slide, and the app already has screens. */
   anchor: string;
+  /** The screen that element is on. When the visitor is somewhere else, the
+   *  step offers to take them there rather than describing how to get back. */
+  target: "tournament" | "match";
   /** Advances the tour when a screen reports this action. */
   doneBy?: string;
 }
 
 export const TOUR_STEPS: TourStep[] = [
-  { id: "roster", anchor: "roster" },
-  { id: "pair", anchor: "pair", doneBy: "pair" },
-  { id: "myMatch", anchor: "my-match", doneBy: "openMatch" },
-  { id: "start", anchor: "start", doneBy: "start" },
-  { id: "score", anchor: "score", doneBy: "score" },
-  { id: "finish", anchor: "finish", doneBy: "end" },
-  { id: "standings", anchor: "standings" },
-  { id: "claim", anchor: "claim" },
+  { id: "roster", anchor: "roster", target: "tournament" },
+  { id: "pair", anchor: "pair", target: "tournament", doneBy: "pair" },
+  { id: "myMatch", anchor: "my-match", target: "tournament", doneBy: "openMatch" },
+  { id: "start", anchor: "start", target: "match", doneBy: "start" },
+  { id: "score", anchor: "score", target: "match", doneBy: "score" },
+  { id: "finish", anchor: "finish", target: "match", doneBy: "end" },
+  { id: "standings", anchor: "standings", target: "tournament" },
+  { id: "claim", anchor: "claim", target: "tournament" },
 ];
+
+// Where the demo lives, so both the tour and the Dashboard can get back to it.
+// It is remembered per device rather than looked up, because the screens that
+// need it (a tour card, a "return to your demo" link) must not have to fetch
+// anything to know whether to offer the way back.
+const T_KEY = "demoTournament";
+const M_KEY = "demoMatch";
+
+export function rememberDemoTournament(id: string) { localStorage.setItem(T_KEY, id); }
+export function rememberDemoMatch(id: string) { localStorage.setItem(M_KEY, id); }
+export function forgetDemo() { localStorage.removeItem(T_KEY); localStorage.removeItem(M_KEY); }
+
+export function demoTournamentPath(): string | null {
+  const id = localStorage.getItem(T_KEY);
+  return id ? `/tournament/${id}` : null;
+}
+
+// The match screen needs both ids. Falls back to the event itself, which always
+// shows the visitor's own match at the top — never to a dead end.
+export function stepPath(target: TourStep["target"]): string | null {
+  const tournament = localStorage.getItem(T_KEY);
+  if (!tournament) return null;
+  const match = localStorage.getItem(M_KEY);
+  return target === "match" && match ? `/tournament/${tournament}/match/${match}` : `/tournament/${tournament}`;
+}
 
 const KEY = "tour";
 type Listener = () => void;

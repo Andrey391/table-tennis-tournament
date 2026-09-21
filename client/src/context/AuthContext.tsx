@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { apiService } from "../services/api";
+import { forgetDemo } from "../lib/tour";
 
 interface User { id: string; email: string; role: string; firstName: string; lastName: string; rating: number; club?: string | null; city?: string | null; phone?: string | null; dateOfBirth?: string | null; isDemo?: boolean; demoExpiresAt?: string | null; }
 
@@ -81,7 +82,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(d.user);
   };
 
-  const logout = () => { setToken(null); localStorage.removeItem("token"); setUser(null); };
+  // The way back into a demo is per device, so it goes when the account does —
+  // otherwise the next visitor on this phone is offered someone else's evening.
+  const logout = () => { setToken(null); localStorage.removeItem("token"); setUser(null); forgetDemo(); };
 
   return (
     <AuthContext.Provider value={{ token, user, login, register, logout, refreshUser, setUser, startDemo, claimDemo }}>

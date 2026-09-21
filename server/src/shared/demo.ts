@@ -43,9 +43,9 @@ export interface DemoAccount {
   expiresAt: Date;
 }
 
-// Creates the guest, its sparring partners and the event they are already on the
-// roster of, in one transaction: a guest with no event to run would land on an
-// empty screen, which is the thing this flow exists to avoid.
+// Creates the guest, its sparring partner and the event they are already on the
+// roster of: a guest with no event to run would land on an empty screen, which
+// is the thing this flow exists to avoid.
 export async function createDemoAccount(): Promise<DemoAccount> {
   // A password nobody knows: the account is reachable by the token this call
   // returns, and gets a real one when it is claimed.
@@ -60,21 +60,26 @@ export async function createDemoAccount(): Promise<DemoAccount> {
     club: "Демо-клуб", isDemo: true, demoOwnerId: guestId, demoExpiresAt: expiresAt,
   }));
 
-  // The array form, not `$transaction(async tx => ...)`: an interactive
-  // transaction holds one session open across several round trips, which a
-  // connection pooler in front of the database does not reliably survive. A
-  // batch is just as atomic and is one round trip.
   const guestData = {
     id: guestId, email: demoEmail(), password, firstName: "Гость", lastName: "1", role: "ORGANIZER" as const,
     city: "Москва", rating: 220, isDemo: true, demoExpiresAt: expiresAt,
   };
   const tournamentId = randomUUID();
-  await prisma.$transaction([
-    prisma.user.create({ data: guestData }),
-    prisma.user.createMany({ data: opponents }),
+
+  // Three separate writes, not one `$transaction`. The pooled Postgres both
+  // deployments talk to drops the connection partway through a multi-statement
+  // transaction (`P1017`), which made this endpoint fail outright while plain
+  // single-statement writes like /auth/register went through. Atomicity is worth
+  // little here anyway: a half-built demo is a throwaway account with no event,
+  // and it is swept within the day like any other. What matters is that the
+  // visitor gets an event, so a failure after the users exist cleans up after
+  // itself rather than handing back a guest with nothing to open.
+  try {
+    await prisma.user.create({ data: guestData });
+    await prisma.user.createMany({ data: opponents });
     // DRAFT, not ACTIVE: pairing the room is the first thing the tour shows, and
     // it is what turns the roster into round 1.
-    prisma.tournament.create({
+    await prisma.tournament.create({
       data: {
         id: tournamentId,
         name: "Демо-вечер", kind: "TOURNAMENT", status: "DRAFT", tablesCount: 2, setsToWin: 3,
@@ -87,8 +92,14 @@ export async function createDemoAccount(): Promise<DemoAccount> {
           create: [{ id: guestId }, ...opponents].map((u) => ({ userId: u.id, status: "REGISTERED" })),
         },
       },
-    }),
-  ]);
+    });
+  } catch (err) {
+    const ids = [guestId, ...opponents.map((o) => o.id)];
+    await prisma.tournamentUser.deleteMany({ where: { userId: { in: ids } } }).catch(() => {});
+    await prisma.tournament.deleteMany({ where: { id: tournamentId } }).catch(() => {});
+    await prisma.user.deleteMany({ where: { id: { in: ids } } }).catch(() => {});
+    throw err;
+  }
   return { userId: guestId, role: guestData.role, tournamentId, expiresAt };
 }
 
@@ -112,21 +123,24 @@ export async function sweepExpiredDemos(): Promise<number> {
 
   // Nothing here cascades on its own (the same reason DELETE /tournaments/:id
   // clears its rows by hand), so the order matters: everything pointing at a
-  // user or a tournament goes before the row it points at.
-  await prisma.$transaction([
-    prisma.chatMessage.deleteMany({ where: { OR: [{ userId: { in: userIds } }, { tournamentId: { in: tournamentIds } }] } }),
-    prisma.roundBye.deleteMany({ where: { OR: [{ userId: { in: userIds } }, { tournamentId: { in: tournamentIds } }] } }),
+  // user or a tournament goes before the row it points at. Sequential rather
+  // than wrapped in one transaction, for the same reason creation is: this
+  // pooled database drops a connection partway through a multi-statement
+  // transaction. A sweep that stops halfway simply leaves rows for the next one.
+  for (const step of [
+    () => prisma.chatMessage.deleteMany({ where: { OR: [{ userId: { in: userIds } }, { tournamentId: { in: tournamentIds } }] } }),
+    () => prisma.roundBye.deleteMany({ where: { OR: [{ userId: { in: userIds } }, { tournamentId: { in: tournamentIds } }] } }),
     // MatchSet rows cascade with their match.
-    prisma.match.deleteMany({ where: { OR: [{ tournamentId: { in: tournamentIds } }, byUser, { judgeId: { in: userIds } }] } }),
-    prisma.tournamentUser.deleteMany({ where: { OR: [{ userId: { in: userIds } }, { tournamentId: { in: tournamentIds } }] } }),
-    prisma.booking.updateMany({ where: { tournamentId: { in: tournamentIds } }, data: { tournamentId: null } }),
-    prisma.booking.deleteMany({ where: { userId: { in: userIds } } }),
-    prisma.subscription.deleteMany({ where: { userId: { in: userIds } } }),
-    prisma.tournament.deleteMany({ where: { id: { in: tournamentIds } } }),
-    prisma.auditLog.deleteMany({ where: { userId: { in: userIds } } }),
-    prisma.session.deleteMany({ where: { userId: { in: userIds } } }),
-    prisma.club.updateMany({ where: { createdById: { in: userIds } }, data: { createdById: null } }),
-    prisma.user.deleteMany({ where: { id: { in: userIds } } }),
-  ]);
+    () => prisma.match.deleteMany({ where: { OR: [{ tournamentId: { in: tournamentIds } }, byUser, { judgeId: { in: userIds } }] } }),
+    () => prisma.tournamentUser.deleteMany({ where: { OR: [{ userId: { in: userIds } }, { tournamentId: { in: tournamentIds } }] } }),
+    () => prisma.booking.updateMany({ where: { tournamentId: { in: tournamentIds } }, data: { tournamentId: null } }),
+    () => prisma.booking.deleteMany({ where: { userId: { in: userIds } } }),
+    () => prisma.subscription.deleteMany({ where: { userId: { in: userIds } } }),
+    () => prisma.tournament.deleteMany({ where: { id: { in: tournamentIds } } }),
+    () => prisma.auditLog.deleteMany({ where: { userId: { in: userIds } } }),
+    () => prisma.session.deleteMany({ where: { userId: { in: userIds } } }),
+    () => prisma.club.updateMany({ where: { createdById: { in: userIds } }, data: { createdById: null } }),
+    () => prisma.user.deleteMany({ where: { id: { in: userIds } } }),
+  ]) await step();
   return userIds.length;
 }

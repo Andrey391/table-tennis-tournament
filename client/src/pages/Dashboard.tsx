@@ -7,11 +7,13 @@ import ScopeToggle from "../components/ScopeToggle";
 import { useT } from "../i18n";
 import { formatEventDay, formatTimeRange, playerName, matchScoreLine } from "../lib/format";
 import TryDemoButton from "../components/TryDemoButton";
+import { demoTournamentPath } from "../lib/tour";
 
 export default function Dashboard() {
   const { t, lang } = useT();
   const { token, user } = useAuth();
   const isGuest = !token;
+  const demoPath = demoTournamentPath();
   const [tournaments, setTournaments] = useState<any[]>([]);
   const [cities, setCities] = useState<{ city: string; clubs: number }[]>([]);
   // Signup asks for a city; opening the app in someone else's city is not what
@@ -65,6 +67,18 @@ export default function Dashboard() {
           </select>
         </div>
       </div>
+
+      {/* A demo visitor who taps Home has no other way back: their event is not
+          in the public feed, and it is the only thing their account is for. */}
+      {user?.isDemo && demoPath && (
+        <Link to={demoPath} className="block rounded-lg p-4 mb-3 border border-[#ccff00]/40 bg-[#142a44]">
+          <p className="text-[11px] text-[#ccff00] uppercase tracking-wider">{t("demo.title")}</p>
+          <div className="flex items-center justify-between mt-1">
+            <span className="text-base font-bold">{t("demo.backToEvent")}</span>
+            <span className="text-xs text-[#ccff00] font-medium">&rarr;</span>
+          </div>
+        </Link>
+      )}
 
       {myMatches.map(m => (
         <Link key={m.id} to={`/tournament/${m.tournament.id}/match/${m.id}`}
