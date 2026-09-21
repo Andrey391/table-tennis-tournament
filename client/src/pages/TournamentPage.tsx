@@ -7,7 +7,7 @@ import Avatar from "../components/Avatar";
 import SetsToWinPicker from "../components/SetsToWinPicker";
 import { useT } from "../i18n";
 import { field } from "../lib/ui";
-import { tourDone } from "../lib/tour";
+import { tourDone, requestClaim } from "../lib/tour";
 import { formatEventDay, formatTimeRange, playerName, matchScoreLine, formatDelta, deltaTone } from "../lib/format";
 
 export default function TournamentPage() {
@@ -20,6 +20,7 @@ export default function TournamentPage() {
   const [standings, setStandings] = useState<any[]>([]);
   const [allPlayers, setAllPlayers] = useState<any[]>([]);
   const [showAdd, setShowAdd] = useState(false);
+  const [demoAddPrompt, setDemoAddPrompt] = useState(false);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -73,6 +74,9 @@ export default function TournamentPage() {
 
   const isDraft = tournament.status === "DRAFT";
   const isManager = !!user && tournament.organizerId === user.id;
+  // A demo account can run the evening it was given, but not recruit real people
+  // into it: those players would carry a throwaway event in their history.
+  const isDemo = !!user?.isDemo;
   const myEntry = tournament.players.find((p: any) => p.userId === user?.id);
   const approved = tournament.players.filter((p: any) => p.status === "REGISTERED");
   const pending = tournament.players.filter((p: any) => p.status === "PENDING");
@@ -372,8 +376,11 @@ export default function TournamentPage() {
       <section className="mb-6">
         <div className="flex justify-between items-center mb-2">
           <h2 data-tour="roster" className="text-xs font-medium text-[#6b84a0] uppercase tracking-wider">{t("tournament.participants")} ({approved.length})</h2>
+          {/* Adding players means adding *real* ones, and a demo account has no
+              business putting a throwaway event on someone's record — so there the
+              button offers a real account instead of the roster picker. */}
           {isManager && (
-            <button onClick={() => setShowAdd(s => !s)} className="text-xs text-[#ccff00] font-medium">{showAdd ? t("tournament.close") : `+ ${t("tournament.add")}`}</button>
+            <button onClick={() => (isDemo ? (setDemoAddPrompt(true), requestClaim()) : setShowAdd(s => !s))} className="text-xs text-[#ccff00] font-medium">{showAdd ? t("tournament.close") : `+ ${t("tournament.add")}`}</button>
           )}
         </div>
 
@@ -397,7 +404,11 @@ export default function TournamentPage() {
           </div>
         )}
 
-        {isManager && showAdd && (
+        {isManager && isDemo && demoAddPrompt && (
+          <p className="text-xs text-[#93a8c2] bg-[#142a44] border border-[#1c3350] rounded-lg p-3 mb-3">{t("demo.addPlayersHint")}</p>
+        )}
+
+        {isManager && showAdd && !isDemo && (
           <div className="bg-[#101f36] rounded-lg border border-[#1c3350] p-3 mb-3 space-y-2">
             {!isDraft && <p className="text-xs text-[#4d6480]">{t("tournament.addLate")}</p>}
             <input type="text" placeholder={t("tournament.searchPlayers")} value={search} onChange={e => setSearch(e.target.value)}

@@ -2,6 +2,7 @@ import React from "react";
 import { useAuth } from "../context/AuthContext";
 import { useT } from "../i18n";
 import { field, fieldLabel } from "../lib/ui";
+import { onClaimRequested } from "../lib/tour";
 
 // Says out loud that this account is temporary, and offers the one thing that
 // makes it permanent. Claiming updates the account the visitor is already using,
@@ -14,6 +15,13 @@ export default function DemoBanner() {
   const [form, setForm] = React.useState({ email: "", password: "", firstName: "", lastName: "" });
   const [error, setError] = React.useState("");
   const [saving, setSaving] = React.useState(false);
+
+  // A screen that ran into the limits of a demo account asks for the form to be
+  // opened here, rather than carrying its own copy of it.
+  React.useEffect(() => onClaimRequested(() => {
+    setOpen(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }), []);
 
   if (!user?.isDemo) return null;
 

@@ -60,7 +60,7 @@ export default function MatchPage() {
     try { const r = await apiService.matches.updateSettings(matchId!, { setsToWin }); setMatch(r.data); } catch (e) { fail(e); }
   });
   const startMatch = () => write(async () => {
-    try { const r = await apiService.matches.start(matchId!); setMatch(r.data); } catch (e) { fail(e); }
+    try { const r = await apiService.matches.start(matchId!); setMatch(r.data); tourDone("start"); } catch (e) { fail(e); }
   });
   // The rally score is optional: a set is credited whether or not it was typed in.
   const addSet = async (side: 1 | 2) => {
@@ -196,7 +196,7 @@ export default function MatchPage() {
         ) : (
           <div className="space-y-2">
             {match.status === "NOT_STARTED" ? (
-              <button onClick={startMatch} className="w-full bg-[#ccff00] text-[#0a1628] py-4 rounded-lg text-base font-bold active:scale-[0.98] transition-transform">
+              <button onClick={startMatch} data-tour="start" className="w-full bg-[#ccff00] text-[#0a1628] py-4 rounded-lg text-base font-bold active:scale-[0.98] transition-transform">
                 {t("match.start")}
               </button>
             ) : (

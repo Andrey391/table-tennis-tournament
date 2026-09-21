@@ -15,16 +15,18 @@ import { prisma } from "../config/db";
 // evening, short enough that nobody expects it to be storage.
 export const DEMO_TTL_HOURS = 24;
 
-// Ratings are deliberately spread out: with everyone on 100 the seeding step of
-// the tour would pair an arbitrary order and look like it did nothing.
+// One opponent: the demo starts as the shortest complete evening there is —
+// one pair, one match to score and settle — rather than four matches the
+// visitor has no reason to play, each of which would block the next round.
+// The roster is not capped, though: a club night is Swiss-style and takes
+// whoever turns up, so `maxPlayers` stays unset and more players can join the
+// demo event like any other.
+//
+// "Гость 1" / "Гость 2" rather than invented personal names, which would read
+// as real club members in the roster and the match history. The ratings differ
+// so round-1 seeding, which sorts by rating, visibly does something.
 const DEMO_OPPONENTS = [
-  { firstName: "Алексей", lastName: "Морозов", rating: 340 },
-  { firstName: "Марина", lastName: "Зотова", rating: 295 },
-  { firstName: "Павел", lastName: "Гринёв", rating: 250 },
-  { firstName: "Ольга", lastName: "Савина", rating: 205 },
-  { firstName: "Тимур", lastName: "Юсупов", rating: 170 },
-  { firstName: "Дарья", lastName: "Белова", rating: 140 },
-  { firstName: "Никита", lastName: "Орлов", rating: 115 },
+  { firstName: "Гость", lastName: "2", rating: 260 },
 ];
 
 const demoEmail = () => `demo-${randomUUID()}@demo.local`;
@@ -50,8 +52,8 @@ export async function createDemoAccount(): Promise<DemoAccount> {
   const password = await bcrypt.hash(randomUUID(), 10);
   const expiresAt = new Date(Date.now() + DEMO_TTL_HOURS * 3600 * 1000);
 
-  // Ids are chosen here rather than read back, so the seven opponents go in as
-  // one `createMany` and the event can name its roster without a second query.
+  // Ids are chosen here rather than read back, so the event can name its roster
+  // without a second query.
   const guestId = randomUUID();
   const opponents = DEMO_OPPONENTS.map((o) => ({
     ...o, id: randomUUID(), email: demoEmail(), password, role: "PLAYER" as const, city: "Москва",
@@ -63,7 +65,7 @@ export async function createDemoAccount(): Promise<DemoAccount> {
   // connection pooler in front of the database does not reliably survive. A
   // batch is just as atomic and is one round trip.
   const guestData = {
-    id: guestId, email: demoEmail(), password, firstName: "Гость", lastName: "Демо", role: "ORGANIZER" as const,
+    id: guestId, email: demoEmail(), password, firstName: "Гость", lastName: "1", role: "ORGANIZER" as const,
     city: "Москва", rating: 220, isDemo: true, demoExpiresAt: expiresAt,
   };
   const tournamentId = randomUUID();

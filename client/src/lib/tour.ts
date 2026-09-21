@@ -8,7 +8,9 @@
 
 export interface TourStep {
   id: string;
-  anchor?: string;
+  /** The `data-tour` element this step is about. Every step has one: a card
+   *  pointing at nothing is a slide, and the app already has screens. */
+  anchor: string;
   /** Advances the tour when a screen reports this action. */
   doneBy?: string;
 }
@@ -17,6 +19,7 @@ export const TOUR_STEPS: TourStep[] = [
   { id: "roster", anchor: "roster" },
   { id: "pair", anchor: "pair", doneBy: "pair" },
   { id: "myMatch", anchor: "my-match", doneBy: "openMatch" },
+  { id: "start", anchor: "start", doneBy: "start" },
   { id: "score", anchor: "score", doneBy: "score" },
   { id: "finish", anchor: "finish", doneBy: "end" },
   { id: "standings", anchor: "standings" },
@@ -56,4 +59,17 @@ export function tourDone(action: string) {
 export function tourSubscribe(l: Listener) {
   listeners.add(l);
   return () => { listeners.delete(l); };
+}
+
+// A demo visitor reaching for something a throwaway account cannot do — adding
+// real players to the roster, above all — is the moment to offer them a real
+// one. The offer lives in the demo strip at the top of the screen (it holds the
+// form), so a screen asks for it through this rather than growing a second copy.
+const claimListeners = new Set<Listener>();
+
+export function requestClaim() { claimListeners.forEach((l) => l()); }
+
+export function onClaimRequested(l: Listener) {
+  claimListeners.add(l);
+  return () => { claimListeners.delete(l); };
 }
