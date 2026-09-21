@@ -7,6 +7,7 @@ import Avatar from "../components/Avatar";
 import SetsToWinPicker from "../components/SetsToWinPicker";
 import { useT } from "../i18n";
 import { field } from "../lib/ui";
+import { tourDone } from "../lib/tour";
 import { formatEventDay, formatTimeRange, playerName, matchScoreLine, formatDelta, deltaTone } from "../lib/format";
 
 export default function TournamentPage() {
@@ -126,7 +127,7 @@ export default function TournamentPage() {
   const pair = async () => {
     if (!id) return;
     setBusy(true); setError("");
-    try { await apiService.tournaments.pair(id); load(); }
+    try { await apiService.tournaments.pair(id); tourDone("pair"); load(); }
     catch (e: any) { setError(e.response?.data?.error || t("common.failed")); }
     finally { setBusy(false); }
   };
@@ -328,7 +329,7 @@ export default function TournamentPage() {
 
       {!isDraft && (myCurrent || mySittingOut) && (
         myCurrent ? (
-          <Link to={`/tournament/${id}/match/${myCurrent.id}`}
+          <Link to={`/tournament/${id}/match/${myCurrent.id}`} data-tour="my-match" onClick={() => tourDone("openMatch")}
             className={`block rounded-lg p-4 mb-4 border ${myCurrent.status === "COMPLETED" ? "bg-[#101f36] border-[#1c3350]" : "bg-[#ccff00]/10 border-[#ccff00]/40"}`}>
             <p className="text-[11px] text-[#ccff00] uppercase tracking-wider">{t("tournament.myMatch")} &middot; {t("tournament.round", { n: currentRound })}</p>
             <p className="text-base font-bold mt-1 truncate">
@@ -370,7 +371,7 @@ export default function TournamentPage() {
 
       <section className="mb-6">
         <div className="flex justify-between items-center mb-2">
-          <h2 className="text-xs font-medium text-[#6b84a0] uppercase tracking-wider">{t("tournament.participants")} ({approved.length})</h2>
+          <h2 data-tour="roster" className="text-xs font-medium text-[#6b84a0] uppercase tracking-wider">{t("tournament.participants")} ({approved.length})</h2>
           {isManager && (
             <button onClick={() => setShowAdd(s => !s)} className="text-xs text-[#ccff00] font-medium">{showAdd ? t("tournament.close") : `+ ${t("tournament.add")}`}</button>
           )}
@@ -494,7 +495,7 @@ export default function TournamentPage() {
         )}
 
         {isManager && isDraft && (
-          <button onClick={pair} disabled={approved.length < 2 || busy}
+          <button onClick={pair} disabled={approved.length < 2 || busy} data-tour="pair"
             className="w-full mt-3 bg-[#ccff00] text-[#0a1628] py-3.5 rounded-lg text-base font-bold disabled:opacity-40 active:scale-[0.98] transition-transform">
             {busy ? t("tournament.pairing") : tournament.kind === "GAME" ? t("tournament.startGame") : t("tournament.lockAndPair")}
           </button>
@@ -504,7 +505,7 @@ export default function TournamentPage() {
       {!isDraft && (
         <section className="space-y-4">
           {isManager && (
-            <button onClick={pair} disabled={!canStartNextRound || busy}
+            <button onClick={pair} disabled={!canStartNextRound || busy} data-tour="next-round"
               className="w-full bg-[#ccff00] text-[#0a1628] py-3.5 rounded-lg text-base font-bold disabled:opacity-40 active:scale-[0.98] transition-transform">
               {busy ? t("tournament.pairing") : canStartNextRound ? t("tournament.startRound", { n: currentRound + 1 }) : t("tournament.finishRoundFirst")}
             </button>
@@ -538,7 +539,7 @@ export default function TournamentPage() {
       )}
 
       {standings.length > 0 && matches.length > 0 && (
-        <section className="mt-6">
+        <section className="mt-6" data-tour="standings">
           <h2 className="text-xs font-medium text-[#6b84a0] uppercase tracking-wider mb-2">{t("tournament.standings")}</h2>
           <div className="bg-[#101f36] rounded-lg border border-[#1c3350] divide-y divide-[#1c3350]/50">
             {standings.map((s: any, i: number) => (

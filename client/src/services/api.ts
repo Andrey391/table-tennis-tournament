@@ -13,6 +13,10 @@ export const apiService = {
     login: (d: { email: string; password: string }) => api.post("/auth/login", d),
     register: (d: any) => api.post("/auth/register", d),
     me: () => api.get("/auth/me"),
+    // Starts a throwaway account with a club night already on its roster, and
+    // turns that account into a real one once the visitor decides to keep it.
+    demo: () => api.post("/auth/demo"),
+    claim: (d: { email: string; password: string; firstName: string; lastName: string; city?: string }) => api.post("/auth/claim", d),
   },
   players: {
     getAll: () => api.get("/players"),

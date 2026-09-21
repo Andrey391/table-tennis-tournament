@@ -4,6 +4,7 @@ import { prisma } from "../config/db";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
 import { UpdateProfileSchema } from "../shared/schemas";
 import { summariseMatches } from "../shared/stats";
+import { notDemo } from "../shared/demo";
 import bcrypt from "bcryptjs";
 
 export const playerRouter = Router();
@@ -15,7 +16,9 @@ const listSelect = { id: true, firstName: true, lastName: true, role: true, club
 const selfSelect = { ...listSelect, email: true, phone: true, dateOfBirth: true };
 
 playerRouter.get("/", authMiddleware, async (_req, res: Response) => {
-  const players = await prisma.user.findMany({ select: listSelect, orderBy: { rating: "desc" } });
+  // Demo accounts are throwaway, and their sparring partners are not people at
+  // all — neither belongs in a list of players you can add to a real event.
+  const players = await prisma.user.findMany({ where: notDemo, select: listSelect, orderBy: { rating: "desc" } });
   res.json(players);
 });
 
@@ -87,6 +90,7 @@ export const ratingRouter = Router();
 
 ratingRouter.get("/", async (_req, res: Response) => {
   const players = await prisma.user.findMany({
+    where: notDemo,
     select: { id: true, firstName: true, lastName: true, club: true, city: true, rating: true },
     orderBy: { rating: "desc" },
     take: 100,

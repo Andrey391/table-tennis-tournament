@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { apiService } from "../services/api";
 
-interface User { id: string; email: string; role: string; firstName: string; lastName: string; rating: number; club?: string | null; city?: string | null; phone?: string | null; dateOfBirth?: string | null; }
+interface User { id: string; email: string; role: string; firstName: string; lastName: string; rating: number; club?: string | null; city?: string | null; phone?: string | null; dateOfBirth?: string | null; isDemo?: boolean; demoExpiresAt?: string | null; }
 
 interface AuthContextType {
   token: string | null;
@@ -15,11 +15,17 @@ interface AuthContextType {
   // this; `setUser` is for a screen that has just been handed a fresh copy.
   refreshUser: () => Promise<void>;
   setUser: (u: User) => void;
+  // Signs the visitor in as a throwaway account that already owns a club night,
+  // and returns that event's id so the caller can go straight to it. Claiming it
+  // keeps the same account, so nothing the visitor did is lost.
+  startDemo: () => Promise<string>;
+  claimDemo: (data: any) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
   token: null, user: null, login: async () => {}, register: async () => {}, logout: () => {},
   refreshUser: async () => {}, setUser: () => {},
+  startDemo: async () => "", claimDemo: async () => {},
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -64,10 +70,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(d.token); localStorage.setItem("token", d.token); setUser(d.user);
   };
 
+  const startDemo = async () => {
+    const { data } = await apiService.auth.demo();
+    setToken(data.token); localStorage.setItem("token", data.token); setUser(data.user);
+    return data.tournamentId as string;
+  };
+
+  const claimDemo = async (data: any) => {
+    const { data: d } = await apiService.auth.claim(data);
+    setUser(d.user);
+  };
+
   const logout = () => { setToken(null); localStorage.removeItem("token"); setUser(null); };
 
   return (
-    <AuthContext.Provider value={{ token, user, login, register, logout, refreshUser, setUser }}>
+    <AuthContext.Provider value={{ token, user, login, register, logout, refreshUser, setUser, startDemo, claimDemo }}>
       {children}
     </AuthContext.Provider>
   );

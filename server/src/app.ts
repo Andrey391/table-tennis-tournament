@@ -36,6 +36,10 @@ export function createApp(options: { defaultClientUrl?: string } = {}) {
   // against password guessing. (Per instance on serverless: a floor, not a guarantee.)
   app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 1500 }));
   app.use(["/api/auth/login", "/api/auth/register"], rateLimit({ windowMs: 15 * 60 * 1000, max: 20, message: { error: "Too many attempts, try again later" } }));
+  // Starting a demo writes a guest, seven sparring partners and an event, and
+  // needs no credentials at all — so it gets a limit of its own, tighter than the
+  // overall one and looser than sign-in (one visitor may legitimately restart it).
+  app.use("/api/auth/demo", rateLimit({ windowMs: 60 * 60 * 1000, max: 5, message: { error: "Too many demo sessions, try again later" } }));
 
   app.use("/api/auth", authRouter);
   app.use("/api/tournaments", tournamentRouter);

@@ -18,6 +18,7 @@ import ProfilePage from "./pages/ProfilePage";
 import TournamentChatPage from "./pages/TournamentChatPage";
 import GamesPage from "./pages/GamesPage";
 import PlayerPage from "./pages/PlayerPage";
+import Tour from "./components/Tour";
 
 // Wraps the screens that write something. Everything else is readable by a guest:
 // the app is useless to a newcomer if the first thing it asks for is an account,
@@ -54,6 +55,9 @@ function App() {
           <Route path="/public/tournament/:id" element={<PublicTournament />} />
           <Route path="/live/:tournamentId" element={<LiveScore />} />
         </Routes>
+        {/* Outside the routes so it follows a demo visitor from the roster to the
+            scoring screen, which renders without Layout. */}
+        <Tour />
       </PollingProvider>
     </BrowserRouter>
   );

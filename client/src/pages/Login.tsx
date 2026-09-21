@@ -2,6 +2,7 @@ import React from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import Logo from "../components/Logo";
+import TryDemoButton from "../components/TryDemoButton";
 import { useT } from "../i18n";
 import { field, fieldLabel } from "../lib/ui";
 
@@ -45,6 +46,9 @@ export default function Login() {
             className="w-full bg-[#ccff00] text-[#0a1628] py-3 rounded-lg text-sm font-bold hover:bg-[#d8ff33] disabled:opacity-50 transition-colors">
             {loading ? t("auth.signingIn") : t("auth.signIn")}
           </button>
+          {/* No account at all: a throwaway one with a club night already on it,
+              which is the only way to see what the app actually does. */}
+          <TryDemoButton variant="ghost" />
           {/* Browsing is open; an account is only needed to take part. */}
           <button type="button" onClick={() => navigate("/")}
             className="w-full bg-transparent text-[#93a8c2] py-2.5 rounded-lg text-sm font-medium border border-[#1c3350]">

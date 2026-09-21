@@ -56,6 +56,14 @@ CREATE INDEX IF NOT EXISTS "User_club_idx" ON "User"("club");
 CREATE INDEX IF NOT EXISTS "User_rating_idx" ON "User"("rating");
 ALTER TABLE "User" ALTER COLUMN "rating" SET DEFAULT 100;
 
+-- Throwaway accounts for the "try the app" flow: the guest plus the sparring
+-- partners of its demo event. Hidden from the rating list and the leaderboards,
+-- and deleted once "demoExpiresAt" passes (claiming the account clears it).
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "isDemo" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "demoOwnerId" TEXT;
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "demoExpiresAt" TIMESTAMP(3);
+CREATE INDEX IF NOT EXISTS "User_demoExpiresAt_idx" ON "User"("demoExpiresAt");
+
 -- ---------------------------------------------------------------------------
 -- 3. Clubs and their tables.
 -- ---------------------------------------------------------------------------
