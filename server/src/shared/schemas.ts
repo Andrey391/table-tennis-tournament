@@ -149,6 +149,11 @@ export const SelfRegisterSchema = z.object({
   city: z.string().max(120).optional(),
 });
 
+// Signing up from inside a demo. Same fields as a fresh signup — the point is
+// that it updates the account the visitor is already using instead of creating a
+// second one, so the event they ran comes with them.
+export const ClaimDemoSchema = SelfRegisterSchema;
+
 export const RegisterSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),

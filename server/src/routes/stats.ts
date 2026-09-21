@@ -4,6 +4,7 @@ import { prisma } from "../config/db";
 import { publicError } from "../shared/errors";
 import { computeStandings } from "../shared/standings";
 import { standingsInclude, inCity, PLAYED_STATUSES } from "../shared/queries";
+import { notDemo } from "../shared/demo";
 import { computePlayerStats, computeHeadToHead, computeLeaders, periodStart, LeaderMetric } from "../shared/stats";
 
 // Results feed, player statistics, head-to-head and leaderboards. All read-only
@@ -94,6 +95,10 @@ statsRouter.get("/leaders", async (req, res: Response) => {
     const matches = await prisma.match.findMany({
       where: {
         status: "COMPLETED",
+        // A demo evening is played against accounts that only exist to be played
+        // against; it must not put anyone on a leaderboard.
+        player1: notDemo,
+        player2: notDemo,
         ...(since ? { endedAt: { gte: since } } : {}),
         ...(city ? { tournament: inCity(city) } : {}),
       },

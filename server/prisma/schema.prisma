@@ -41,6 +41,19 @@ model User {
   rating           Int       @default(100)
   dateOfBirth      DateTime?
   phone            String?
+  // A throwaway account handed to someone trying the app out, together with the
+  // sparring partners its demo event is played against. Demo accounts are hidden
+  // from the rating list and the leaderboards so a test run never touches the real
+  // ladder, and the whole set is deleted once `demoExpiresAt` passes. Claiming the
+  // account (signing up properly) clears `demoExpiresAt`, which is what makes the
+  // evening the visitor just ran survive; `isDemo` stays true on the opponents so
+  // they never turn into ladder entries.
+  isDemo           Boolean   @default(false)
+  // The guest account these demo opponents belong to, so the sweep removes a set
+  // together. Deliberately a plain column, not a relation: the sweep deletes in
+  // its own order and a self-referencing foreign key would only get in the way.
+  demoOwnerId      String?
+  demoExpiresAt    DateTime?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   tournaments      TournamentUser[]
@@ -58,6 +71,7 @@ model User {
   @@index([club])
   @@index([city])
   @@index([rating])
+  @@index([demoExpiresAt])
 }
 
 // A venue with tables. Clubs are what bookings, subscriptions and tournaments point at —

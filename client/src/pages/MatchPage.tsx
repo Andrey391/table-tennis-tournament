@@ -6,6 +6,7 @@ import { HeadToHead } from "../components/PlayerStats";
 import { useT } from "../i18n";
 import { playerName } from "../lib/format";
 import SetsToWinPicker from "../components/SetsToWinPicker";
+import { tourDone } from "../lib/tour";
 
 // The unit of scoring is the set ("партия"), not the point. The judge marks who
 // took each set; nothing tracks the rally-by-rally score, so there is no deuce,
@@ -71,6 +72,7 @@ export default function MatchPage() {
         const r = await apiService.matches.score(matchId!, typed ? { side, score1: +setScore.a, score2: +setScore.b } : { side });
         setMatch(r.data.match);
         setSetScore({ a: "", b: "" });
+        tourDone("score");
       } catch (e) { fail(e); }
     });
     setBusy(false);
@@ -80,7 +82,7 @@ export default function MatchPage() {
     try { const r = await apiService.matches.undo(matchId!); setMatch(r.data.match); } catch (e) { fail(e); }
   });
   const endMatch = () => write(async () => {
-    try { await apiService.matches.end(matchId!); navigate(`/tournament/${id}`); } catch (e) { fail(e); setConfirming(null); }
+    try { await apiService.matches.end(matchId!); tourDone("end"); navigate(`/tournament/${id}`); } catch (e) { fail(e); setConfirming(null); }
   });
   // Same exit as ending a match: the result is settled, back to the round.
   const forfeit = (loserSide: 1 | 2) => write(async () => {
@@ -211,7 +213,7 @@ export default function MatchPage() {
                   <p className="text-[11px] text-[#4d6480] mt-2">{t("match.setScoreHint")}</p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-2" data-tour="score">
                   {sides.map(sd => (
                     <button key={sd.n} onClick={() => addSet(sd.n)} disabled={busy} style={{ backgroundColor: sd.color }}
                       className="text-white py-6 rounded-lg text-base font-bold active:scale-[0.97] transition-transform disabled:opacity-60">
@@ -225,7 +227,7 @@ export default function MatchPage() {
                     reach the standings, the stats and the rating — so ending it is
                     the primary action here. Table tennis has no draws, so a level
                     tally cannot be ended: the pair plays a deciding set. */}
-                <button onClick={() => setConfirming("end")} disabled={!!endBlockedReason}
+                <button onClick={() => setConfirming("end")} disabled={!!endBlockedReason} data-tour="finish"
                   className={`w-full py-3.5 rounded-lg text-base font-bold active:scale-[0.98] transition-transform disabled:opacity-40 ${
                     suggestEnd ? "bg-[#ccff00] text-[#0a1628]" : "bg-[#1c3350] text-[#93a8c2] border border-[#1c3350]"
                   }`}>

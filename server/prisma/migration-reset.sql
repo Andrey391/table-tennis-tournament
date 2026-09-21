@@ -96,6 +96,12 @@ CREATE TABLE "User" (
     "rating" INTEGER NOT NULL DEFAULT 100,
     "dateOfBirth" TIMESTAMP(3),
     "phone" TEXT,
+    -- A throwaway "try the app" account, or one of the sparring partners of its
+    -- demo event. Hidden from the rating list and the leaderboards; the whole set
+    -- is deleted once "demoExpiresAt" passes, and claiming the account clears it.
+    "isDemo" BOOLEAN NOT NULL DEFAULT false,
+    "demoOwnerId" TEXT,
+    "demoExpiresAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -105,6 +111,7 @@ CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 CREATE INDEX "User_club_idx" ON "User"("club");
 CREATE INDEX "User_city_idx" ON "User"("city");
 CREATE INDEX "User_rating_idx" ON "User"("rating");
+CREATE INDEX "User_demoExpiresAt_idx" ON "User"("demoExpiresAt");
 
 -- A venue. Bookings, subscriptions and tournaments point here; the free-text
 -- User.club string is only a display-level "home club" note.

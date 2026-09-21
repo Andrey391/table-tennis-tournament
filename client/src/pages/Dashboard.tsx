@@ -6,6 +6,7 @@ import Layout from "../components/Layout";
 import ScopeToggle from "../components/ScopeToggle";
 import { useT } from "../i18n";
 import { formatEventDay, formatTimeRange, playerName, matchScoreLine } from "../lib/format";
+import TryDemoButton from "../components/TryDemoButton";
 
 export default function Dashboard() {
   const { t, lang } = useT();
@@ -92,7 +93,12 @@ export default function Dashboard() {
           className="relative inline-flex mt-4 px-5 py-3 rounded-lg bg-[#ccff00] text-[#0a1628] text-sm font-bold active:scale-[0.97] transition-transform">
           {isGuest ? t("auth.signIn") : t("home.newTournament")}
         </Link>
-        {isGuest && <p className="relative text-[11px] text-[#4d6480] mt-2">{t("guest.viewOnly")}</p>}
+        {isGuest && (
+          <div className="relative mt-3 max-w-[34ch]">
+            <TryDemoButton variant="ghost" />
+            <p className="text-[11px] text-[#4d6480] mt-2">{t("guest.viewOnly")}</p>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-2 mb-5">
