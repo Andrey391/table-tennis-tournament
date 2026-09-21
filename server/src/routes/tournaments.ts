@@ -6,7 +6,8 @@ import { CreateTournamentSchema, UpdateTournamentSchema, AddPlayersSchema, ChatM
 import { computeStandings } from "../shared/standings";
 import { checkCanEnd } from "../shared/scoring";
 import { generateRoundPairings } from "../shared/scheduler";
-import { playerSelect, clubSelect, matchInclude, feedInclude, standingsInclude, inCity, queryString } from "../shared/queries";
+import { playerSelect, clubSelect, matchInclude, feedInclude, FEED_PLAYERS, standingsInclude, inCity, queryString } from "../shared/queries";
+import { hasOpenDemoSeat } from "../shared/demo";
 import AuditLog from "../models/AuditLog";
 
 export const tournamentRouter = Router();
@@ -113,10 +114,17 @@ tournamentRouter.get("/mine", authMiddleware, async (req: AuthenticatedRequest, 
   const kind = queryString(req.query.kind);
   const tournaments = await prisma.tournament.findMany({
     where: { ...(kind ? { kind } : {}), OR: [{ organizerId: userId }, { players: { some: { userId } } }] },
-    include: { ...feedInclude, players: { where: { userId }, select: { status: true } } },
+    // The caller's own row (for `myStatus`) plus everyone approved (for the card's
+    // faces) in one relation, since a relation can only be filtered one way.
+    include: { ...feedInclude, players: { where: { OR: [{ userId }, { status: "REGISTERED" }] }, select: { userId: true, status: true, user: { select: playerSelect } } } },
     orderBy: [{ startTime: "asc" }, { createdAt: "desc" }],
   });
-  res.json(tournaments.map(({ players, ...t }) => ({ ...t, myStatus: players[0]?.status ?? null, isOrganizer: t.organizerId === userId })));
+  res.json(tournaments.map(({ players, ...t }) => ({
+    ...t,
+    myStatus: players.find((p) => p.userId === userId)?.status ?? null,
+    isOrganizer: t.organizerId === userId,
+    players: players.filter((p) => p.status === "REGISTERED").sort((a, b) => (b.user?.rating ?? 0) - (a.user?.rating ?? 0)).slice(0, FEED_PLAYERS).map(({ userId, user }) => ({ userId, user })),
+  })));
 });
 
 tournamentRouter.get("/:id", async (req, res: Response) => {
@@ -131,7 +139,9 @@ tournamentRouter.get("/:id", async (req, res: Response) => {
     },
   });
   if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
-  res.json(tournament);
+  // Only a demo event can have an open seat; the manager's page reads this to
+  // decide whether to offer the invitation link.
+  res.json({ ...tournament, demoSeatOpen: await hasOpenDemoSeat(tournament.id) });
 });
 
 tournamentRouter.put("/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {

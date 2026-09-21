@@ -16,6 +16,8 @@ export const apiService = {
     // Starts a throwaway account with a club night already on its roster, and
     // turns that account into a real one once the visitor decides to keep it.
     demo: () => api.post("/auth/demo"),
+    // Redeems a demo invitation link: takes the open seat in that event as a guest.
+    joinDemo: (tournamentId: string) => api.post("/auth/demo/join", { tournamentId }),
     claim: (d: { email: string; password: string; firstName: string; lastName: string; city?: string }) => api.post("/auth/claim", d),
   },
   players: {

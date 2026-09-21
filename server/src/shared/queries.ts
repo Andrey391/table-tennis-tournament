@@ -14,11 +14,21 @@ export const matchInclude = {
   sets: { orderBy: { index: "asc" as const } },
 };
 
+// How many participants a feed card shows faces for; `_count` says how many more.
+export const FEED_PLAYERS = 4;
+
 // "9/9 players" counts approved participants only — pending requests don't fill the tournament.
 export const feedInclude = {
   organizer: { select: { id: true, firstName: true, lastName: true } },
   club: { select: clubSelect },
   _count: { select: { matches: true, players: { where: { status: "REGISTERED" as const } } } },
+  // The avatars on the feed card: the strongest few of those taking part.
+  players: {
+    where: { status: "REGISTERED" as const },
+    orderBy: { user: { rating: "desc" as const } },
+    take: FEED_PLAYERS,
+    select: { userId: true, user: { select: playerSelect } },
+  },
 };
 
 export const bookingInclude = {
