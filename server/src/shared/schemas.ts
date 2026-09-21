@@ -91,7 +91,7 @@ export const UpdateProfileSchema = z.object({
 });
 
 export const ChatMessageSchema = z.object({
-  text: z.string().min(1).max(1000),
+  text: z.string().trim().min(1).max(1000),
 });
 
 export const AddPlayersSchema = z.object({

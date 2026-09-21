@@ -1,6 +1,6 @@
 import { Server as HTTPServer } from "http";
 import { Server, Socket } from "socket.io";
-import { prisma } from "./config/db.js";
+import { prisma } from "./config/db";
 
 let io: Server | null = null;
 

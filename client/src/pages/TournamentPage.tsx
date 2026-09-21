@@ -6,6 +6,7 @@ import Layout from "../components/Layout";
 import Avatar from "../components/Avatar";
 import SetsToWinPicker from "../components/SetsToWinPicker";
 import { useT } from "../i18n";
+import { field } from "../lib/ui";
 import { formatEventDay, formatTimeRange, playerName, matchScoreLine, formatDelta, deltaTone } from "../lib/format";
 
 export default function TournamentPage() {
@@ -292,23 +293,23 @@ export default function TournamentPage() {
 
       {isManager && edit && (
         <form onSubmit={saveEdit} className="bg-[#101f36] rounded-lg border border-[#1c3350] p-4 mb-4 space-y-3">
-          <input type="text" value={edit.name} onChange={e => setEdit({ ...edit, name: e.target.value })} placeholder={t("create.name")} className={editField} required />
-          <textarea rows={2} value={edit.description} onChange={e => setEdit({ ...edit, description: e.target.value })} placeholder={t("create.description")} className={editField} />
-          <select value={edit.clubId} onChange={e => setEdit({ ...edit, clubId: e.target.value })} className={editField}>
+          <input type="text" value={edit.name} onChange={e => setEdit({ ...edit, name: e.target.value })} placeholder={t("create.name")} className={field} required />
+          <textarea rows={2} value={edit.description} onChange={e => setEdit({ ...edit, description: e.target.value })} placeholder={t("create.description")} className={field} />
+          <select value={edit.clubId} onChange={e => setEdit({ ...edit, clubId: e.target.value })} className={field}>
             <option value="">{t("create.noClub")}</option>
             {clubs.map(c => <option key={c.id} value={c.id}>{c.name} &middot; {c.city}</option>)}
           </select>
           <div className="grid grid-cols-2 gap-2">
-            <input type="datetime-local" value={edit.startTime} onChange={e => setEdit({ ...edit, startTime: e.target.value })} className={editField} />
-            <input type="datetime-local" value={edit.endTime} onChange={e => setEdit({ ...edit, endTime: e.target.value })} className={editField} />
+            <input type="datetime-local" value={edit.startTime} onChange={e => setEdit({ ...edit, startTime: e.target.value })} className={field} />
+            <input type="datetime-local" value={edit.endTime} onChange={e => setEdit({ ...edit, endTime: e.target.value })} className={field} />
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <input type="number" min={1} value={edit.tablesCount} onChange={e => setEdit({ ...edit, tablesCount: e.target.value })} placeholder={t("create.tables")} className={editField} />
-            <input type="number" min={2} value={edit.maxPlayers} onChange={e => setEdit({ ...edit, maxPlayers: e.target.value })} placeholder={t("create.maxPlayers")} className={editField} />
+            <input type="number" min={1} value={edit.tablesCount} onChange={e => setEdit({ ...edit, tablesCount: e.target.value })} placeholder={t("create.tables")} className={field} />
+            <input type="number" min={2} value={edit.maxPlayers} onChange={e => setEdit({ ...edit, maxPlayers: e.target.value })} placeholder={t("create.maxPlayers")} className={field} />
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <input type="number" value={edit.minRating} onChange={e => setEdit({ ...edit, minRating: e.target.value })} placeholder={t("create.min")} className={editField} />
-            <input type="number" value={edit.maxRating} onChange={e => setEdit({ ...edit, maxRating: e.target.value })} placeholder={t("create.max")} className={editField} />
+            <input type="number" value={edit.minRating} onChange={e => setEdit({ ...edit, minRating: e.target.value })} placeholder={t("create.min")} className={field} />
+            <input type="number" value={edit.maxRating} onChange={e => setEdit({ ...edit, maxRating: e.target.value })} placeholder={t("create.max")} className={field} />
           </div>
           <div>
             <label className="block text-xs text-[#6b84a0] mb-1.5 uppercase tracking-wider">{t("create.setsToWin")}</label>
@@ -582,8 +583,6 @@ export default function TournamentPage() {
     </Layout>
   );
 }
-
-const editField = "w-full px-3 py-2.5 bg-[#0a1628] rounded border border-[#1c3350] text-sm focus:border-[#ccff00] focus:outline-none";
 
 function MatchRow({ m, tournamentId, tableLabel }: { m: any; tournamentId: string; tableLabel: string }) {
   const borderClass = m.status === "IN_PROGRESS" ? "border-yellow-500/20" : "border-[#1c3350]";

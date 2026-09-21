@@ -1,8 +1,8 @@
 import { Router, Response } from "express";
-import { publicError } from "../shared/errors.js";
-import { prisma } from "../config/db.js";
-import { AuthenticatedRequest, authMiddleware, generateToken } from "../middleware/auth.js";
-import { LoginSchema, SelfRegisterSchema } from "../shared/schemas.js";
+import { publicError } from "../shared/errors";
+import { prisma } from "../config/db";
+import { AuthenticatedRequest, authMiddleware, generateToken } from "../middleware/auth";
+import { LoginSchema, SelfRegisterSchema } from "../shared/schemas";
 import bcrypt from "bcryptjs";
 
 export const authRouter = Router();

@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { apiService } from "../services/api";
 import Layout from "../components/Layout";
+import ScopeToggle from "../components/ScopeToggle";
 import SetsToWinPicker from "../components/SetsToWinPicker";
 import { useT } from "../i18n";
 import { useAuth } from "../context/AuthContext";
 import { formatEventDay, formatTimeRange, playerName } from "../lib/format";
+import { field } from "../lib/ui";
 
 // A game is a tournament with kind=GAME: same roster, rounds and pairing, no Elo.
 // This screen is the game-shaped view of the same feed; opening one lands on the
@@ -84,7 +86,6 @@ export default function GamesPage() {
     finally { setBusy(false); }
   };
 
-  const field = "w-full px-3 py-2.5 bg-[#0a1628] rounded border border-[#1c3350] text-sm focus:border-[#ccff00] focus:outline-none";
 
   return (
     <Layout>
@@ -173,14 +174,7 @@ export default function GamesPage() {
         </form>
       )}
 
-      <div className={`flex gap-2 mb-3 ${isGuest ? "hidden" : ""}`}>
-        {(["all", "mine"] as const).map(sc => (
-          <button key={sc} onClick={() => setScope(sc)}
-            className={`flex-1 py-2 rounded-lg text-sm font-medium border ${
-              scope === sc ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00]" : "bg-[#101f36] text-[#93a8c2] border-[#1c3350]"
-            }`}>{t(sc === "all" ? "games.all" : "games.mine")}</button>
-        ))}
-      </div>
+      <ScopeToggle scope={scope} onChange={setScope} labels={[t("games.all"), t("games.mine")]} hidden={isGuest} />
 
       {games.length === 0 ? (
         <div className="text-center py-14 bg-[#101f36] rounded-lg border border-[#1c3350]">

@@ -1,16 +1,16 @@
-import { prisma } from "../config/db.js";
+import { prisma } from "../config/db";
 
 class AuditLogModel {
+  // Best-effort: the audit trail is a side record, so a failure to write it (say the
+  // table is missing on a database that has not been migrated yet) is logged rather
+  // than turning an action that already succeeded into a 400.
   async create(data: { userId: string; action: string; entity: string; entityId?: string; oldValue?: any; newValue?: any; ip?: string }) {
-    return prisma.auditLog.create({ data });
-  }
-
-  async getByEntity(entity: string, entityId: string) {
-    return prisma.auditLog.findMany({ where: { entity, entityId }, orderBy: { timestamp: "desc" } });
-  }
-
-  async getAll(filters?: { userId?: string; action?: string }) {
-    return prisma.auditLog.findMany({ where: filters, orderBy: { timestamp: "desc" }, take: 100 });
+    try {
+      return await prisma.auditLog.create({ data });
+    } catch (err: any) {
+      console.error("[AUDIT]", err.message);
+      return null;
+    }
   }
 }
 

@@ -1,9 +1,10 @@
 import { Router, Response } from "express";
 import { Prisma } from "@prisma/client";
-import { prisma } from "../config/db.js";
-import { publicError } from "../shared/errors.js";
-import { computeStandings } from "../shared/standings.js";
-import { computePlayerStats, computeHeadToHead, computeLeaders, periodStart, LeaderMetric } from "../shared/stats.js";
+import { prisma } from "../config/db";
+import { publicError } from "../shared/errors";
+import { computeStandings } from "../shared/standings";
+import { standingsInclude, inCity, PLAYED_STATUSES } from "../shared/queries";
+import { computePlayerStats, computeHeadToHead, computeLeaders, periodStart, LeaderMetric } from "../shared/stats";
 
 // Results feed, player statistics, head-to-head and leaderboards. All read-only
 // and unauthenticated, like the rest of what a guest can browse: the selects
@@ -17,10 +18,6 @@ const statMatchSelect = {
   player1: statPlayer, player2: statPlayer,
   tournament: { select: { id: true, name: true, kind: true } },
 } satisfies Prisma.MatchSelect;
-const standingsInclude = {
-  players: { where: { status: { in: ["REGISTERED", "WITHDRAWN"] } }, include: { user: { select: { id: true, firstName: true, lastName: true, club: true, rating: true } } } },
-  matches: { where: { status: "COMPLETED" }, select: { player1Id: true, player2Id: true, setsWon1: true, setsWon2: true, eloDelta: true } },
-} satisfies Prisma.TournamentInclude;
 
 // Finished and running events, newest first, each with its podium. `userId`
 // narrows it to one player's events and then includes their private ones too
@@ -31,9 +28,9 @@ statsRouter.get("/results", async (req, res: Response) => {
     const events = await prisma.tournament.findMany({
       where: {
         status: { in: ["ACTIVE", "COMPLETED"] },
-        ...(userId ? { players: { some: { userId, status: { in: ["REGISTERED", "WITHDRAWN"] } } } } : { isPublic: true }),
+        ...(userId ? { players: { some: { userId, status: PLAYED_STATUSES } } } : { isPublic: true }),
         ...(kind ? { kind } : {}),
-        ...(city ? { OR: [{ club: { city } }, { clubId: null, organizer: { city } }] } : {}),
+        ...(city ? inCity(city) : {}),
         ...(q ? { name: { contains: q, mode: "insensitive" as const } } : {}),
       },
       include: {
@@ -65,7 +62,7 @@ statsRouter.get("/players/:id/stats", async (req, res: Response) => {
       // Finished tournaments (games have no placings worth a medal) with at least
       // three players: winning a two-person "tournament" is just winning a match.
       prisma.tournament.findMany({
-        where: { kind: "TOURNAMENT", status: "COMPLETED", players: { some: { userId, status: { in: ["REGISTERED", "WITHDRAWN"] } } } },
+        where: { kind: "TOURNAMENT", status: "COMPLETED", players: { some: { userId, status: PLAYED_STATUSES } } },
         include: standingsInclude,
       }),
     ]);
@@ -98,7 +95,7 @@ statsRouter.get("/leaders", async (req, res: Response) => {
       where: {
         status: "COMPLETED",
         ...(since ? { endedAt: { gte: since } } : {}),
-        ...(city ? { tournament: { OR: [{ club: { city } }, { clubId: null, organizer: { city } }] } } : {}),
+        ...(city ? { tournament: inCity(city) } : {}),
       },
       select: statMatchSelect,
     });
