@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiService } from "../services/api";
 import { useT } from "../i18n";
-import { formatSlot } from "../lib/format";
+import { formatShortDate, formatSlot } from "../lib/format";
 import { btnPrimary, card, errorBox, field, fieldLabel } from "../lib/ui";
 import SetsToWinPicker from "./SetsToWinPicker";
 import ClubScheduleModal from "./ClubScheduleModal";
@@ -23,6 +23,14 @@ const roundedUpHour = () => {
   return d;
 };
 const addHour = (hm: string) => { const [h, m] = hm.split(":").map(Number); return `${pad2((h + 1) % 24)}:${pad2(m)}`; };
+// A suggested slot's date is a calendar-day label (UTC midnight), not a real
+// instant — read with UTC getters and rebuilt as a local Date on those same
+// Y/M/D so it prints and re-submits as that calendar day for every viewer,
+// not one shifted by their own timezone offset.
+const dayLabel = (iso: string) => {
+  const d = new Date(iso);
+  return { dateStr: `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`, localDate: new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) };
+};
 
 // Mirrors the server's bookingsOverlap (shared/booking.ts) so a table already
 // taken over the chosen slot can be greyed out before submitting, not just
@@ -47,12 +55,13 @@ export default function EventForm({
   defaultEventType?: "GAME" | "TOURNAMENT";
   onCreated: (result: any) => void;
 }) {
-  const { t } = useT();
+  const { t, lang } = useT();
   const [clubs, setClubs] = useState<any[] | null>(null);
   const [availability, setAvailability] = useState<any[]>([]);
   const [showSchedule, setShowSchedule] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [suggestion, setSuggestion] = useState<{ date: string; startTime: string } | null>(null);
   const [form, setForm] = useState(() => {
     const startDate = roundedUpHour();
     return {
@@ -128,7 +137,12 @@ export default function EventForm({
       setError(t("play.notEnoughTables", { n: freeTablesCount }));
       return;
     }
-    setBusy(true); setError("");
+    setBusy(true); setError(""); setSuggestion(null);
+    // The actual instant the event starts/ends, resolved in this browser's own
+    // timezone — the server only ever sees "HH:MM" strings otherwise and would
+    // have to guess an instant, guessing wrong for anyone not in UTC.
+    const startsAt = new Date(`${form.date}T${form.startTime}`);
+    const endsAt = new Date(startsAt.getTime() + Math.round(durationHours * 60) * 60_000);
     try {
       let created;
       if (form.clubId) {
@@ -138,6 +152,8 @@ export default function EventForm({
           date: new Date(form.date).toISOString(),
           startTime: form.startTime,
           durationHours,
+          eventStartTime: startsAt.toISOString(),
+          eventEndTime: endsAt.toISOString(),
           eventType: effectiveType,
           eventTitle: form.eventTitle || undefined,
           setsToWin: form.setsToWin,
@@ -153,8 +169,6 @@ export default function EventForm({
         });
       } else {
         // Nothing to book — a plain game created directly, no table involved.
-        const startsAt = new Date(`${form.date}T${form.startTime}`);
-        const endsAt = new Date(startsAt.getTime() + Math.round(durationHours * 60) * 60_000);
         created = await apiService.tournaments.create({
           kind: "GAME",
           name: form.eventTitle || undefined,
@@ -168,15 +182,39 @@ export default function EventForm({
       setForm(f => ({ ...f, tableId: "", date: toDateStr(startDate), startTime: toTimeStr(startDate), endTime: addHour(toTimeStr(startDate)), eventTitle: "", description: "" }));
       setEndTouched(false);
       onCreated(created.data);
-    } catch (err: any) { setError(err.response?.data?.error || t("common.failed")); }
+    } catch (err: any) {
+      const data = err.response?.data;
+      setError(data?.error || t("common.failed"));
+      if (data?.suggestion) setSuggestion(data.suggestion);
+    }
     finally { setBusy(false); }
+  };
+
+  // Apply a server-suggested next-free slot to the form so the user can just
+  // resubmit rather than hunting for a free time by hand.
+  const applySuggestion = () => {
+    if (!suggestion) return;
+    const { dateStr } = dayLabel(suggestion.date);
+    setForm(f => ({ ...f, date: dateStr, startTime: suggestion.startTime, endTime: addHour(suggestion.startTime) }));
+    setEndTouched(false);
+    setSuggestion(null);
+    setError("");
   };
 
   if (clubs === null) return <Loader className="py-8" />;
 
   return (
     <form onSubmit={submit} className={`${card} p-4 space-y-3`}>
-      {error && <div className={errorBox}>{error}</div>}
+      {error && (
+        <div className={errorBox}>
+          <p>{error}</p>
+          {suggestion && (
+            <button type="button" onClick={applySuggestion} className="mt-2 text-[#ccff00] font-medium underline underline-offset-2">
+              {t("play.useSuggestedTime", { date: formatShortDate(dayLabel(suggestion.date).localDate, lang), time: suggestion.startTime })}
+            </button>
+          )}
+        </div>
+      )}
 
       <div>
         <div className="flex items-center justify-between mb-1">

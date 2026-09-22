@@ -93,6 +93,7 @@ export const apiService = {
     getMine: () => api.get("/bookings/mine"),
     create: (d: {
       clubId: string; tableId?: string; date: string; startTime: string; durationHours: number;
+      eventStartTime?: string; eventEndTime?: string;
       eventType: "GAME" | "TOURNAMENT"; eventTitle?: string; description?: string; setsToWin?: number;
       tablesCount?: number; isPublic?: boolean; maxPlayers?: number; minRating?: number; maxRating?: number; ratingWeight?: number;
     }) => api.post("/bookings", d),

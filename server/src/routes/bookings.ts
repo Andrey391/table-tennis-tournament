@@ -3,7 +3,7 @@ import { publicError } from "../shared/errors";
 import { prisma } from "../config/db";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
 import { CreateBookingSchema } from "../shared/schemas";
-import { startOfUtcDay, bookingStartsAt, bookingEndsAt, countFreeTables } from "../shared/booking";
+import { startOfUtcDay, bookingStartsAt, bookingEndsAt, countFreeTables, findNextFreeSlot } from "../shared/booking";
 import { findBookingConflict } from "./clubs";
 import { bookingInclude } from "../shared/queries";
 
@@ -23,23 +23,25 @@ bookingRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, res: R
 
     const date = startOfUtcDay(data.date);
 
-    // Two people can't hold the same table at overlapping times. Bookings without a
-    // specific table are just a note that someone's coming, so they can't clash.
     if (data.tableId) {
+      // Two people can't hold the same specific table at overlapping times.
       const conflict = await findBookingConflict(data.tableId, date, data.startTime, data.durationHours);
       if (conflict) {
         res.status(409).json({ error: `Table is already booked from ${conflict.startTime} for ${conflict.durationHours}h` });
         return;
       }
-    }
-
-    // A tournament's rounds spread across `tablesCount` tables at once; refuse up
-    // front if the club doesn't have that many tables free at this time, rather
-    // than letting two matches collide on the same table later.
-    if (data.eventType === "TOURNAMENT" && data.tablesCount) {
+    } else {
+      // No specific table was picked, but the event still needs `tablesNeeded`
+      // tables free at the club during this slot — a tournament spreads its
+      // rounds across `tablesCount`, a plain game just needs one. Without this,
+      // two tournaments (or a tournament and a game) with no pinned table could
+      // both be created at the same club and time even past the club's actual
+      // table count, since neither one claims a specific `ClubTable` row.
+      const tablesNeeded = data.eventType === "TOURNAMENT" ? (data.tablesCount || 1) : 1;
       const free = await countFreeTables(club.id, date, data.startTime, data.durationHours);
-      if (free !== null && data.tablesCount > free) {
-        res.status(409).json({ error: `Only ${free} table(s) free at this club at this time` });
+      if (free !== null && tablesNeeded > free) {
+        const suggestion = await findNextFreeSlot(club.id, date, data.startTime, data.durationHours, tablesNeeded);
+        res.status(409).json({ error: `Only ${free} table(s) free at this club at this time`, suggestion });
         return;
       }
     }
@@ -48,8 +50,11 @@ bookingRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, res: R
     // pair (a table held for nothing, or an event nobody has a table for) is never
     // a state worth persisting.
     const userId = req.user!.userId;
-    const startsAt = bookingStartsAt(date, data.startTime);
-    const endsAt = bookingEndsAt(date, data.startTime, data.durationHours);
+    // Prefer the instant the booking screen itself resolved (its browser knows
+    // its own timezone); fall back to the old UTC-wall-clock guess for any
+    // caller that doesn't send it.
+    const startsAt = data.eventStartTime ? new Date(data.eventStartTime) : bookingStartsAt(date, data.startTime);
+    const endsAt = data.eventEndTime ? new Date(data.eventEndTime) : bookingEndsAt(date, data.startTime, data.durationHours);
     const title = data.eventTitle?.trim() || club.name;
 
     const booking = await prisma.$transaction(async (tx) => {

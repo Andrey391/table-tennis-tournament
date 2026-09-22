@@ -72,6 +72,13 @@ export const CreateBookingSchema = z.object({
   date: z.string().datetime(),
   startTime: TimeOfDay,
   durationHours: z.number().min(0.5).max(8).default(1),
+  // The event's actual start/end instant, as the booking screen's own browser
+  // resolved "date + startTime" in its local timezone. `date`/`startTime` above
+  // stay wall-clock strings (used only for same-day overlap arithmetic, which
+  // doesn't care about timezone); without these the server would have to guess
+  // an instant from a bare "HH:MM" and guess wrong for anyone not in UTC.
+  eventStartTime: z.string().datetime().optional(),
+  eventEndTime: z.string().datetime().optional(),
   eventType: z.enum(["GAME", "TOURNAMENT"]).default("GAME"),
   eventTitle: z.string().max(200).optional(),
   description: z.string().max(2000).optional(),
