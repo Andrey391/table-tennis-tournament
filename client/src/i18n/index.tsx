@@ -127,6 +127,7 @@ const DICT: Record<Lang, Record<string, string>> = {
     "play.notEnoughTables": "Свободно только {n} стол(-а/-ов) на это время",
     "play.freeTablesHint": "Свободно столов на это время: {n}",
     "play.pickSlotFirst": "Выберите время, чтобы увидеть, сколько столов свободно",
+    "play.useSuggestedTime": "Ближайшее свободное время: {date}, {time} — использовать?",
 
     "rating.title": "Рейтинг",
     "rating.empty": "Пока никого нет в рейтинге",
@@ -604,6 +605,7 @@ const DICT: Record<Lang, Record<string, string>> = {
     "play.notEnoughTables": "Only {n} table(s) free at this time",
     "play.freeTablesHint": "Tables free at this time: {n}",
     "play.pickSlotFirst": "Pick a time to see how many tables are free",
+    "play.useSuggestedTime": "Nearest free time: {date}, {time} — use it?",
 
     "rating.title": "Rating",
     "rating.empty": "No rated players yet",
