@@ -13,6 +13,18 @@ import { btnPrimary, btnSecondary, card, errorBox, field, fieldLabel, pageTitle,
 
 // "HH:MM" -> minutes since midnight, for turning a start/end pair into a duration.
 const parseHM = (s: string) => { const [h, m] = s.split(":").map(Number); return h * 60 + m; };
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const toDateStr = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const toTimeStr = (d: Date) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+// Current time rounded up to the next full hour — never earlier than now, so it
+// never lands in the past for the "start" field's default.
+const roundedUpHour = () => {
+  const d = new Date();
+  if (d.getMinutes() > 0 || d.getSeconds() > 0) d.setHours(d.getHours() + 1);
+  d.setMinutes(0, 0, 0);
+  return d;
+};
+const addHour = (hm: string) => { const [h, m] = hm.split(":").map(Number); return `${pad2((h + 1) % 24)}:${pad2(m)}`; };
 
 // Mirrors the server's bookingsOverlap (shared/booking.ts) so a table already
 // taken over the chosen slot can be greyed out before submitting, not just
@@ -32,10 +44,16 @@ export default function BookingsPage() {
   const [bookings, setBookings] = useState<any[] | null>(null);
   const [subscriptions, setSubscriptions] = useState<any[] | null>(null);
   const [availability, setAvailability] = useState<any[]>([]);
-  const [form, setForm] = useState({
-    clubId: "", tableId: "", date: "", startTime: "", endTime: "",
-    eventType: "GAME" as "GAME" | "TOURNAMENT", eventTitle: "", setsToWin: 3, tablesCount: 1, isPublic: true,
+  const [form, setForm] = useState(() => {
+    const startDate = roundedUpHour();
+    return {
+      clubId: "", tableId: "", date: toDateStr(startDate), startTime: toTimeStr(startDate), endTime: addHour(toTimeStr(startDate)),
+      eventType: "GAME" as "GAME" | "TOURNAMENT", eventTitle: "", setsToWin: 3, tablesCount: 1, maxPlayers: "", isPublic: true,
+    };
   });
+  // Whether the user has touched "end" directly, so the start-time auto-fill
+  // stops overwriting a choice they made on purpose.
+  const [endTouched, setEndTouched] = useState(false);
   const [newClub, setNewClub] = useState({ name: "", city: "", address: "", phone: "" });
   const [club, setClub] = useState<any>(null);
   const [newTable, setNewTable] = useState("");
@@ -71,7 +89,12 @@ export default function BookingsPage() {
   };
   useEffect(loadAvailability, [form.clubId, form.date]);
 
-  const set = (key: string, val: any) => setForm(f => ({ ...f, [key]: val, ...(key === "clubId" ? { tableId: "" } : {}) }));
+  const set = (key: string, val: any) => setForm(f => ({
+    ...f, [key]: val,
+    ...(key === "clubId" ? { tableId: "" } : {}),
+    // Keep "end" one hour after "start" until the user has picked their own end time.
+    ...(key === "startTime" && !endTouched ? { endTime: addHour(val) } : {}),
+  }));
 
   // Slot-aware view of the club's tables: which ones actually clash with the
   // start/end just picked, so a busy table can be greyed out (and a tournament's
@@ -99,6 +122,10 @@ export default function BookingsPage() {
   const createBooking = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.clubId || !form.date || !form.startTime || !form.endTime) return;
+    if (form.date === toDateStr(new Date()) && form.startTime < toTimeStr(new Date())) {
+      setError(t("play.startInPast"));
+      return;
+    }
     // Same pair as an event's start/end; a slot past midnight (start later than end)
     // wraps to the next day rather than being rejected.
     let diffMinutes = parseHM(form.endTime) - parseHM(form.startTime);
@@ -121,9 +148,12 @@ export default function BookingsPage() {
         eventTitle: form.eventTitle || undefined,
         setsToWin: form.setsToWin,
         tablesCount: form.eventType === "TOURNAMENT" ? form.tablesCount : undefined,
+        maxPlayers: form.eventType === "TOURNAMENT" && form.maxPlayers ? +form.maxPlayers : undefined,
         isPublic: form.isPublic,
       });
-      setForm({ ...form, tableId: "", date: "", startTime: "", endTime: "", eventTitle: "", tablesCount: 1 });
+      const startDate = roundedUpHour();
+      setForm({ ...form, tableId: "", date: toDateStr(startDate), startTime: toTimeStr(startDate), endTime: addHour(toTimeStr(startDate)), eventTitle: "", tablesCount: 1, maxPlayers: "" });
+      setEndTouched(false);
       load();
       // The booking exists to hold a table for an event, and that event is where
       // the next step lives — adding an opponent and starting. Land there instead
@@ -290,16 +320,17 @@ export default function BookingsPage() {
               );
             })()}
 
-            <input type="date" value={form.date} onChange={e => set("date", e.target.value)} className={field} required />
+            <input type="date" min={toDateStr(new Date())} value={form.date} onChange={e => set("date", e.target.value)} className={field} required />
 
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className={fieldLabel}>{t("create.start")}</label>
-                <input type="time" value={form.startTime} onChange={e => set("startTime", e.target.value)} className={field} required />
+                <input type="time" min={form.date === toDateStr(new Date()) ? toTimeStr(new Date()) : undefined}
+                  value={form.startTime} onChange={e => set("startTime", e.target.value)} className={field} required />
               </div>
               <div>
                 <label className={fieldLabel}>{t("create.end")}</label>
-                <input type="time" value={form.endTime} onChange={e => set("endTime", e.target.value)} className={field} required />
+                <input type="time" value={form.endTime} onChange={e => { setEndTouched(true); set("endTime", e.target.value); }} className={field} required />
               </div>
             </div>
 
@@ -350,13 +381,20 @@ export default function BookingsPage() {
             </div>
 
             {form.eventType === "TOURNAMENT" && availability.length > 0 && (
-              <div>
-                <label className={fieldLabel}>{t("create.tables")}</label>
-                <input type="number" min={1} max={Math.max(1, freeTablesCount)} value={form.tablesCount}
-                  onChange={e => set("tablesCount", Math.max(1, +e.target.value))} className={field} />
-                <p className="text-xs text-[#4d6480] mt-1.5">
-                  {hasSlot ? t("play.freeTablesHint", { n: freeTablesCount }) : t("play.pickSlotFirst")}
-                </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={fieldLabel}>{t("create.tables")}</label>
+                  <input type="number" min={1} max={Math.max(1, freeTablesCount)} value={form.tablesCount}
+                    onChange={e => set("tablesCount", Math.max(1, +e.target.value))} className={field} />
+                  <p className="text-xs text-[#4d6480] mt-1.5">
+                    {hasSlot ? t("play.freeTablesHint", { n: freeTablesCount }) : t("play.pickSlotFirst")}
+                  </p>
+                </div>
+                <div>
+                  <label className={fieldLabel}>{t("create.maxPlayers")}</label>
+                  <input type="number" min={2} placeholder="—" value={form.maxPlayers}
+                    onChange={e => set("maxPlayers", e.target.value)} className={field} />
+                </div>
               </div>
             )}
 

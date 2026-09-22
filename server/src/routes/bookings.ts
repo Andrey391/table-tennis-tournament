@@ -60,6 +60,7 @@ bookingRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, res: R
           // How many sets its matches are played to, chosen on the booking screen.
           ...(data.setsToWin ? { setsToWin: data.setsToWin } : {}),
           ...(data.tablesCount ? { tablesCount: data.tablesCount } : {}),
+          ...(data.maxPlayers ? { maxPlayers: data.maxPlayers } : {}),
           ...(data.isPublic === undefined ? {} : { isPublic: data.isPublic }),
         },
       });

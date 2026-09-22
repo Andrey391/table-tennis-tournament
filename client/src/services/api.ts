@@ -91,7 +91,7 @@ export const apiService = {
   },
   bookings: {
     getMine: () => api.get("/bookings/mine"),
-    create: (d: { clubId: string; tableId?: string; date: string; startTime: string; durationHours: number; eventType: "GAME" | "TOURNAMENT"; eventTitle?: string; setsToWin?: number; tablesCount?: number; isPublic?: boolean }) => api.post("/bookings", d),
+    create: (d: { clubId: string; tableId?: string; date: string; startTime: string; durationHours: number; eventType: "GAME" | "TOURNAMENT"; eventTitle?: string; setsToWin?: number; tablesCount?: number; maxPlayers?: number; isPublic?: boolean }) => api.post("/bookings", d),
     remove: (id: string) => api.delete(`/bookings/${id}`),
   },
   subscriptions: {

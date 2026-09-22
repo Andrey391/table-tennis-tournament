@@ -79,6 +79,7 @@ export const CreateBookingSchema = z.object({
   // many of the club's tables are actually free at this date/time (see
   // countFreeTables in shared/booking.ts) before the event is created.
   tablesCount: z.number().int().min(1).max(50).optional(),
+  maxPlayers: z.number().int().min(2).max(500).optional(),
   // A table held for a private knockabout doesn't belong in the city feed.
   isPublic: z.boolean().optional(),
 });
