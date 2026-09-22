@@ -1,0 +1,296 @@
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { apiService } from "../services/api";
+import { useT } from "../i18n";
+import { formatSlot } from "../lib/format";
+import { btnPrimary, card, errorBox, field, fieldLabel } from "../lib/ui";
+import SetsToWinPicker from "./SetsToWinPicker";
+import ClubScheduleModal from "./ClubScheduleModal";
+import Loader from "./Loader";
+import EmptyState from "./EmptyState";
+
+// "HH:MM" -> minutes since midnight, for turning a start/end pair into a duration.
+const parseHM = (s: string) => { const [h, m] = s.split(":").map(Number); return h * 60 + m; };
+
+// Mirrors the server's bookingsOverlap (shared/booking.ts) so a table already
+// taken over the chosen slot can be greyed out before submitting, not just
+// rejected afterwards.
+const overlaps = (aStart: string, aHours: number, bStart: string, bHours: number) => {
+  const a1 = parseHM(aStart), a2 = a1 + Math.round(aHours * 60);
+  const b1 = parseHM(bStart), b2 = b1 + Math.round(bHours * 60);
+  return a1 < b2 && b1 < a2;
+};
+
+// One form for scheduling any event, used both on /bookings (default: a game)
+// and on /tournament/new (default: a tournament). Picking a club turns the
+// submit into a real table booking (POST /bookings, which creates the booking
+// and the event together); with no club there is no table to hold, so the
+// event is created directly and — since a tournament's rounds need a venue —
+// only a plain game is offered. Managing a club's own tables/details lives
+// solely on /clubs now; this form only ever *selects* among what's there.
+export default function EventForm({
+  defaultEventType = "GAME",
+  onCreated,
+}: {
+  defaultEventType?: "GAME" | "TOURNAMENT";
+  onCreated: (result: any) => void;
+}) {
+  const { t } = useT();
+  const [clubs, setClubs] = useState<any[] | null>(null);
+  const [availability, setAvailability] = useState<any[]>([]);
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [form, setForm] = useState({
+    clubId: "", tableId: "", date: "", startTime: "", endTime: "",
+    eventType: defaultEventType, eventTitle: "", description: "",
+    setsToWin: 3, tablesCount: 4, maxPlayers: "", minRating: "", maxRating: "", ratingWeight: "0.5",
+    isPublic: true,
+  });
+
+  useEffect(() => { apiService.clubs.getAll().then(r => setClubs(r.data)).catch(e => { console.error(e); setClubs(p => p ?? []); }); }, []);
+
+  const loadAvailability = () => {
+    if (!form.clubId || !form.date) { setAvailability([]); return; }
+    apiService.clubs.availability(form.clubId, new Date(form.date).toISOString())
+      .then(r => setAvailability(r.data)).catch(console.error);
+  };
+  useEffect(loadAvailability, [form.clubId, form.date]);
+
+  const set = (key: string, val: any) => setForm(f => ({ ...f, [key]: val, ...(key === "clubId" ? { tableId: "" } : {}) }));
+
+  // No club selected means no table to hold, so a tournament (which needs a
+  // venue for its rounds) isn't on offer — only a simple game.
+  const effectiveType: "GAME" | "TOURNAMENT" = form.clubId ? form.eventType : "GAME";
+
+  const hasSlot = !!(form.startTime && form.endTime);
+  let slotHours = 0;
+  if (hasSlot) {
+    let diff = parseHM(form.endTime) - parseHM(form.startTime);
+    if (diff <= 0) diff += 24 * 60;
+    slotHours = diff / 60;
+  }
+  const tablesForSlot = availability.map(tbl => ({
+    ...tbl,
+    free: !hasSlot || !tbl.busy.some((b: any) => overlaps(form.startTime, slotHours, b.startTime, b.durationHours)),
+  }));
+  const freeTablesCount = hasSlot ? tablesForSlot.filter(t => t.free).length : availability.length;
+  // A table picked before the slot narrowed down can turn out to clash with it;
+  // drop the pick rather than silently submit a table that's actually taken.
+  useEffect(() => {
+    if (!form.tableId) return;
+    const picked = tablesForSlot.find(t => t.id === form.tableId);
+    if (picked && !picked.free) set("tableId", "");
+  }, [form.tableId, form.startTime, form.endTime, availability]);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.date || !form.startTime || !form.endTime) return;
+    let diffMinutes = parseHM(form.endTime) - parseHM(form.startTime);
+    if (diffMinutes <= 0) diffMinutes += 24 * 60;
+    const durationHours = diffMinutes / 60;
+    if (durationHours < 0.5 || durationHours > 8) { setError(t("play.durationRange")); return; }
+    if (effectiveType === "TOURNAMENT" && availability.length > 0 && form.tablesCount > freeTablesCount) {
+      setError(t("play.notEnoughTables", { n: freeTablesCount }));
+      return;
+    }
+    setBusy(true); setError("");
+    try {
+      let created;
+      if (form.clubId) {
+        created = await apiService.bookings.create({
+          clubId: form.clubId,
+          tableId: form.tableId || undefined,
+          date: new Date(form.date).toISOString(),
+          startTime: form.startTime,
+          durationHours,
+          eventType: effectiveType,
+          eventTitle: form.eventTitle || undefined,
+          setsToWin: form.setsToWin,
+          tablesCount: effectiveType === "TOURNAMENT" ? form.tablesCount : undefined,
+          isPublic: form.isPublic,
+          ...(effectiveType === "TOURNAMENT" ? {
+            description: form.description || undefined,
+            maxPlayers: form.maxPlayers ? +form.maxPlayers : undefined,
+            minRating: form.minRating ? +form.minRating : undefined,
+            maxRating: form.maxRating ? +form.maxRating : undefined,
+            ratingWeight: form.ratingWeight ? +form.ratingWeight : undefined,
+          } : {}),
+        });
+      } else {
+        // Nothing to book — a plain game created directly, no table involved.
+        const startsAt = new Date(`${form.date}T${form.startTime}`);
+        const endsAt = new Date(startsAt.getTime() + Math.round(durationHours * 60) * 60_000);
+        created = await apiService.tournaments.create({
+          kind: "GAME",
+          name: form.eventTitle || undefined,
+          startTime: startsAt.toISOString(),
+          endTime: endsAt.toISOString(),
+          setsToWin: form.setsToWin,
+          isPublic: form.isPublic,
+        });
+      }
+      setForm(f => ({ ...f, tableId: "", date: "", startTime: "", endTime: "", eventTitle: "", description: "" }));
+      onCreated(created.data);
+    } catch (err: any) { setError(err.response?.data?.error || t("common.failed")); }
+    finally { setBusy(false); }
+  };
+
+  if (clubs === null) return <Loader className="py-8" />;
+
+  return (
+    <form onSubmit={submit} className={`${card} p-4 space-y-3`}>
+      {error && <div className={errorBox}>{error}</div>}
+
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <label className={fieldLabel}>{t("create.club")}</label>
+          <Link to="/clubs" className="text-xs text-[#ccff00] font-medium">{t("play.manageClubs")}</Link>
+        </div>
+        {clubs.length === 0 ? (
+          <EmptyState text={t("play.noClubs")} />
+        ) : (
+          <select value={form.clubId} onChange={e => set("clubId", e.target.value)} className={field}>
+            <option value="">{t("create.noClub")}</option>
+            {clubs.map(c => <option key={c.id} value={c.id}>{c.name} &middot; {c.city}</option>)}
+          </select>
+        )}
+      </div>
+
+      <input type="date" value={form.date} onChange={e => set("date", e.target.value)} className={field} required />
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={fieldLabel}>{t("create.start")}</label>
+          <input type="time" value={form.startTime} onChange={e => set("startTime", e.target.value)} className={field} required />
+        </div>
+        <div>
+          <label className={fieldLabel}>{t("create.end")}</label>
+          <input type="time" value={form.endTime} onChange={e => set("endTime", e.target.value)} className={field} required />
+        </div>
+      </div>
+
+      {form.clubId && availability.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label className={fieldLabel}>{t("common.table")}</label>
+            <button type="button" onClick={() => setShowSchedule(true)} className="text-xs text-[#ccff00] font-medium">
+              {t("play.schedule")}
+            </button>
+          </div>
+          {/* Each table shows its bookings for the day (the "grid"), and one that
+              clashes with the start/end just picked can't be selected — the same
+              rule the server enforces with a 409 is applied here before submitting. */}
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => set("tableId", "")}
+              className={`px-3 py-2 rounded-lg text-sm border ${!form.tableId ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00]" : "bg-[#0a1628] text-[#93a8c2] border-[#1c3350]"}`}>
+              {t("play.anyTable")}
+            </button>
+            {tablesForSlot.map(tbl => (
+              <button key={tbl.id} type="button" disabled={!tbl.free} onClick={() => set("tableId", tbl.id)}
+                className={`px-3 py-2 rounded-lg text-sm border text-left ${
+                  !tbl.free ? "opacity-40 cursor-not-allowed bg-[#0a1628] text-[#4d6480] border-[#1c3350]"
+                  : form.tableId === tbl.id ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00]" : "bg-[#0a1628] text-[#93a8c2] border-[#1c3350]"
+                }`}>
+                №{tbl.number}
+                {tbl.busy.length > 0 && (
+                  <span className={`block text-[10px] ${form.tableId === tbl.id ? "text-[#0a1628]/70" : "text-[#4d6480]"}`}>
+                    {t("play.tableBusy")}: {tbl.busy.map((b: any) => formatSlot(b.startTime, b.durationHours)).join(", ")}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div>
+        <label className={fieldLabel}>{t("play.bookingFor")}</label>
+        {form.clubId ? (
+          <div className="flex gap-2">
+            {(["GAME", "TOURNAMENT"] as const).map(kind => (
+              <button key={kind} type="button" onClick={() => set("eventType", kind)}
+                className={`flex-1 py-2 rounded-lg text-sm font-medium border ${
+                  form.eventType === kind ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00]" : "bg-[#0a1628] text-[#93a8c2] border-[#1c3350]"
+                }`}>{t(kind === "GAME" ? "play.asGame" : "play.asTournament")}</button>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-[#4d6480]">{t("play.gameOnlyNoClub")}</p>
+        )}
+      </div>
+
+      {effectiveType === "TOURNAMENT" && (
+        <>
+          {availability.length > 0 && (
+            <div>
+              <label className={fieldLabel}>{t("create.tables")}</label>
+              <input type="number" min={1} max={Math.max(1, freeTablesCount)} value={form.tablesCount}
+                onChange={e => set("tablesCount", Math.max(1, +e.target.value))} className={field} />
+              <p className="text-xs text-[#4d6480] mt-1.5">
+                {hasSlot ? t("play.freeTablesHint", { n: freeTablesCount }) : t("play.pickSlotFirst")}
+              </p>
+            </div>
+          )}
+
+          <div>
+            <label className={fieldLabel}>{t("create.description")} <span className="normal-case text-[#4d6480]">({t("common.optional")})</span></label>
+            <textarea rows={3} placeholder={t("create.descriptionPlaceholder")} value={form.description} onChange={e => set("description", e.target.value)} className={field} />
+          </div>
+
+          <div>
+            <label className={fieldLabel}>{t("create.maxPlayers")}</label>
+            <input type="number" min={2} placeholder="—" value={form.maxPlayers} onChange={e => set("maxPlayers", e.target.value)} className={field} />
+            <p className="text-xs text-[#4d6480] mt-1.5">{t("create.maxPlayersHint")}</p>
+          </div>
+
+          <div>
+            <label className={fieldLabel}>{t("create.ratingRange")} <span className="normal-case text-[#4d6480]">({t("common.optional")})</span></label>
+            <div className="grid grid-cols-2 gap-3">
+              <input type="number" placeholder={t("create.min")} value={form.minRating} onChange={e => set("minRating", e.target.value)} className={field} />
+              <input type="number" placeholder={t("create.max")} value={form.maxRating} onChange={e => set("maxRating", e.target.value)} className={field} />
+            </div>
+            <p className="text-xs text-[#4d6480] mt-1.5">{t("create.ratingHint")}</p>
+          </div>
+
+          <div>
+            <label className={fieldLabel}>{t("create.ratingWeight")}</label>
+            <input type="number" min={0.1} max={1} step={0.1} value={form.ratingWeight} onChange={e => set("ratingWeight", e.target.value)} className={field} />
+            <p className="text-xs text-[#4d6480] mt-1.5">{t("create.ratingWeightHint")}</p>
+          </div>
+        </>
+      )}
+
+      <div>
+        <input type="text" placeholder={t("play.eventTitle")} value={form.eventTitle}
+          onChange={e => set("eventTitle", e.target.value)} className={field} />
+        <p className="text-xs text-[#4d6480] mt-1.5">{t("play.eventTitleHint")}</p>
+      </div>
+
+      <div>
+        <label className={fieldLabel}>{t("create.setsToWin")}</label>
+        <SetsToWinPicker value={form.setsToWin} onChange={n => set("setsToWin", n)} />
+      </div>
+
+      {/* Every event created here — booked or not — can stay out of the public
+          feed while its participants still see it. */}
+      <label className="flex items-center gap-2 text-sm text-[#93a8c2]">
+        <input type="checkbox" checked={!form.isPublic} onChange={e => set("isPublic", !e.target.checked)} className="w-4 h-4" />
+        {t("tournament.private")}
+      </label>
+
+      <button type="submit" disabled={busy} className={`${btnPrimary} w-full`}>
+        {busy ? t("play.booking") : (form.clubId ? t("play.bookAction") : t("common.create"))}
+      </button>
+
+      <ClubScheduleModal
+        open={showSchedule}
+        onClose={() => setShowSchedule(false)}
+        clubId={form.clubId}
+        initialDate={form.date || undefined}
+        selectedTableId={form.tableId}
+        onSelectTable={id => set("tableId", id)}
+      />
+    </form>
+  );
+}

@@ -74,6 +74,7 @@ export const CreateBookingSchema = z.object({
   durationHours: z.number().min(0.5).max(8).default(1),
   eventType: z.enum(["GAME", "TOURNAMENT"]).default("GAME"),
   eventTitle: z.string().max(200).optional(),
+  description: z.string().max(2000).optional(),
   setsToWin: z.number().int().min(1).optional(),
   // How many tables the event's rounds will spread across. Checked against how
   // many of the club's tables are actually free at this date/time (see
@@ -81,6 +82,13 @@ export const CreateBookingSchema = z.object({
   tablesCount: z.number().int().min(1).max(50).optional(),
   // A table held for a private knockabout doesn't belong in the city feed.
   isPublic: z.boolean().optional(),
+  // Tournament-only settings, same as CreateTournamentSchema — a booking for a
+  // TOURNAMENT is how a tournament is created at all now, so it carries the
+  // same knobs the old bookingless form used to.
+  maxPlayers: z.number().int().min(2).max(500).optional(),
+  minRating: z.number().int().min(0).max(5000).optional(),
+  maxRating: z.number().int().min(0).max(5000).optional(),
+  ratingWeight: z.number().min(0.1).max(1).optional(),
 });
 
 export const SubscribeSchema = z.object({
