@@ -7,7 +7,7 @@ import { computeStandings } from "../shared/standings";
 import { checkCanEnd } from "../shared/scoring";
 import { generateRoundPairings } from "../shared/scheduler";
 import { playerSelect, clubSelect, matchInclude, feedInclude, FEED_PLAYERS, standingsInclude, inCity, queryString } from "../shared/queries";
-import { hasOpenDemoSeat } from "../shared/demo";
+import { hasOpenDemoSeat, resetDemoRound1 } from "../shared/demo";
 import AuditLog from "../models/AuditLog";
 
 export const tournamentRouter = Router();
@@ -156,6 +156,31 @@ tournamentRouter.get("/:id", async (req, res: Response) => {
   // Only a demo event can have an open seat; the manager's page reads this to
   // decide whether to offer the invitation link.
   res.json({ ...tournament, demoSeatOpen: await hasOpenDemoSeat(tournament.id) });
+});
+
+// Wipes round 1 of the caller's own demo event back to freshly-paired (no sets,
+// no rating change) once the guided tour that scored it is done, so the
+// tutorial run never counts and the visitor can enter their own club night's
+// scores from a clean board. Only ever touches a tournament the caller manages
+// whose organizer account is a demo, so a real event can't be reset this way.
+tournamentRouter.post("/:id/demo-reset-round1", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    await resetDemoRound1(req.params.id, req.user!.userId);
+    const tournament = await prisma.tournament.findUnique({
+      where: { id: req.params.id },
+      include: {
+        organizer: { select: { id: true, firstName: true, lastName: true } },
+        club: { select: clubSelect },
+        players: { include: { user: { select: playerSelect } }, orderBy: { seed: "asc" } },
+        byes: { include: { user: { select: playerSelect } } },
+        matches: { include: matchInclude, orderBy: [{ round: "asc" }, { matchIndex: "asc" }] },
+      },
+    });
+    if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
+    res.json({ ...tournament, demoSeatOpen: await hasOpenDemoSeat(tournament.id) });
+  } catch (err) {
+    res.status(400).json({ error: publicError(err) });
+  }
 });
 
 tournamentRouter.put("/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {

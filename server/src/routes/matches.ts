@@ -98,7 +98,7 @@ async function applyRatingUpdate(tournament: { id: string; kind: string; ratingW
 // Takes back the rating change a match applied, when the match is reopened. The
 // winner's rating is floored at 0 on the way back rather than trusted to be
 // symmetric, in case it has been reset since.
-async function revertRatingUpdate(match: { player1Id: string | null; player2Id: string | null; setsWon1: number; setsWon2: number; eloDelta: number | null; eloDeltaLoser: number | null }) {
+export async function revertRatingUpdate(match: { player1Id: string | null; player2Id: string | null; setsWon1: number; setsWon2: number; eloDelta: number | null; eloDeltaLoser: number | null }) {
   if (match.eloDelta == null || match.setsWon1 === match.setsWon2) return;
   const p1Won = match.setsWon1 > match.setsWon2;
   const winnerId = p1Won ? match.player1Id : match.player2Id;

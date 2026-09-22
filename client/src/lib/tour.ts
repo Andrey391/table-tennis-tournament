@@ -49,6 +49,10 @@ export function demoTournamentPath(): string | null {
   return id ? `/tournament/${id}` : null;
 }
 
+export function demoTournamentId(): string | null {
+  return localStorage.getItem(T_KEY);
+}
+
 // The match screen needs both ids. Falls back to the event itself, which always
 // shows the visitor's own match at the top — never to a dead end.
 export function stepPath(target: TourStep["target"]): string | null {

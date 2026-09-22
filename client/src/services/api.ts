@@ -53,6 +53,9 @@ export const apiService = {
     // A friendly game already played, written down in one step (unrated, private).
     quickGame: (d: { opponentId: string; setsWon1: number; setsWon2: number; clubId?: string; name?: string }) => api.post("/tournaments/quick-game", d),
     standings: (id: string) => api.get(`/tournaments/${id}/standings`),
+    // Wipes round 1 of the caller's own demo event (sets, tally, rating) back to
+    // freshly-paired once the guided tour that scored it is done.
+    resetDemoRound1: (id: string) => api.post(`/tournaments/${id}/demo-reset-round1`),
     getChat: (id: string) => api.get(`/tournaments/${id}/chat`),
     sendChat: (id: string, d: { text: string }) => api.post(`/tournaments/${id}/chat`, d),
   },
