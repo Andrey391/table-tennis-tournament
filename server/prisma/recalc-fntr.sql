@@ -12,11 +12,15 @@
 -- What it does, in the order the matches were settled ("endedAt"):
 --   - every non-demo player starts again from 100 (demo accounts start from the rating
 --     in the snapshot of their first match, since they were created at 220 / 260);
---   - each match is rated with the FNTR formula, using each player's rating at the
---     START of that tournament (the rating they had before their first match in it)
---     and the tournament's "ratingWeight" (KT):
---         winner gains  (100 - (Rw - Rl)) / 10 * KT      (0 for both if Rw - Rl > 100)
---         loser  loses  half of that, and never drops below 0
+--   - each match is rated with the FNTR formula PER SET, not per match, using each
+--     player's rating at the START of that tournament (the rating they had before
+--     their first match in it) and the tournament's "ratingWeight" (KT): for every set
+--     a player took they gain (100 - (Rw - Rl)) / 10 * KT (0 if Rw - Rl > 100, using
+--     that player as "winner" of the set), and for every set they lost they give up
+--     half of what the set-winner's formula would pay; the two sums are what actually
+--     move that player's rating for the match, and the loser of the match overall can
+--     still net a gain if they took plenty of sets off a much stronger opponent; the
+--     final rating never drops below 0
 --   - it then rewrites "User"."rating", "Match"."eloDelta" / "eloDeltaLoser" /
 --     "rating1Before" / "rating2Before" and "TournamentUser"."ratingStart".
 --
@@ -26,7 +30,7 @@
 -- counted in the output and left out: they are walkovers, or older than the column.
 --
 -- Idempotent: it derives everything from the matches, so a second run gives the same
--- answer. The formula is the same as computeFntrDelta in server/src/shared/scoring.ts;
+-- answer. The formula is the same as computeFntrMatchDelta in server/src/shared/scoring.ts;
 -- change one and change the other. Rounding is to two decimals in both, done on exact
 -- decimals here and on floats there, so a value sitting exactly on a half-cent boundary
 -- can differ by 0.01 between the two.
@@ -41,8 +45,11 @@ DECLARE
   w_id text; l_id text;
   w_now numeric; l_now numeric;
   w_base numeric; l_base numeric;
+  sets_w numeric; sets_l numeric;
   gap numeric; kt numeric;
-  w_delta numeric; l_delta numeric; l_after numeric;
+  w_win_delta numeric; l_win_delta numeric;
+  w_lose_delta numeric; l_lose_delta numeric;
+  w_delta numeric; l_delta numeric; l_after numeric; w_after numeric;
   replayed int := 0;
   skipped  int;
   changed  int;
@@ -78,8 +85,8 @@ BEGIN
     FROM "User" u WHERE u."isDemo";
 
   FOR m IN SELECT * FROM fntr_rated ORDER BY played_at, "id" LOOP
-    IF m."setsWon1" > m."setsWon2" THEN w_id := m."player1Id"; l_id := m."player2Id";
-    ELSE w_id := m."player2Id"; l_id := m."player1Id"; END IF;
+    IF m."setsWon1" > m."setsWon2" THEN w_id := m."player1Id"; l_id := m."player2Id"; sets_w := m."setsWon1"; sets_l := m."setsWon2";
+    ELSE w_id := m."player2Id"; l_id := m."player1Id"; sets_w := m."setsWon2"; sets_l := m."setsWon1"; END IF;
 
     SELECT rating INTO w_now FROM fntr_rating WHERE user_id = w_id;
     SELECT rating INTO l_now FROM fntr_rating WHERE user_id = l_id;
@@ -92,20 +99,28 @@ BEGIN
     SELECT rating INTO w_base FROM fntr_base WHERE tournament_id = m."tournamentId" AND user_id = w_id;
     SELECT rating INTO l_base FROM fntr_base WHERE tournament_id = m."tournamentId" AND user_id = l_id;
 
+    kt := m."ratingWeight";
+    -- What each side's formula pays for a single set they take, computed once against
+    -- the ratings both brought to the event (not updated set-by-set).
     gap := w_base - l_base;
-    kt  := m."ratingWeight";
-    IF gap > cutoff THEN
-      w_delta := 0; l_delta := 0;
-    ELSE
-      w_delta := round((cutoff - gap) / 10 * kt, 2);
-      l_delta := -round(w_delta / 2, 2);
-    END IF;
+    IF gap > cutoff THEN w_win_delta := 0; l_lose_delta := 0;
+    ELSE w_win_delta := round((cutoff - gap) / 10 * kt, 2); l_lose_delta := -round(w_win_delta / 2, 2); END IF;
+    gap := l_base - w_base;
+    IF gap > cutoff THEN l_win_delta := 0; w_lose_delta := 0;
+    ELSE l_win_delta := round((cutoff - gap) / 10 * kt, 2); w_lose_delta := -round(l_win_delta / 2, 2); END IF;
 
+    -- Total change is the sum over every set actually played, not one exchange for the match.
+    w_delta := round(sets_w * w_win_delta + sets_l * w_lose_delta, 2);
+    l_delta := round(sets_l * l_win_delta + sets_w * l_lose_delta, 2);
+
+    w_after := GREATEST(0, round(w_now + w_delta, 2));
     l_after := GREATEST(0, round(l_now + l_delta, 2));
-    UPDATE fntr_rating SET rating = round(w_now + w_delta, 2) WHERE user_id = w_id;
+    UPDATE fntr_rating SET rating = w_after WHERE user_id = w_id;
     UPDATE fntr_rating SET rating = l_after WHERE user_id = l_id;
+    -- Stored as applied (after the floor at 0): the match winner's figure can no longer
+    -- be assumed positive or the loser's negative once sets are weighed individually.
     INSERT INTO fntr_match VALUES (
-      m."id", w_delta, round(l_after - l_now, 2),
+      m."id", round(w_after - w_now, 2), round(l_after - l_now, 2),
       CASE WHEN w_id = m."player1Id" THEN w_now ELSE l_now END,
       CASE WHEN w_id = m."player1Id" THEN l_now ELSE w_now END);
     replayed := replayed + 1;
