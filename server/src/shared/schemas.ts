@@ -8,9 +8,13 @@ const TimeOfDay = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Expected HH:MM"
 const City = z.string().max(120).transform(normalizeCity);
 
 // A "game" is a tournament that isn't rated — same roster, rounds and pairing.
+// `name` is optional (falls back to the club's name, or a generic one for the
+// kind — see the create route) but `startTime` is required: a club night without
+// a date is not something anyone can actually show up to, while a name is just a
+// label. This mirrors POST /bookings, which has required exactly this the same way.
 export const CreateTournamentSchema = z.object({
   kind: z.enum(["TOURNAMENT", "GAME"]).default("TOURNAMENT"),
-  name: z.string().min(1).max(200),
+  name: z.string().min(1).max(200).optional(),
   description: z.string().max(2000).optional(),
   tablesCount: z.number().int().min(1).max(50).default(4),
   maxPlayers: z.number().int().min(2).max(500).optional(),
@@ -22,7 +26,7 @@ export const CreateTournamentSchema = z.object({
   // False keeps the event out of the public feed; its participants still see it.
   isPublic: z.boolean().optional(),
   clubId: z.string().optional(),
-  startTime: z.string().datetime().optional(),
+  startTime: z.string().datetime(),
   endTime: z.string().datetime().optional(),
   minRating: z.number().int().min(0).max(5000).optional(),
   maxRating: z.number().int().min(0).max(5000).optional(),
@@ -71,6 +75,10 @@ export const CreateBookingSchema = z.object({
   eventType: z.enum(["GAME", "TOURNAMENT"]).default("GAME"),
   eventTitle: z.string().max(200).optional(),
   setsToWin: z.number().int().min(1).optional(),
+  // How many tables the event's rounds will spread across. Checked against how
+  // many of the club's tables are actually free at this date/time (see
+  // countFreeTables in shared/booking.ts) before the event is created.
+  tablesCount: z.number().int().min(1).max(50).optional(),
   // A table held for a private knockabout doesn't belong in the city feed.
   isPublic: z.boolean().optional(),
 });

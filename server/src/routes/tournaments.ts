@@ -24,7 +24,12 @@ async function loadOwnedTournament(res: Response, tournamentId: string, userId: 
 tournamentRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const data = CreateTournamentSchema.parse(req.body);
-    const tournament = await prisma.tournament.create({ data: { ...data, organizerId: req.user!.userId } });
+    // Same fallback POST /bookings uses for eventTitle: the club's name, or —
+    // with no club — a generic label for the kind. A name is just a label, so
+    // leaving it blank should never block creating the event.
+    const club = data.clubId ? await prisma.club.findUnique({ where: { id: data.clubId } }) : null;
+    const name = data.name?.trim() || club?.name || (data.kind === "GAME" ? "Игра" : "Турнир");
+    const tournament = await prisma.tournament.create({ data: { ...data, name, organizerId: req.user!.userId } });
     // The organiser takes part in their own event.
     await prisma.tournamentUser.create({ data: { tournamentId: tournament.id, userId: req.user!.userId, status: "REGISTERED" } });
     await AuditLog.create({ userId: req.user!.userId, action: "TOURNAMENT_CREATE", entity: "Tournament", entityId: tournament.id, newValue: data });

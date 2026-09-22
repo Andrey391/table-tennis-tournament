@@ -78,14 +78,14 @@ export default function GamesPage() {
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name) return;
+    if (!form.startTime) return;
     setBusy(true); setError("");
     try {
       await apiService.tournaments.create({
         kind: "GAME",
-        name: form.name,
+        name: form.name || undefined,
         clubId: form.clubId || undefined,
-        startTime: form.startTime ? new Date(form.startTime).toISOString() : undefined,
+        startTime: new Date(form.startTime).toISOString(),
         tablesCount: form.tablesCount,
         setsToWin: form.setsToWin,
       });
@@ -164,12 +164,15 @@ export default function GamesPage() {
 
       {showCreate && !isGuest && (
         <form onSubmit={create} className={`${card} p-4 space-y-3 mb-4`}>
-          <input type="text" placeholder={t("games.namePlaceholder")} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className={field} required />
+          <div>
+            <input type="text" placeholder={t("games.namePlaceholder")} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className={field} />
+            <p className="text-xs text-[#4d6480] mt-1.5">{t("games.nameHint")}</p>
+          </div>
           <select value={form.clubId} onChange={e => setForm({ ...form, clubId: e.target.value })} className={field}>
             <option value="">{t("create.noClub")}</option>
             {clubs.map(c => <option key={c.id} value={c.id}>{c.name} &middot; {c.city}</option>)}
           </select>
-          <input type="datetime-local" value={form.startTime} onChange={e => setForm({ ...form, startTime: e.target.value })} className={field} />
+          <input type="datetime-local" value={form.startTime} onChange={e => setForm({ ...form, startTime: e.target.value })} className={field} required />
           <div>
             <label className={fieldLabel}>{t("create.tables")}</label>
             <input type="number" min={1} value={form.tablesCount} onChange={e => setForm({ ...form, tablesCount: +e.target.value })} className={field} />

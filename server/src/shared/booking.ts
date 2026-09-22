@@ -1,3 +1,5 @@
+import { prisma } from "../config/db";
+
 // Booking times are stored as a "HH:MM" string plus a duration in hours, so
 // overlap checks work in minutes-since-midnight within a single calendar day.
 
@@ -35,4 +37,21 @@ export function bookingStartsAt(day: Date, startTime: string): Date {
 
 export function bookingEndsAt(day: Date, startTime: string, durationHours: number): Date {
   return new Date(bookingStartsAt(day, startTime).getTime() + Math.round(durationHours * 60) * 60_000);
+}
+
+// How many of a club's tables are NOT already booked over the given slot, so an
+// event asking for more tables than the club actually has free can be refused
+// up front instead of only failing when two matches later collide on a table.
+// Returns null when the club has no tables on record at all — there is nothing
+// to check the request against, so it is trusted the way it always was.
+export async function countFreeTables(clubId: string, date: Date, startTime: string, durationHours: number): Promise<number | null> {
+  const [tableCount, bookings] = await Promise.all([
+    prisma.clubTable.count({ where: { clubId } }),
+    prisma.booking.findMany({ where: { clubId, date, tableId: { not: null } }, select: { tableId: true, startTime: true, durationHours: true } }),
+  ]);
+  if (tableCount === 0) return null;
+  const busyTableIds = new Set(
+    bookings.filter(b => bookingsOverlap(startTime, durationHours, b.startTime, b.durationHours)).map(b => b.tableId!),
+  );
+  return Math.max(0, tableCount - busyTableIds.size);
 }
