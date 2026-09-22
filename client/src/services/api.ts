@@ -24,6 +24,9 @@ export const apiService = {
     getAll: () => api.get("/players"),
     // A player's public profile plus the matches behind their rating.
     getById: (id: string) => api.get(`/players/${id}`),
+    // That player's matches on one calendar day — played ones with their real
+    // start/end, upcoming ones pinned to their event's start time.
+    schedule: (id: string, date: string) => api.get(`/players/${id}/schedule`, { params: { date } }),
     // The owner's own profile; a new password needs the current one alongside it.
     update: (id: string, d: {
       firstName?: string; lastName?: string; email?: string;

@@ -11,6 +11,7 @@ import MatchPage from "./pages/MatchPage";
 import PublicTournament from "./pages/PublicTournament";
 import LiveScore from "./pages/LiveScore";
 import PlayersPage from "./pages/PlayersPage";
+import ClubsPage from "./pages/ClubsPage";
 import ResultsPage from "./pages/ResultsPage";
 import RatingPage from "./pages/RatingPage";
 import BookingsPage from "./pages/BookingsPage";
@@ -47,6 +48,7 @@ function App() {
           <Route path="/results" element={<ResultsPage />} />
           <Route path="/rating" element={<RatingPage />} />
           <Route path="/games" element={<GamesPage />} />
+          <Route path="/clubs" element={<ClubsPage />} />
           <Route path="/tournament/:id" element={<TournamentPage />} />
           <Route path="/tournament/:id/match/:matchId" element={<MatchPage />} />
 

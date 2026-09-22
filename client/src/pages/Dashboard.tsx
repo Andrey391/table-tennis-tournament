@@ -145,6 +145,7 @@ export default function Dashboard() {
           // Booking a table needs an account, so that tile is simply absent for a guest.
           ...(isGuest ? [] : [{ to: "/bookings", label: "home.tiles.bookings", d: "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" }]),
           { to: "/games", label: "games.title", d: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20M4.9 4.9c3.5 1 6.2 3.7 7.1 7.1M19.1 19.1c-3.5-1-6.2-3.7-7.1-7.1" },
+          { to: "/clubs", label: "home.tiles.clubs", d: "M12 21s-7-6.5-7-11a7 7 0 1 1 14 0c0 4.5-7 11-7 11ZM12 10.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" },
         ].map(tile => (
           <Link key={tile.to} to={tile.to} className={`${card} p-3.5 flex flex-col items-start gap-2 active:bg-[#1c3350] transition-colors`}>
             <svg viewBox="0 0 24 24" fill="none" stroke="#ccff00" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">

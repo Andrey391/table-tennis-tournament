@@ -5,6 +5,8 @@ import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
 import { UpdateProfileSchema } from "../shared/schemas";
 import { summariseMatches } from "../shared/stats";
 import { notDemo } from "../shared/demo";
+import { startOfUtcDay } from "../shared/booking";
+import { playerSelect } from "../shared/queries";
 import bcrypt from "bcryptjs";
 
 export const playerRouter = Router();
@@ -48,6 +50,40 @@ playerRouter.get("/:id", async (req: AuthenticatedRequest, res: Response) => {
   // Rated matches only move the rating, but the record covers everything played.
   const { wins, losses } = summariseMatches(matches, player.id).matches;
   res.json({ player, matches, recent: { wins, losses } });
+});
+
+// A player's matches on one calendar day — the personal counterpart to a club's
+// table timeline (GET /clubs/:id/availability). A match has no scheduled time of
+// its own (only startedAt/endedAt, set once a judge actually opens/settles it), so
+// a day's matches are either already played (real start/end, positioned exactly
+// like a booking) or not yet started, in which case the event's own startTime is
+// the only "when" there is. Unauthenticated for the same reason GET /players/:id
+// is: a guest tapping through the rating table can look at anyone's day.
+playerRouter.get("/:id/schedule", async (req, res: Response) => {
+  const date = typeof req.query.date === "string" ? req.query.date : undefined;
+  if (!date) { res.status(400).json({ error: "date is required" }); return; }
+  const dayStart = startOfUtcDay(date);
+  const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+  const playerId = req.params.id;
+
+  const matches = await prisma.match.findMany({
+    where: {
+      AND: [
+        { OR: [{ player1Id: playerId }, { player2Id: playerId }] },
+        { OR: [
+          { status: "COMPLETED", endedAt: { gte: dayStart, lt: dayEnd } },
+          { status: { in: ["NOT_STARTED", "IN_PROGRESS"] }, tournament: { startTime: { gte: dayStart, lt: dayEnd } } },
+        ] },
+      ],
+    },
+    include: {
+      player1: { select: playerSelect },
+      player2: { select: playerSelect },
+      tournament: { select: { id: true, name: true, kind: true, startTime: true } },
+    },
+    orderBy: [{ startedAt: "asc" }],
+  });
+  res.json(matches);
 });
 
 // A player edits their own profile. Rating is never client-settable — it only moves
