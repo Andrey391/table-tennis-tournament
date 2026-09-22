@@ -24,6 +24,7 @@ export default function Dashboard() {
   const demoPath = demoTournamentPath();
   // null = the feed has not answered yet; [] = it did, and there is nothing in it.
   const [tournaments, setTournaments] = useState<any[] | null>(null);
+  const [games, setGames] = useState<any[] | null>(null);
   const [cities, setCities] = useState<{ city: string; clubs: number }[]>([]);
   // Signup asks for a city; opening the app in someone else's city is not what
   // that answer meant. A stored choice still wins — it was made deliberately.
@@ -51,22 +52,36 @@ export default function Dashboard() {
     // /tournaments/mine needs an account; a guest only ever sees the open feed.
     // The home screen is for what is still going on: events that are being filled or
     // played. Finished and cancelled ones live under Results.
-    const fetch = scope === "mine" && !isGuest
+    const fetchTournaments = scope === "mine" && !isGuest
       ? apiService.tournaments.getMine({ kind: "TOURNAMENT", status: ACTIVE_STATUSES })
       : apiService.tournaments.getAll({ kind: "TOURNAMENT", status: ACTIVE_STATUSES, ...(city ? { city } : {}) });
+    const fetchGames = scope === "mine" && !isGuest
+      ? apiService.tournaments.getMine({ kind: "GAME", status: ACTIVE_STATUSES })
+      : apiService.tournaments.getAll({ kind: "GAME", status: ACTIVE_STATUSES, ...(city ? { city } : {}) });
     // Switching city or scope must not leave the previous list on screen as if it were
     // the answer, and a slow earlier response must not overwrite a newer one.
     let stale = false;
     setTournaments(null);
-    fetch.then(r => { if (!stale) setTournaments(r.data); }).catch(e => { console.error(e); if (!stale) setTournaments([]); });
+    setGames(null);
+    fetchTournaments.then(r => { if (!stale) setTournaments(r.data); }).catch(e => { console.error(e); if (!stale) setTournaments([]); });
+    fetchGames.then(r => { if (!stale) setGames(r.data); }).catch(e => { console.error(e); if (!stale) setGames([]); });
     if (cityTouched) { try { localStorage.setItem("city", city); } catch { /* choice just won't persist */ } }
     return () => { stale = true; };
   }, [city, scope, cityTouched, isGuest]);
 
-  // The feed arrives by start time; matches being played right now go first, since
-  // that is what someone opening the app is looking for. The sort is stable.
-  const live = (tournaments ?? []).filter(tr => tr.status === "ACTIVE");
-  const events = [...live, ...(tournaments ?? []).filter(tr => tr.status !== "ACTIVE")];
+  // Two-level sort: events being played right now go first (that is what someone
+  // opening the app is looking for), then within each group, furthest-out start
+  // time first. Undated events sort last within their group.
+  const sortEvents = (list: any[]) => [...list].sort((a, b) => {
+    const aActive = a.status === "ACTIVE" ? 0 : 1;
+    const bActive = b.status === "ACTIVE" ? 0 : 1;
+    if (aActive !== bActive) return aActive - bActive;
+    const aTime = a.startTime ? new Date(a.startTime).getTime() : -Infinity;
+    const bTime = b.startTime ? new Date(b.startTime).getTime() : -Infinity;
+    return bTime - aTime;
+  });
+  const events = sortEvents(tournaments ?? []);
+  const gameEvents = sortEvents(games ?? []);
 
   // One entry per city, however it was typed. The server's list goes first so its
   // spelling wins; the viewer's own city and a remembered choice are added only when
@@ -182,6 +197,21 @@ export default function Dashboard() {
       ) : (
         <div className="space-y-2">
           {events.map(tr => <EventCard key={tr.id} tr={tr} />)}
+        </div>
+      )}
+
+      <div className="flex justify-between items-baseline mb-2.5 mt-5">
+        <h2 className={sectionLabel}>{t("games.title")}</h2>
+        {!!gameEvents.length && <span className="text-xs text-[#4d6480]">{gameEvents.length}</span>}
+      </div>
+
+      {games === null ? (
+        <Loader />
+      ) : gameEvents.length === 0 ? (
+        <EmptyState text={t("games.empty")} />
+      ) : (
+        <div className="space-y-2">
+          {gameEvents.map(tr => <EventCard key={tr.id} tr={tr} />)}
         </div>
       )}
 

@@ -2,8 +2,9 @@ import React from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useT } from "../i18n";
-import { TOUR_STEPS, tourStep, tourNext, tourSkip, tourFinish, tourSubscribe, stepPath, pressStep } from "../lib/tour";
+import { TOUR_STEPS, tourStep, tourNext, tourSkip, tourFinish, tourSubscribe, stepPath, pressStep, demoTournamentId } from "../lib/tour";
 import { btnPrimary } from "../lib/ui";
+import { apiService } from "../services/api";
 
 // Walks a demo visitor through one club night on the real screens: the roster,
 // the pairing, their own match, recording a set, settling it, the table. A
@@ -54,11 +55,24 @@ export default function Tour() {
 
   if (!user?.isDemo || !current) return null;
   const last = step === TOUR_STEPS.length - 1;
+  // The card must never sit on top of the thing it's describing: pin it to
+  // whichever edge the anchor isn't near. An anchor in the lower half of the
+  // screen pushes the card to the top; anywhere else (including "waiting",
+  // where there's nothing on screen to avoid) it stays at the bottom.
+  const placeAtTop = !!rect && rect.top + rect.height / 2 > window.innerHeight / 2;
 
   // On a step that ends in an action, "Next" performs it (see `pressStep`); the
   // screen then reports it done and the tour moves on by itself.
   const onNext = async () => {
-    if (last) { tourFinish(); return; }
+    if (last) {
+      // The match the tour just walked the visitor through scoring was a
+      // tutorial run, not their club night — undo the sets and the rating
+      // change it left behind so round 1 is a clean board to record for real.
+      const id = demoTournamentId();
+      if (id) apiService.tournaments.resetDemoRound1(id).catch(console.error);
+      tourFinish();
+      return;
+    }
     if (!current.press) { tourNext(); return; }
     if (pressing) return;
     setPressing(true);
@@ -73,7 +87,9 @@ export default function Tour() {
         <div className="fixed pointer-events-none z-40 rounded-xl border-2 border-[#ccff00] transition-all duration-200"
           style={{ top: rect.top - 6, left: rect.left - 6, width: rect.width + 12, height: rect.height + 12, boxShadow: "0 0 0 9999px rgba(10,22,40,0.55)" }} />
       )}
-      <div className="fixed left-0 right-0 bottom-0 z-50 p-4 pb-6 bg-gradient-to-t from-[#0a1628] via-[#0a1628] to-transparent">
+      <div className={`fixed left-0 right-0 z-50 p-4 ${placeAtTop
+        ? "top-0 pt-6 bg-gradient-to-b from-[#0a1628] via-[#0a1628] to-transparent"
+        : "bottom-0 pb-6 bg-gradient-to-t from-[#0a1628] via-[#0a1628] to-transparent"}`}>
         <div className="max-w-md mx-auto bg-[#101f36] border border-[#1c3350] rounded-2xl p-4">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[10px] uppercase tracking-wider text-[#4d6480]">{t("tour.counter", { n: step + 1, total: TOUR_STEPS.length })}</span>

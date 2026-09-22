@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
 import { prisma } from "../config/db";
+import { revertRatingUpdate } from "../routes/matches";
 
 // A visitor who has never run a club night cannot judge the app from the feed:
 // the whole point of it is pairing a room of players and recording sets at the
@@ -179,6 +180,48 @@ export async function joinDemoSeat(tournamentId: string): Promise<DemoJoin> {
     orderBy: { round: "desc" }, select: { id: true },
   });
   return { userId: guestId, role: "PLAYER", matchId: match?.id ?? null };
+}
+
+// The tour walks the visitor through pairing round 1 and settling their own
+// match — scoring it for real, which (being a TOURNAMENT-kind event) moves both
+// players' rating the same as any other match. That is fine while it stays
+// theirs, but the second the tour ends, "Гость 1"/"Гость 2" is a throwaway
+// pairing standing in for whoever actually turns up, so its rating change has
+// to disappear before the visitor starts entering real scores. Wipes round 1
+// back to freshly-paired (no sets, NOT_STARTED) and hands back any rating it
+// moved, rather than the whole event: pairing already happened, and re-pairing
+// would reshuffle who's on which table for no reason.
+export async function resetDemoRound1(tournamentId: string, userId: string): Promise<void> {
+  const tournament = await prisma.tournament.findUnique({
+    where: { id: tournamentId },
+    select: { id: true, organizerId: true, status: true, organizer: { select: { isDemo: true } } },
+  });
+  if (!tournament || tournament.organizerId !== userId || !tournament.organizer.isDemo) return;
+
+  const matches = await prisma.match.findMany({
+    where: { tournamentId, round: 1 },
+    select: { id: true, player1Id: true, player2Id: true, setsWon1: true, setsWon2: true, eloDelta: true, eloDeltaLoser: true },
+  });
+  if (!matches.length) return;
+
+  for (const match of matches) {
+    await revertRatingUpdate(match).catch((e) => console.error("[DEMO reset]", e?.message));
+  }
+  const matchIds = matches.map((m) => m.id);
+  await prisma.matchSet.deleteMany({ where: { matchId: { in: matchIds } } });
+  await prisma.match.updateMany({
+    where: { id: { in: matchIds } },
+    data: {
+      status: "NOT_STARTED", setsWon1: 0, setsWon2: 0, startedAt: null, endedAt: null,
+      eloDelta: null, eloDeltaLoser: null, rating1Before: null, rating2Before: null,
+    },
+  });
+  // The ratings the two brought to the event no longer mean anything once the
+  // match that would have pinned them is undone.
+  await prisma.tournamentUser.updateMany({ where: { tournamentId }, data: { ratingStart: null } });
+  // Pairing already flipped this to ACTIVE; settling round 1 may since have
+  // flipped it to COMPLETED. Either way there is an unplayed match again now.
+  await prisma.tournament.updateMany({ where: { id: tournamentId, status: { not: "CANCELLED" } }, data: { status: "ACTIVE" } });
 }
 
 // Deletes every demo set whose time is up, with the events they played. Called
