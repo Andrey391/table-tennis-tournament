@@ -7,6 +7,7 @@ import ScopeToggle from "../components/ScopeToggle";
 import Loader from "../components/Loader";
 import EmptyState from "../components/EmptyState";
 import EventCard from "../components/EventCard";
+import PlayerScheduleModal from "../components/PlayerScheduleModal";
 import { useT } from "../i18n";
 import { playerName, matchScoreLine, cityKey } from "../lib/format";
 import TryDemoButton from "../components/TryDemoButton";
@@ -30,6 +31,7 @@ export default function Dashboard() {
   const [cityTouched, setCityTouched] = useState(() => { try { return localStorage.getItem("city") !== null; } catch { return false; } });
   const [scope, setScope] = useState<"all" | "mine">("all");
   const [myMatches, setMyMatches] = useState<any[]>([]);
+  const [showSchedule, setShowSchedule] = useState(false);
 
   // "Your match" on the home screen: during a club night this is what a player opens
   // the app for. Polled like the event page, so a newly paired round shows up here.
@@ -139,20 +141,29 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-2 gap-2 mb-5">
-        {[
+        {([
           { to: "/rating", label: "home.tiles.players", d: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8" },
           { to: "/results", label: "home.tiles.results", d: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" },
-          // Booking a table needs an account, so that tile is simply absent for a guest.
+          // Booking a table and looking at your own match schedule both need
+          // an account, so these tiles are simply absent for a guest.
           ...(isGuest ? [] : [{ to: "/bookings", label: "home.tiles.bookings", d: "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" }]),
           { to: "/games", label: "games.title", d: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20M4.9 4.9c3.5 1 6.2 3.7 7.1 7.1M19.1 19.1c-3.5-1-6.2-3.7-7.1-7.1" },
           { to: "/clubs", label: "home.tiles.clubs", d: "M12 21s-7-6.5-7-11a7 7 0 1 1 14 0c0 4.5-7 11-7 11ZM12 10.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" },
-        ].map(tile => (
+          ...(isGuest ? [] : [{ onClick: () => setShowSchedule(true), label: "home.tiles.schedule", d: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM12 6v6l4 2" }]),
+        ] as ({ to: string; label: string; d: string; onClick?: undefined } | { to?: undefined; label: string; d: string; onClick: () => void })[]).map(tile => tile.to ? (
           <Link key={tile.to} to={tile.to} className={`${card} p-3.5 flex flex-col items-start gap-2 active:bg-[#1c3350] transition-colors`}>
             <svg viewBox="0 0 24 24" fill="none" stroke="#ccff00" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
               <path d={tile.d} />
             </svg>
             <span className="text-sm font-medium">{t(tile.label)}</span>
           </Link>
+        ) : (
+          <button key={tile.label} type="button" onClick={tile.onClick} className={`${card} p-3.5 flex flex-col items-start gap-2 active:bg-[#1c3350] transition-colors text-left`}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="#ccff00" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+              <path d={tile.d} />
+            </svg>
+            <span className="text-sm font-medium">{t(tile.label)}</span>
+          </button>
         ))}
       </div>
 
@@ -174,6 +185,8 @@ export default function Dashboard() {
           {events.map(tr => <EventCard key={tr.id} tr={tr} />)}
         </div>
       )}
+
+      {user && <PlayerScheduleModal open={showSchedule} onClose={() => setShowSchedule(false)} playerId={user.id} />}
     </Layout>
   );
 }
