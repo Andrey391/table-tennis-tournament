@@ -16,7 +16,7 @@ export function jwtSecret(): string {
 }
 
 export function generateToken(userId: string, role: string): string {
-  return jwt.sign({ userId, role }, jwtSecret(), { expiresIn: "24h" });
+  return jwt.sign({ userId, role }, jwtSecret(), { expiresIn: "10h" });
 }
 
 export function authMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
