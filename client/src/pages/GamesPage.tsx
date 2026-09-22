@@ -15,6 +15,10 @@ import { btnGhost, btnPrimary, card, errorBox, field, fieldLabel, pageTitle } fr
 // A game is a tournament with kind=GAME: same roster, rounds and pairing, no Elo.
 // This screen is the game-shaped view of the same feed; opening one lands on the
 // usual tournament page.
+// Statuses that still have something to play: roster open, or rounds under way.
+// A finished or cancelled game has nothing left to do here — it lives in Results.
+const ACTIVE_STATUSES = "DRAFT,ACTIVE";
+
 export default function GamesPage() {
   const { t } = useT();
   const { token, user } = useAuth();
@@ -36,8 +40,8 @@ export default function GamesPage() {
   const fetchGames = () => (
     // "Mine" needs an account; a guest only ever sees the open feed.
     scope === "mine" && !isGuest
-      ? apiService.tournaments.getMine({ kind: "GAME" })
-      : apiService.tournaments.getAll({ kind: "GAME" })
+      ? apiService.tournaments.getMine({ kind: "GAME", status: ACTIVE_STATUSES })
+      : apiService.tournaments.getAll({ kind: "GAME", status: ACTIVE_STATUSES })
   );
   // A refresh after creating a game keeps the list on screen; only a change of scope
   // goes back to the loader, so the old scope's rows are never shown as the new one's.
@@ -195,7 +199,9 @@ export default function GamesPage() {
         <EmptyState text={t("games.empty")} />
       ) : (
         <div className="space-y-2">
-          {games.map(g => <EventCard key={g.id} tr={g} />)}
+          {/* Games being played right now go first, same as the home feed. */}
+          {[...games.filter(g => g.status === "ACTIVE"), ...games.filter(g => g.status !== "ACTIVE")]
+            .map(g => <EventCard key={g.id} tr={g} />)}
         </div>
       )}
     </Layout>

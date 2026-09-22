@@ -80,6 +80,7 @@ playerRouter.get("/:id/schedule", async (req, res: Response) => {
       player1: { select: playerSelect },
       player2: { select: playerSelect },
       tournament: { select: { id: true, name: true, kind: true, startTime: true } },
+      sets: { orderBy: { index: "asc" } },
     },
     orderBy: [{ startedAt: "asc" }],
   });

@@ -22,9 +22,13 @@ export default function ResultsPage() {
   const [search, setSearch] = useState("");
   const [events, setEvents] = useState<any[] | null>(null);
 
-  const [metric, setMetric] = useState<"rating" | "wins" | "played">("rating");
+  // "table" is the plain rating list (formerly its own /rating screen), kept as
+  // the leftmost option since it's the thing most people open this tab for.
+  const [metric, setMetric] = useState<"table" | "rating" | "wins" | "played">("table");
   const [period, setPeriod] = useState<"month" | "year" | "all">("month");
   const [leaders, setLeaders] = useState<any[] | null>(null);
+  const [ratingPlayers, setRatingPlayers] = useState<any[] | null>(null);
+  const [ratingSearch, setRatingSearch] = useState("");
 
   useEffect(() => {
     if (tab !== "events") return;
@@ -37,10 +41,17 @@ export default function ResultsPage() {
   }, [tab, kind, scope, search, user?.id]);
 
   useEffect(() => {
-    if (tab !== "leaders") return;
+    if (tab !== "leaders" || metric === "table") return;
     setLeaders(null);
     apiService.stats.leaders({ metric, period }).then(r => setLeaders(r.data)).catch(() => setLeaders([]));
   }, [tab, metric, period]);
+
+  useEffect(() => {
+    if (tab !== "leaders" || metric !== "table" || ratingPlayers !== null) return;
+    apiService.rating.getAll().then(r => setRatingPlayers(r.data)).catch(() => setRatingPlayers([]));
+  }, [tab, metric, ratingPlayers]);
+
+  const filteredRatingPlayers = (ratingPlayers ?? []).filter(p => `${p.firstName} ${p.lastName}`.toLowerCase().includes(ratingSearch.toLowerCase()));
 
   return (
     <Layout>
@@ -107,16 +118,47 @@ export default function ResultsPage() {
       ) : (
         <>
           <div className="flex gap-2 overflow-x-auto pb-1 mb-2">
-            {([["rating", "leaders.metricRating"], ["wins", "leaders.metricWins"], ["played", "leaders.metricPlayed"]] as const).map(([k, key]) => (
+            {([["table", "leaders.metricTable"], ["rating", "leaders.metricRating"], ["wins", "leaders.metricWins"], ["played", "leaders.metricPlayed"]] as const).map(([k, key]) => (
               <button key={k} onClick={() => setMetric(k)} className={chip(metric === k)}>{t(key)}</button>
             ))}
           </div>
-          <div className="flex gap-2 overflow-x-auto pb-1 mb-4">
-            {(["month", "year", "all"] as const).map(k => <button key={k} onClick={() => setPeriod(k)} className={chip(period === k)}>{t(`leaders.${k}`)}</button>)}
-          </div>
+          {metric !== "table" && (
+            <div className="flex gap-2 overflow-x-auto pb-1 mb-4">
+              {(["month", "year", "all"] as const).map(k => <button key={k} onClick={() => setPeriod(k)} className={chip(period === k)}>{t(`leaders.${k}`)}</button>)}
+            </div>
+          )}
           {metric === "rating" && <p className="text-[11px] text-[#4d6480] -mt-2 mb-3">{t("leaders.hintRating")}</p>}
 
-          {leaders === null ? (
+          {metric === "table" ? (
+            <>
+              <input type="text" placeholder={t("players.search")} value={ratingSearch} onChange={e => setRatingSearch(e.target.value)}
+                className={`${searchField} mb-3`} />
+              {ratingPlayers === null ? (
+                <Loader />
+              ) : filteredRatingPlayers.length === 0 ? (
+                <EmptyState text={t("rating.empty")} />
+              ) : (
+                <div className={`${card} divide-y divide-[#1c3350]/50`}>
+                  {filteredRatingPlayers.map((p: any, i: number) => (
+                    <Link key={p.id} to={`/player/${p.id}`} className="flex items-center justify-between px-3 py-2.5 active:bg-[#1c3350] transition-colors">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        {/* Ranks come from the unfiltered order, so searching doesn't crown someone 1st. */}
+                        {!ratingSearch && i < 3 ? (
+                          <span className="shrink-0 inline-flex w-6 h-6 rounded-full text-xs font-bold items-center justify-center text-[#0a1628]" style={{ background: MEDALS[i] }}>{i + 1}</span>
+                        ) : <span className="text-xs text-[#4d6480] w-6 shrink-0 text-center">{(ratingPlayers ?? []).indexOf(p) + 1}</span>}
+                        <Avatar firstName={p.firstName} lastName={p.lastName} rating={p.rating} size="sm" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{p.firstName} {p.lastName}</p>
+                          <p className="text-xs text-[#6b84a0] truncate">{p.club || t("rating.noClub")}</p>
+                        </div>
+                      </div>
+                      <span className="text-[#4d6480] text-sm shrink-0 px-1">&rsaquo;</span>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : leaders === null ? (
             <Loader />
           ) : leaders.length === 0 ? (
             <EmptyState text={t("leaders.empty")} />

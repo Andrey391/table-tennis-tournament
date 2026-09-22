@@ -8,7 +8,8 @@ import DemoBanner from "./DemoBanner";
 const HOME = { to: "/", label: "nav.home", d: "M3 10.5 12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" };
 const PLAY = { to: "/bookings", label: "nav.play", d: "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2M12 14v4M10 16h4" };
 const CLUBS = { to: "/clubs", label: "nav.clubs", d: "M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6M9 11h.01M15 11h.01M9 15h.01M15 15h.01" };
-const RATING = { to: "/rating", label: "nav.rating", d: "m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z" };
+// Rating now lives inside Results (Leaders tab), so it no longer gets its own
+// bottom-nav slot — the two used to show the same rows in different places.
 const RESULTS = { to: "/results", label: "nav.results", d: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" };
 const PROFILE = { to: "/profile", label: "nav.profile", d: "M20 21a8 8 0 1 0-16 0M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8" };
 const GAMES = { to: "/games", label: "games.title", d: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20M4.9 4.9c3.5 1 6.2 3.7 7.1 7.1M19.1 19.1c-3.5-1-6.2-3.7-7.1-7.1" };
@@ -17,8 +18,8 @@ const SIGN_IN = { to: "/login", label: "auth.signIn", d: "M15 3h4a2 2 0 0 1 2 2v
 // A guest has no bookings and no profile, so those two slots go to what they can
 // actually use: the games feed, and a way to sign in. Clubs is guest-readable
 // too, so it's in both bars.
-const GUEST_NAV = [HOME, GAMES, CLUBS, RATING, RESULTS, SIGN_IN];
-const MEMBER_NAV = [HOME, PLAY, CLUBS, RATING, RESULTS, PROFILE];
+const GUEST_NAV = [HOME, GAMES, CLUBS, RESULTS, SIGN_IN];
+const MEMBER_NAV = [HOME, PLAY, CLUBS, RESULTS, PROFILE];
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { token, user, logout } = useAuth();
