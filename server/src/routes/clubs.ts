@@ -4,7 +4,7 @@ import { prisma } from "../config/db";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
 import { CreateClubSchema, UpdateClubSchema, CreateClubTableSchema } from "../shared/schemas";
 import { bookingsOverlap, startOfUtcDay } from "../shared/booking";
-import { queryString, cityIs } from "../shared/queries";
+import { queryString, cityIs, playerSelect } from "../shared/queries";
 import { normalizeCity, cityKey } from "../shared/city";
 
 export const clubRouter = Router();
@@ -54,7 +54,7 @@ clubRouter.get("/cities", async (_req, res: Response) => {
 clubRouter.get("/:id", async (req, res: Response) => {
   const club = await prisma.club.findUnique({
     where: { id: req.params.id },
-    include: { tables: { orderBy: { number: "asc" } }, _count: { select: { subscriptions: true } } },
+    include: { tables: { orderBy: { number: "asc" } }, _count: { select: { subscriptions: true } }, createdBy: { select: playerSelect } },
   });
   if (!club) { res.status(404).json({ error: "Not found" }); return; }
   res.json(club);

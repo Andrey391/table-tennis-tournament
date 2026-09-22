@@ -7,6 +7,9 @@ import ClubScheduleModal from "../components/ClubScheduleModal";
 import { useAuth } from "../context/AuthContext";
 import { useT } from "../i18n";
 import { btnPrimary, btnSecondary, card, errorBox, field, fieldLabel, pageTitle, searchField } from "../lib/ui";
+import { playerName } from "../lib/format";
+import Avatar from "../components/Avatar";
+import { Link } from "react-router-dom";
 
 // The full list of clubs — guest-readable, like the rest of the browsing screens.
 // Editing a club and its tables used to only be reachable through the booking
@@ -143,6 +146,18 @@ export default function ClubsPage() {
                     ) : (
                       <>
                         {detail.phone && <p className="text-xs text-[#93a8c2]">{t("play.clubPhone")}: {detail.phone}</p>}
+
+                        <div>
+                          <p className={fieldLabel + " mb-1"}>{t("clubs.admin")}</p>
+                          {detail.createdBy ? (
+                            <Link to={`/player/${detail.createdBy.id}`} className="flex items-center gap-2">
+                              <Avatar firstName={detail.createdBy.firstName} lastName={detail.createdBy.lastName} rating={detail.createdBy.rating} size="sm" />
+                              <span className="text-sm text-[#93a8c2]">{playerName(detail.createdBy)}</span>
+                            </Link>
+                          ) : (
+                            <p className="text-xs text-[#4d6480]">{t("clubs.noAdmin")}</p>
+                          )}
+                        </div>
 
                         {isOwner && (
                           <div className="flex justify-end -mt-1">

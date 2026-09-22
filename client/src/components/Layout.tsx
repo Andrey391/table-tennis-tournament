@@ -55,22 +55,24 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         {children}
       </main>
 
-      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-[#101f36] border-t border-[#1c3350] flex pb-[env(safe-area-inset-bottom)]">
-        {NAV.map(n => {
-          const active = location.pathname === n.to;
-          return (
-            <Link key={n.to} to={n.to}
-              className={`relative flex-1 flex flex-col items-center justify-center gap-1 py-2.5 text-[11px] font-medium transition-colors ${
-                active ? "text-[#ccff00]" : "text-[#6b84a0]"
-              }`}>
-              {active && <span className="absolute top-0 h-0.5 w-10 rounded-full bg-[#ccff00]" />}
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-                <path d={n.d} />
-              </svg>
-              {t(n.label)}
-            </Link>
-          );
-        })}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-[#101f36] border-t border-[#1c3350] pb-[env(safe-area-inset-bottom)]">
+        <div className="flex w-full max-w-2xl mx-auto">
+          {NAV.map(n => {
+            const active = location.pathname === n.to;
+            return (
+              <Link key={n.to} to={n.to}
+                className={`relative flex-1 flex flex-col items-center justify-center gap-1 py-2.5 text-[11px] font-medium transition-colors ${
+                  active ? "text-[#ccff00]" : "text-[#6b84a0]"
+                }`}>
+                {active && <span className="absolute top-0 h-0.5 w-10 rounded-full bg-[#ccff00]" />}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                  <path d={n.d} />
+                </svg>
+                {t(n.label)}
+              </Link>
+            );
+          })}
+        </div>
       </nav>
     </div>
   );
