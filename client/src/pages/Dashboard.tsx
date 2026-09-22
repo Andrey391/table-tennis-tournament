@@ -35,13 +35,21 @@ export default function Dashboard() {
   const [showSchedule, setShowSchedule] = useState(false);
 
   // "Your match" on the home screen: during a club night this is what a player opens
-  // the app for. Polled like the event page, so a newly paired round shows up here.
+  // the app for. Polled like the event page, so a newly paired round shows up here —
+  // but only while the tab is actually visible, so a backgrounded phone doesn't keep
+  // hammering /matches/mine while nobody is looking. Still on a 1-minute cadence even
+  // in the foreground — someone leaving the tab open (not backgrounded, just idle) is
+  // exactly the case visibilitychange doesn't catch, so the interval itself stays slow.
   useEffect(() => {
     if (isGuest) { setMyMatches([]); return; }
     const load = () => apiService.matches.mine().then(r => setMyMatches(r.data)).catch(console.error);
-    load();
-    const i = setInterval(load, 10000);
-    return () => clearInterval(i);
+    let i: ReturnType<typeof setInterval> | null = null;
+    const start = () => { if (i == null) { load(); i = setInterval(load, 60000); } };
+    const stop = () => { if (i != null) { clearInterval(i); i = null; } };
+    const onVisibility = () => { if (document.visibilityState === "visible") start(); else stop(); };
+    if (document.visibilityState === "visible") start();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => { document.removeEventListener("visibilitychange", onVisibility); stop(); };
   }, [isGuest]);
 
   useEffect(() => { apiService.clubs.cities().then(r => setCities(r.data)).catch(console.error); }, []);
