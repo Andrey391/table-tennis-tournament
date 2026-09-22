@@ -20,12 +20,13 @@ export default function CreateTournament() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.startTime) return;
     setLoading(true);
     const payload = {
-      name: form.name,
+      name: form.name || undefined,
       description: form.description || undefined,
       clubId: form.clubId || undefined,
-      startTime: form.startTime ? new Date(form.startTime).toISOString() : undefined,
+      startTime: new Date(form.startTime).toISOString(),
       endTime: form.endTime ? new Date(form.endTime).toISOString() : undefined,
       tablesCount: form.tablesCount,
       setsToWin: form.setsToWin,
@@ -45,8 +46,9 @@ export default function CreateTournament() {
       <form onSubmit={handleSubmit} className={`${card} space-y-4 p-4`}>
         {error && <div className={errorBox}>{error}</div>}
         <div>
-          <label className={fieldLabel}>{t("create.name")}</label>
-          <input type="text" placeholder={t("create.namePlaceholder")} value={form.name} onChange={e => set("name", e.target.value)} className={field} required />
+          <label className={fieldLabel}>{t("create.name")} <span className="normal-case text-[#4d6480]">({t("common.optional")})</span></label>
+          <input type="text" placeholder={t("create.namePlaceholder")} value={form.name} onChange={e => set("name", e.target.value)} className={field} />
+          <p className="text-xs text-[#4d6480] mt-1.5">{t("create.nameHint")}</p>
         </div>
         <div>
           <label className={fieldLabel}>{t("create.description")} <span className="normal-case text-[#4d6480]">({t("common.optional")})</span></label>
@@ -62,7 +64,7 @@ export default function CreateTournament() {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className={fieldLabel}>{t("create.start")}</label>
-            <input type="datetime-local" value={form.startTime} onChange={e => set("startTime", e.target.value)} className={field} />
+            <input type="datetime-local" value={form.startTime} onChange={e => set("startTime", e.target.value)} className={field} required />
           </div>
           <div>
             <label className={fieldLabel}>{t("create.end")}</label>

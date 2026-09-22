@@ -3,7 +3,7 @@ import { publicError } from "../shared/errors";
 import { prisma } from "../config/db";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
 import { CreateBookingSchema } from "../shared/schemas";
-import { startOfUtcDay, bookingStartsAt, bookingEndsAt } from "../shared/booking";
+import { startOfUtcDay, bookingStartsAt, bookingEndsAt, countFreeTables } from "../shared/booking";
 import { findBookingConflict } from "./clubs";
 import { bookingInclude } from "../shared/queries";
 
@@ -33,6 +33,17 @@ bookingRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, res: R
       }
     }
 
+    // A tournament's rounds spread across `tablesCount` tables at once; refuse up
+    // front if the club doesn't have that many tables free at this time, rather
+    // than letting two matches collide on the same table later.
+    if (data.eventType === "TOURNAMENT" && data.tablesCount) {
+      const free = await countFreeTables(club.id, date, data.startTime, data.durationHours);
+      if (free !== null && data.tablesCount > free) {
+        res.status(409).json({ error: `Only ${free} table(s) free at this club at this time` });
+        return;
+      }
+    }
+
     // The booking and the event it exists for are created together: a half-created
     // pair (a table held for nothing, or an event nobody has a table for) is never
     // a state worth persisting.
@@ -48,6 +59,7 @@ bookingRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, res: R
           kind: data.eventType, name: title, clubId: club.id, startTime: startsAt, endTime: endsAt, organizerId: userId,
           // How many sets its matches are played to, chosen on the booking screen.
           ...(data.setsToWin ? { setsToWin: data.setsToWin } : {}),
+          ...(data.tablesCount ? { tablesCount: data.tablesCount } : {}),
           ...(data.isPublic === undefined ? {} : { isPublic: data.isPublic }),
         },
       });
