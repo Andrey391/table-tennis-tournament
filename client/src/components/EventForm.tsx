@@ -11,6 +11,18 @@ import EmptyState from "./EmptyState";
 
 // "HH:MM" -> minutes since midnight, for turning a start/end pair into a duration.
 const parseHM = (s: string) => { const [h, m] = s.split(":").map(Number); return h * 60 + m; };
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const toDateStr = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const toTimeStr = (d: Date) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+// Current time rounded up to the next full hour — never earlier than now, so it
+// never lands in the past for the "start" field's default.
+const roundedUpHour = () => {
+  const d = new Date();
+  if (d.getMinutes() > 0 || d.getSeconds() > 0) d.setHours(d.getHours() + 1);
+  d.setMinutes(0, 0, 0);
+  return d;
+};
+const addHour = (hm: string) => { const [h, m] = hm.split(":").map(Number); return `${pad2((h + 1) % 24)}:${pad2(m)}`; };
 
 // Mirrors the server's bookingsOverlap (shared/booking.ts) so a table already
 // taken over the chosen slot can be greyed out before submitting, not just
@@ -41,12 +53,18 @@ export default function EventForm({
   const [showSchedule, setShowSchedule] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [form, setForm] = useState({
-    clubId: "", tableId: "", date: "", startTime: "", endTime: "",
-    eventType: defaultEventType, eventTitle: "", description: "",
-    setsToWin: 3, tablesCount: 4, maxPlayers: "", minRating: "", maxRating: "", ratingWeight: "0.5",
-    isPublic: true,
+  const [form, setForm] = useState(() => {
+    const startDate = roundedUpHour();
+    return {
+      clubId: "", tableId: "", date: toDateStr(startDate), startTime: toTimeStr(startDate), endTime: addHour(toTimeStr(startDate)),
+      eventType: defaultEventType, eventTitle: "", description: "",
+      setsToWin: 3, tablesCount: 4, maxPlayers: "", minRating: "", maxRating: "", ratingWeight: "0.5",
+      isPublic: true,
+    };
   });
+  // Whether the user has touched "end" directly, so the start-time auto-fill
+  // stops overwriting a choice they made on purpose.
+  const [endTouched, setEndTouched] = useState(false);
 
   useEffect(() => { apiService.clubs.getAll().then(r => setClubs(r.data)).catch(e => { console.error(e); setClubs(p => p ?? []); }); }, []);
 
@@ -57,7 +75,12 @@ export default function EventForm({
   };
   useEffect(loadAvailability, [form.clubId, form.date]);
 
-  const set = (key: string, val: any) => setForm(f => ({ ...f, [key]: val, ...(key === "clubId" ? { tableId: "" } : {}) }));
+  const set = (key: string, val: any) => setForm(f => ({
+    ...f, [key]: val,
+    ...(key === "clubId" ? { tableId: "" } : {}),
+    // Keep "end" one hour after "start" until the user has picked their own end time.
+    ...(key === "startTime" && !endTouched ? { endTime: addHour(val) } : {}),
+  }));
 
   // No club selected means no table to hold, so a tournament (which needs a
   // venue for its rounds) isn't on offer — only a simple game.
@@ -86,6 +109,10 @@ export default function EventForm({
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.date || !form.startTime || !form.endTime) return;
+    if (form.date === toDateStr(new Date()) && form.startTime < toTimeStr(new Date())) {
+      setError(t("play.startInPast"));
+      return;
+    }
     let diffMinutes = parseHM(form.endTime) - parseHM(form.startTime);
     if (diffMinutes <= 0) diffMinutes += 24 * 60;
     const durationHours = diffMinutes / 60;
@@ -130,7 +157,9 @@ export default function EventForm({
           isPublic: form.isPublic,
         });
       }
-      setForm(f => ({ ...f, tableId: "", date: "", startTime: "", endTime: "", eventTitle: "", description: "" }));
+      const startDate = roundedUpHour();
+      setForm(f => ({ ...f, tableId: "", date: toDateStr(startDate), startTime: toTimeStr(startDate), endTime: addHour(toTimeStr(startDate)), eventTitle: "", description: "" }));
+      setEndTouched(false);
       onCreated(created.data);
     } catch (err: any) { setError(err.response?.data?.error || t("common.failed")); }
     finally { setBusy(false); }
@@ -157,16 +186,17 @@ export default function EventForm({
         )}
       </div>
 
-      <input type="date" value={form.date} onChange={e => set("date", e.target.value)} className={field} required />
+      <input type="date" min={toDateStr(new Date())} value={form.date} onChange={e => set("date", e.target.value)} className={field} required />
 
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className={fieldLabel}>{t("create.start")}</label>
-          <input type="time" value={form.startTime} onChange={e => set("startTime", e.target.value)} className={field} required />
+          <input type="time" min={form.date === toDateStr(new Date()) ? toTimeStr(new Date()) : undefined}
+            value={form.startTime} onChange={e => set("startTime", e.target.value)} className={field} required />
         </div>
         <div>
           <label className={fieldLabel}>{t("create.end")}</label>
-          <input type="time" value={form.endTime} onChange={e => set("endTime", e.target.value)} className={field} required />
+          <input type="time" value={form.endTime} onChange={e => { setEndTouched(true); set("endTime", e.target.value); }} className={field} required />
         </div>
       </div>
 
@@ -223,25 +253,34 @@ export default function EventForm({
       {effectiveType === "TOURNAMENT" && (
         <>
           {availability.length > 0 && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={fieldLabel}>{t("create.tables")}</label>
+                <input type="number" min={1} max={Math.max(1, freeTablesCount)} value={form.tablesCount}
+                  onChange={e => set("tablesCount", Math.max(1, +e.target.value))} className={field} />
+                <p className="text-xs text-[#4d6480] mt-1.5">
+                  {hasSlot ? t("play.freeTablesHint", { n: freeTablesCount }) : t("play.pickSlotFirst")}
+                </p>
+              </div>
+              <div>
+                <label className={fieldLabel}>{t("create.maxPlayers")}</label>
+                <input type="number" min={2} placeholder="—" value={form.maxPlayers} onChange={e => set("maxPlayers", e.target.value)} className={field} />
+                <p className="text-xs text-[#4d6480] mt-1.5">{t("create.maxPlayersHint")}</p>
+              </div>
+            </div>
+          )}
+
+          {availability.length === 0 && (
             <div>
-              <label className={fieldLabel}>{t("create.tables")}</label>
-              <input type="number" min={1} max={Math.max(1, freeTablesCount)} value={form.tablesCount}
-                onChange={e => set("tablesCount", Math.max(1, +e.target.value))} className={field} />
-              <p className="text-xs text-[#4d6480] mt-1.5">
-                {hasSlot ? t("play.freeTablesHint", { n: freeTablesCount }) : t("play.pickSlotFirst")}
-              </p>
+              <label className={fieldLabel}>{t("create.maxPlayers")}</label>
+              <input type="number" min={2} placeholder="—" value={form.maxPlayers} onChange={e => set("maxPlayers", e.target.value)} className={field} />
+              <p className="text-xs text-[#4d6480] mt-1.5">{t("create.maxPlayersHint")}</p>
             </div>
           )}
 
           <div>
             <label className={fieldLabel}>{t("create.description")} <span className="normal-case text-[#4d6480]">({t("common.optional")})</span></label>
             <textarea rows={3} placeholder={t("create.descriptionPlaceholder")} value={form.description} onChange={e => set("description", e.target.value)} className={field} />
-          </div>
-
-          <div>
-            <label className={fieldLabel}>{t("create.maxPlayers")}</label>
-            <input type="number" min={2} placeholder="—" value={form.maxPlayers} onChange={e => set("maxPlayers", e.target.value)} className={field} />
-            <p className="text-xs text-[#4d6480] mt-1.5">{t("create.maxPlayersHint")}</p>
           </div>
 
           <div>
