@@ -18,6 +18,9 @@ export default function BookingsPage() {
   const [subscriptions, setSubscriptions] = useState<any[] | null>(null);
   const [subClubId, setSubClubId] = useState("");
   const [error, setError] = useState("");
+  // Collapsed by default so "мои брони" is visible without scrolling past the
+  // form first — it only opens when the user actually wants to book something.
+  const [showForm, setShowForm] = useState(false);
 
   const load = () => {
     // On failure a list settles to empty rather than spinning forever.
@@ -34,6 +37,7 @@ export default function BookingsPage() {
   // booking wrapper, so the created row is itself the event.
   const onCreated = (created: any) => {
     load();
+    setShowForm(false);
     const eventId = created?.tournament?.id || created?.id;
     if (eventId) navigate(`/tournament/${eventId}`);
   };
@@ -59,8 +63,13 @@ export default function BookingsPage() {
       {error && <div className={`${errorBox} mb-4`}>{error}</div>}
 
       <section className="mb-6">
-        <h2 className={`${sectionLabel} mb-2`}>{t("play.book")}</h2>
-        <EventForm defaultEventType="GAME" onCreated={onCreated} />
+        <div className="flex items-center justify-between mb-2">
+          <h2 className={sectionLabel}>{t("play.book")}</h2>
+          <button type="button" onClick={() => setShowForm(v => !v)} className="text-sm text-[#ccff00] font-bold">
+            {showForm ? t("common.cancel") : `+ ${t("play.bookAction")}`}
+          </button>
+        </div>
+        {showForm && <EventForm defaultEventType="GAME" onCreated={onCreated} />}
       </section>
 
       <section className="mb-6">

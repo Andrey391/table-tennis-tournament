@@ -38,8 +38,14 @@ export default function ClubScheduleModal({
   const today = () => new Date().toISOString().slice(0, 10);
   const [date, setDate] = useState(initialDate ? initialDate.slice(0, 10) : today());
   const [tables, setTables] = useState<Table[] | null>(null);
+  // "День" is the default: the familiar per-table timeline. "Неделя" swaps in a
+  // 7-day overview (booked hours per table per day) so a manager can see the
+  // week's load at a glance and jump into any day from there.
+  const [view, setView] = useState<"day" | "week">("day");
+  const [weekData, setWeekData] = useState<Record<string, Table[]>>({});
+  const [weekLoading, setWeekLoading] = useState(false);
 
-  useEffect(() => { if (open) setDate(initialDate ? initialDate.slice(0, 10) : today()); }, [open, initialDate]);
+  useEffect(() => { if (open) { setDate(initialDate ? initialDate.slice(0, 10) : today()); setView("day"); } }, [open, initialDate]);
 
   useEffect(() => {
     if (!open || !clubId || !date) return;
@@ -47,6 +53,28 @@ export default function ClubScheduleModal({
     apiService.clubs.availability(clubId, new Date(date).toISOString())
       .then(r => setTables(r.data)).catch(console.error);
   }, [open, clubId, date]);
+
+  // Monday-start week containing `date`.
+  const weekDates = (dateStr: string) => {
+    const d = new Date(dateStr);
+    const monday = new Date(d);
+    monday.setDate(d.getDate() + (d.getDay() === 0 ? -6 : 1 - d.getDay()));
+    return Array.from({ length: 7 }, (_, i) => {
+      const dd = new Date(monday);
+      dd.setDate(monday.getDate() + i);
+      return dd.toISOString().slice(0, 10);
+    });
+  };
+
+  useEffect(() => {
+    if (!open || !clubId || view !== "week") return;
+    setWeekLoading(true);
+    const dates = weekDates(date);
+    Promise.all(dates.map(d => apiService.clubs.availability(clubId, new Date(d).toISOString()).then(r => [d, r.data] as const)))
+      .then(entries => setWeekData(Object.fromEntries(entries)))
+      .catch(console.error)
+      .finally(() => setWeekLoading(false));
+  }, [open, clubId, view, date]);
 
   if (!open) return null;
 
@@ -69,47 +97,107 @@ export default function ClubScheduleModal({
           <button onClick={onClose} className="text-[#6b84a0] text-xl leading-none px-1 shrink-0" aria-label={t("common.cancel")}>&times;</button>
         </div>
 
-        {tables === null ? (
-          <Loader className="py-8" />
-        ) : list.length === 0 ? (
-          <p className="text-xs text-[#4d6480] p-4">{t("play.noTables")}</p>
-        ) : (
-          <div className="overflow-auto p-4">
-            <div className="flex">
-              {/* Time labels, fixed while the table columns scroll horizontally. */}
-              <div className="shrink-0 w-12 text-right pr-2" style={{ height: gridHeight }}>
-                {hours.map(h => (
-                  <div key={h} className="text-[10px] text-[#4d6480]" style={{ height: ROW_HEIGHT, marginTop: h === hours[0] ? 0 : -1 }}>
-                    {String(h % 24).padStart(2, "0")}:00
-                  </div>
-                ))}
-              </div>
+        <div className="flex gap-2 px-4 pt-3 shrink-0">
+          {(["day", "week"] as const).map(v => (
+            <button key={v} type="button" onClick={() => setView(v)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium border ${
+                view === v ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00]" : "bg-[#0a1628] text-[#93a8c2] border-[#1c3350]"
+              }`}>
+              {t(v === "day" ? "play.viewDay" : "play.viewWeek")}
+            </button>
+          ))}
+        </div>
 
-              <div className="flex-1 flex gap-2 min-w-0 overflow-x-auto">
-                {list.map(tbl => (
-                  <button key={tbl.id} type="button" onClick={() => { if (onSelectTable) { onSelectTable(tbl.id); onClose(); } }}
-                    className={`relative shrink-0 w-20 rounded-lg border ${
-                      selectedTableId === tbl.id ? "border-[#ccff00]" : "border-[#1c3350]"
-                    } ${onSelectTable ? "" : "cursor-default"}`}
-                    style={{ height: gridHeight, background: "repeating-linear-gradient(to bottom, #0a1628 0, #0a1628 " + (ROW_HEIGHT - 1) + "px, #142033 " + (ROW_HEIGHT - 1) + "px, #142033 " + ROW_HEIGHT + "px)" }}>
-                    <span className={`absolute -top-6 left-0 right-0 text-center text-xs font-medium ${selectedTableId === tbl.id ? "text-[#ccff00]" : "text-[#93a8c2]"}`}>
-                      №{tbl.number}
-                    </span>
-                    {tbl.busy.map((b, i) => {
-                      const top = (toMin(b.startTime) - dayStart * 60) / 60 * ROW_HEIGHT;
-                      const height = Math.max(6, b.durationHours * ROW_HEIGHT);
-                      return (
-                        <div key={i} className="absolute left-0.5 right-0.5 rounded bg-[#ef4444]/70 text-[9px] text-white px-1 py-0.5 overflow-hidden"
-                          style={{ top, height }} title={formatSlot(b.startTime, b.durationHours)}>
-                          {formatSlot(b.startTime, b.durationHours)}
-                        </div>
-                      );
-                    })}
-                  </button>
-                ))}
+        {view === "day" ? (
+          tables === null ? (
+            <Loader className="py-8" />
+          ) : list.length === 0 ? (
+            <p className="text-xs text-[#4d6480] p-4">{t("play.noTables")}</p>
+          ) : (
+            <div className="overflow-auto p-4">
+              <div className="flex">
+                {/* Time labels, fixed while the table columns scroll horizontally. */}
+                <div className="shrink-0 w-12 text-right pr-2" style={{ height: gridHeight }}>
+                  {hours.map(h => (
+                    <div key={h} className="text-[10px] text-[#4d6480]" style={{ height: ROW_HEIGHT, marginTop: h === hours[0] ? 0 : -1 }}>
+                      {String(h % 24).padStart(2, "0")}:00
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex-1 flex gap-2 min-w-0 overflow-x-auto">
+                  {list.map(tbl => (
+                    <button key={tbl.id} type="button" onClick={() => { if (onSelectTable) { onSelectTable(tbl.id); onClose(); } }}
+                      className={`relative shrink-0 w-20 rounded-lg border ${
+                        selectedTableId === tbl.id ? "border-[#ccff00]" : "border-[#1c3350]"
+                      } ${onSelectTable ? "" : "cursor-default"}`}
+                      style={{ height: gridHeight, background: "repeating-linear-gradient(to bottom, #0a1628 0, #0a1628 " + (ROW_HEIGHT - 1) + "px, #142033 " + (ROW_HEIGHT - 1) + "px, #142033 " + ROW_HEIGHT + "px)" }}>
+                      <span className={`absolute -top-6 left-0 right-0 text-center text-xs font-medium ${selectedTableId === tbl.id ? "text-[#ccff00]" : "text-[#93a8c2]"}`}>
+                        №{tbl.number}
+                      </span>
+                      {tbl.busy.map((b, i) => {
+                        const top = (toMin(b.startTime) - dayStart * 60) / 60 * ROW_HEIGHT;
+                        const height = Math.max(6, b.durationHours * ROW_HEIGHT);
+                        return (
+                          <div key={i} className="absolute left-0.5 right-0.5 rounded bg-[#ef4444]/70 text-[9px] text-white px-1 py-0.5 overflow-hidden"
+                            style={{ top, height }} title={formatSlot(b.startTime, b.durationHours)}>
+                            {formatSlot(b.startTime, b.durationHours)}
+                          </div>
+                        );
+                      })}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
+          )
+        ) : (
+          weekLoading || tables === null ? (
+            <Loader className="py-8" />
+          ) : list.length === 0 ? (
+            <p className="text-xs text-[#4d6480] p-4">{t("play.noTables")}</p>
+          ) : (
+            <div className="overflow-auto p-4">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr>
+                    <th className="text-left font-normal pb-2 pr-2 w-12"></th>
+                    {weekDates(date).map(d => (
+                      <th key={d} className="font-normal pb-2 px-0.5">
+                        <button type="button" onClick={() => { setDate(d); setView("day"); }}
+                          className={`w-full rounded-lg py-1.5 ${
+                            d === date ? "bg-[#ccff00] text-[#0a1628]" : "text-[#93a8c2] hover:bg-[#142033]"
+                          }`}>
+                          <span className="block capitalize">{new Intl.DateTimeFormat(lang === "ru" ? "ru-RU" : "en-GB", { weekday: "short" }).format(new Date(d))}</span>
+                          <span className="block text-[10px]">{new Date(d).getDate()}</span>
+                        </button>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {list.map(tbl => (
+                    <tr key={tbl.id} className="border-t border-[#1c3350]">
+                      <td className="py-2 pr-2 text-[#93a8c2] font-medium whitespace-nowrap">№{tbl.number}</td>
+                      {weekDates(date).map(d => {
+                        const busy = weekData[d]?.find(t => t.id === tbl.id)?.busy ?? [];
+                        const hoursSum = busy.reduce((s, b) => s + b.durationHours, 0);
+                        return (
+                          <td key={d} className="text-center py-2 px-0.5">
+                            {hoursSum > 0 ? (
+                              <span className="text-[#ef4444]">{t("play.hoursShort", { n: hoursSum })}</span>
+                            ) : (
+                              <span className="text-[#4d6480]">—</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
         )}
 
         <div className="p-4 pt-0 shrink-0">

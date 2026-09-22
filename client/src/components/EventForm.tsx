@@ -105,6 +105,13 @@ export default function EventForm({
     const picked = tablesForSlot.find(t => t.id === form.tableId);
     if (picked && !picked.free) set("tableId", "");
   }, [form.tableId, form.startTime, form.endTime, availability]);
+  // Keep the tables-count field from claiming more tables than are actually
+  // free for the chosen slot — it defaults to 4 before availability is known,
+  // and a slot with fewer free tables must pull it back down.
+  useEffect(() => {
+    if (!hasSlot || availability.length === 0) return;
+    if (form.tablesCount > freeTablesCount) set("tablesCount", Math.max(1, freeTablesCount));
+  }, [freeTablesCount, hasSlot, availability.length]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
