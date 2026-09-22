@@ -24,6 +24,14 @@ async function loadOwnedTournament(res: Response, tournamentId: string, userId: 
 tournamentRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const data = CreateTournamentSchema.parse(req.body);
+    // A tournament's rounds need a venue; without a club there's no table to
+    // hold, so this bookingless path only ever creates a plain game. A real
+    // tournament goes through POST /bookings, which creates the club booking
+    // and the event together.
+    if (data.kind === "TOURNAMENT" && !data.clubId) {
+      res.status(400).json({ error: "Tournaments need a club — book one instead" });
+      return;
+    }
     // Same fallback POST /bookings uses for eventTitle: the club's name, or —
     // with no club — a generic label for the kind. A name is just a label, so
     // leaving it blank should never block creating the event.
