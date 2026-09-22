@@ -3,7 +3,7 @@ import { publicError } from "../shared/errors";
 import { prisma } from "../config/db";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
 import { MatchSettingsSchema, SetResultSchema, ForfeitSchema } from "../shared/schemas";
-import { computeFntrDelta, DEFAULT_RATING_WEIGHT, checkSetScore, checkCanEnd } from "../shared/scoring";
+import { computeFntrMatchDelta, DEFAULT_RATING_WEIGHT, checkSetScore, checkCanEnd } from "../shared/scoring";
 import { playerSelect, matchInclude } from "../shared/queries";
 import AuditLog from "../models/AuditLog";
 
@@ -48,15 +48,15 @@ async function maybeCompleteTournament(tournamentId: string) {
   }
 }
 
-// Updates both players' global rating with the FNTR formula (see computeFntrDelta).
+// Updates both players' global rating with the FNTR formula (see computeFntrMatchDelta).
 // Only rated containers count: a GAME is deliberately unrated, so it never gets here.
 //
-// FNTR rates every match of a tournament against the ratings the players brought to
-// it, so the rating that goes into the formula is the player's TournamentUser.ratingStart,
-// not their rating right now. It is written the first time the player's match in this
-// event is settled: nothing here can have moved their rating before then. The change
-// itself is still applied to User.rating straight away, so the profile and the rating
-// list are current the moment a match is settled.
+// FNTR rates every set of a tournament match against the ratings the players brought
+// to it, so the rating that goes into the formula is the player's
+// TournamentUser.ratingStart, not their rating right now. It is written the first time
+// the player's match in this event is settled: nothing here can have moved their
+// rating before then. The change itself is still applied to User.rating straight away,
+// so the profile and the rating list are current the moment a match is settled.
 //
 // Three single-statement writes rather than one `$transaction`: the pooled Postgres
 // this runs against drops the connection partway through a multi-statement
@@ -65,14 +65,14 @@ async function maybeCompleteTournament(tournamentId: string) {
 type RatingChange = { winnerDelta: number; loserDelta: number };
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-async function applyRatingUpdate(tournament: { id: string; kind: string; ratingWeight: number }, winnerId: string | null, loserId: string | null): Promise<RatingChange | null> {
-  if (tournament.kind !== "TOURNAMENT" || !winnerId || !loserId) return null;
-  const [winner, loser, starts] = await Promise.all([
-    prisma.user.findUnique({ where: { id: winnerId }, select: { rating: true } }),
-    prisma.user.findUnique({ where: { id: loserId }, select: { rating: true } }),
-    prisma.tournamentUser.findMany({ where: { tournamentId: tournament.id, userId: { in: [winnerId, loserId] } }, select: { userId: true, ratingStart: true } }),
+async function applyRatingUpdate(tournament: { id: string; kind: string; ratingWeight: number }, player1Id: string | null, player2Id: string | null, setsWon1: number, setsWon2: number): Promise<RatingChange | null> {
+  if (tournament.kind !== "TOURNAMENT" || !player1Id || !player2Id || setsWon1 === setsWon2) return null;
+  const [p1, p2, starts] = await Promise.all([
+    prisma.user.findUnique({ where: { id: player1Id }, select: { rating: true } }),
+    prisma.user.findUnique({ where: { id: player2Id }, select: { rating: true } }),
+    prisma.tournamentUser.findMany({ where: { tournamentId: tournament.id, userId: { in: [player1Id, player2Id] } }, select: { userId: true, ratingStart: true } }),
   ]);
-  if (!winner || !loser) return null;
+  if (!p1 || !p2) return null;
   // Remember what each side brought to the event, if this is their first match in it.
   const startOf = async (userId: string, current: number) => {
     const known = starts.find(r => r.userId === userId);
@@ -80,14 +80,19 @@ async function applyRatingUpdate(tournament: { id: string; kind: string; ratingW
     if (known) await prisma.tournamentUser.updateMany({ where: { tournamentId: tournament.id, userId, ratingStart: null }, data: { ratingStart: current } });
     return current;
   };
-  const [winnerBase, loserBase] = await Promise.all([startOf(winnerId, winner.rating), startOf(loserId, loser.rating)]);
-  const { winnerDelta, loserDelta } = computeFntrDelta(winnerBase, loserBase, tournament.ratingWeight);
-  const loserAfter = Math.max(0, round2(loser.rating + loserDelta));
-  await prisma.user.update({ where: { id: winnerId }, data: { rating: round2(winner.rating + winnerDelta) } });
-  await prisma.user.update({ where: { id: loserId }, data: { rating: loserAfter } });
-  // The loser's change as actually applied: it is what a reopen has to hand back,
-  // and the floor at 0 can make it smaller than the formula's.
-  return { winnerDelta, loserDelta: round2(loserAfter - loser.rating) };
+  const [base1, base2] = await Promise.all([startOf(player1Id, p1.rating), startOf(player2Id, p2.rating)]);
+  const { delta1, delta2 } = computeFntrMatchDelta(base1, base2, setsWon1, setsWon2, tournament.ratingWeight);
+  const after1 = Math.max(0, round2(p1.rating + delta1));
+  const after2 = Math.max(0, round2(p2.rating + delta2));
+  await prisma.user.update({ where: { id: player1Id }, data: { rating: after1 } });
+  await prisma.user.update({ where: { id: player2Id }, data: { rating: after2 } });
+  // Store the change in winner/loser terms (whoever took more sets), as applied —
+  // the floor at 0 can make either figure smaller than the formula's, and a player
+  // who takes plenty of sets off a much stronger opponent can still net a gain despite
+  // losing the match, so "loserDelta" is no longer guaranteed to be <= 0.
+  const applied1 = round2(after1 - p1.rating);
+  const applied2 = round2(after2 - p2.rating);
+  return setsWon1 > setsWon2 ? { winnerDelta: applied1, loserDelta: applied2 } : { winnerDelta: applied2, loserDelta: applied1 };
 }
 
 // Takes back the rating change a match applied, when the match is reopened. The
@@ -126,9 +131,8 @@ async function finishMatch(match: { id: string; tournamentId: string; player1Id:
     id ? prisma.user.findUnique({ where: { id }, select: { rating: true } }) : null));
 
   let change: RatingChange | null = null;
-  if (rated && match.setsWon1 !== match.setsWon2) {
-    const p1Won = match.setsWon1 > match.setsWon2;
-    change = await applyRatingUpdate(tournament, p1Won ? match.player1Id : match.player2Id, p1Won ? match.player2Id : match.player1Id);
+  if (rated) {
+    change = await applyRatingUpdate(tournament, match.player1Id, match.player2Id, match.setsWon1, match.setsWon2);
   }
   try {
     await prisma.match.update({

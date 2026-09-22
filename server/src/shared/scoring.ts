@@ -9,7 +9,7 @@ const RATING_CUTOFF = 100;
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-// The FNTR (Russian Table Tennis Federation) rating update, applied per match:
+// The FNTR (Russian Table Tennis Federation) rating update for a single SET:
 //   winner gains  (100 - (Rw - Rl)) / 10 * KT
 //   loser  loses  half of that
 // Rw/Rl are the two players' ratings, KT the tournament's significance coefficient
@@ -23,6 +23,21 @@ export function computeFntrDelta(winnerRating: number, loserRating: number, weig
   const winnerDelta = round2(((RATING_CUTOFF - gap) / 10) * weight);
   const half = round2(winnerDelta / 2);
   return { winnerDelta, loserDelta: half === 0 ? 0 : -half };
+}
+
+// FNTR rates every SET a match was played over, not the match as a whole: a player's
+// total change is what they'd have gained for each set they took plus what they'd
+// have given up for each set they lost, each computed once against the ratings both
+// players brought to the event (not updated set-by-set). Two lopsided games (17-7 vs
+// 3-2) move the rating by very different amounts even though both are "a win", and a
+// player who takes several sets off a much stronger opponent can end up ahead even
+// while losing the match overall — the per-match version could never reflect that.
+export function computeFntrMatchDelta(rating1: number, rating2: number, setsWon1: number, setsWon2: number, weight: number = DEFAULT_RATING_WEIGHT): { delta1: number; delta2: number } {
+  const whenP1WinsSet = computeFntrDelta(rating1, rating2, weight);
+  const whenP2WinsSet = computeFntrDelta(rating2, rating1, weight);
+  const delta1 = round2(setsWon1 * whenP1WinsSet.winnerDelta + setsWon2 * whenP2WinsSet.loserDelta);
+  const delta2 = round2(setsWon2 * whenP2WinsSet.winnerDelta + setsWon1 * whenP1WinsSet.loserDelta);
+  return { delta1, delta2 };
 }
 
 // Checks an optional rally score typed in for a set ("11:7"). Both numbers or
