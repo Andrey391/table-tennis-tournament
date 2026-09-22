@@ -142,7 +142,6 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-2 gap-2 mb-5">
         {([
-          { to: "/rating", label: "home.tiles.players", d: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8" },
           { to: "/results", label: "home.tiles.results", d: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" },
           // Booking a table and looking at your own match schedule both need
           // an account, so these tiles are simply absent for a guest.

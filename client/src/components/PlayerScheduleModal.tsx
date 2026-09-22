@@ -19,10 +19,11 @@ const MONDAY_FIRST_WEEK = Array.from({ length: 7 }, (_, i) => {
   return d.toISOString().slice(0, 10);
 });
 
-type Block = { match: any; opponent: any; mine: number; theirs: number; played: boolean; startTime: string; durationHours: number };
+type Block = { match: any; opponent: any; mine: number; theirs: number; played: boolean; startTime: string; durationHours: number; sets: any[]; mySide: 1 | 2 };
 
 function toBlocks(matches: any[], playerId: string): Block[] {
   return matches.map(m => {
+    const mySide: 1 | 2 = m.player1Id === playerId ? 1 : 2;
     const opponent = m.player1Id === playerId ? m.player2 : m.player1;
     const mine = m.player1Id === playerId ? m.setsWon1 : m.setsWon2;
     const theirs = m.player1Id === playerId ? m.setsWon2 : m.setsWon1;
@@ -32,7 +33,7 @@ function toBlocks(matches: any[], playerId: string): Block[] {
     const durationHours = played
       ? Math.max(0.25, (new Date(m.endedAt).getTime() - new Date(m.startedAt).getTime()) / 3_600_000)
       : PLANNED_HOURS;
-    return { match: m, opponent, mine, theirs, played, startTime, durationHours };
+    return { match: m, opponent, mine, theirs, played, startTime, durationHours, sets: m.sets ?? [], mySide };
   });
 }
 
@@ -93,6 +94,17 @@ export default function PlayerScheduleModal({
                   <span className="block text-xs font-medium truncate">
                     {oppName(b, t("player.noOpponent"))}{b.played ? ` — ${b.mine}:${b.theirs}` : ` (${t("player.scheduled")})`}
                   </span>
+                  {b.played && b.sets.length > 0 && (
+                    <span className="flex flex-wrap gap-1 mt-1">
+                      {b.sets.map((s: any) => (
+                        <span key={s.id} className={`px-1 rounded text-[9px] font-bold leading-[14px] ${
+                          s.winner === b.mySide ? "bg-[#ccff00]/20 text-[#ccff00]" : "bg-[#ef4444]/15 text-[#ef4444]"
+                        }`}>
+                          {s.index}
+                        </span>
+                      ))}
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -123,8 +135,11 @@ export default function PlayerScheduleModal({
                     b.played ? "bg-[#ccff00]/10 border border-[#ccff00]/30" : "bg-[#1c3350]/60 border border-dashed border-[#4d6480]"
                   }`}>
                   <span className="text-[#6b84a0]">{b.startTime}</span>{" "}
-                  <span className="font-medium">{oppName(b, t("player.noOpponent"))}</span>
-                  {b.played ? ` — ${b.mine}:${b.theirs}` : ` (${t("player.scheduled")})`}
+                  {b.played ? (
+                    <span className="font-medium">{b.mine}:{b.theirs}</span>
+                  ) : (
+                    <span className="text-[#4d6480]">({t("player.scheduled")})</span>
+                  )}
                 </button>
               ))}
             </div>
