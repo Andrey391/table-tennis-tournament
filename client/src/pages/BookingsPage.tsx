@@ -442,8 +442,8 @@ export default function BookingsPage() {
       <ClubScheduleModal
         open={showSchedule}
         onClose={() => setShowSchedule(false)}
-        date={form.date || new Date().toISOString()}
-        tables={tablesForSlot}
+        clubId={form.clubId}
+        initialDate={form.date || undefined}
         selectedTableId={form.tableId}
         onSelectTable={id => set("tableId", id)}
       />

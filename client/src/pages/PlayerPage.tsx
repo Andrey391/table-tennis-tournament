@@ -9,6 +9,7 @@ import { useT } from "../i18n";
 import { playerName, formatDelta, deltaTone, matchDelta } from "../lib/format";
 import { useAuth } from "../context/AuthContext";
 import PlayerStats, { HeadToHead } from "../components/PlayerStats";
+import PlayerScheduleModal from "../components/PlayerScheduleModal";
 import { backLink, card, sectionLabel } from "../lib/ui";
 
 // Anyone's profile: who they are, and the matches behind the rating. Reached by
@@ -20,6 +21,7 @@ export default function PlayerPage() {
   const { t } = useT();
   const { user } = useAuth();
   const [data, setData] = useState<any>(null);
+  const [showSchedule, setShowSchedule] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -48,7 +50,10 @@ export default function PlayerPage() {
       {user && user.id !== p.id && <HeadToHead playerId={user.id} otherId={p.id} />}
       <PlayerStats playerId={p.id} />
 
-      <h2 className={`${sectionLabel} mb-2`}>{t("player.history")}</h2>
+      <div className="flex items-center justify-between mb-2">
+        <h2 className={sectionLabel}>{t("player.history")}</h2>
+        <button onClick={() => setShowSchedule(true)} className="text-xs text-[#ccff00] font-medium">{t("play.schedule")}</button>
+      </div>
       {matches.length === 0 ? (
         <EmptyState text={t("player.noHistory")} />
       ) : (
@@ -78,6 +83,8 @@ export default function PlayerPage() {
           })}
         </div>
       )}
+
+      <PlayerScheduleModal open={showSchedule} onClose={() => setShowSchedule(false)} playerId={p.id} />
     </Layout>
   );
 }

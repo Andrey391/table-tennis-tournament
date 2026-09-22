@@ -9,6 +9,7 @@ import { useT, type Lang } from "../i18n";
 import { playerName, formatDelta, deltaTone, matchDelta, formatRating } from "../lib/format";
 import { btnPrimary, btnSecondary, card, errorBox, field, fieldLabel, noticeBox, sectionLabel } from "../lib/ui";
 import PlayerStats from "../components/PlayerStats";
+import PlayerScheduleModal from "../components/PlayerScheduleModal";
 
 type Tally = { played: number; wins: number; losses: number };
 type Level = { matches: Tally; sets: Tally };
@@ -28,6 +29,7 @@ export default function ProfilePage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [showSchedule, setShowSchedule] = useState(false);
 
   // The session user is loaded once when the app starts, so the rating shown here
   // was whatever it happened to be then — and Elo moves it after every settled
@@ -230,7 +232,10 @@ export default function ProfilePage() {
 
       {user && <PlayerStats playerId={user.id} />}
 
-      <h2 className={`${sectionLabel} mb-2`}>{t("player.history")}</h2>
+      <div className="flex items-center justify-between mb-2">
+        <h2 className={sectionLabel}>{t("player.history")}</h2>
+        <button onClick={() => setShowSchedule(true)} className="text-xs text-[#ccff00] font-medium">{t("play.schedule")}</button>
+      </div>
       {history === null ? (
         <Loader className="py-8 mb-5" />
       ) : history.length === 0 ? (
@@ -278,6 +283,8 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
+
+      {user && <PlayerScheduleModal open={showSchedule} onClose={() => setShowSchedule(false)} playerId={user.id} />}
     </Layout>
   );
 }
