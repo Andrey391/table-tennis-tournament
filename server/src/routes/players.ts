@@ -13,7 +13,7 @@ import bcrypt from "bcryptjs";
 export const playerRouter = Router();
 
 // Any signed-up account can read this list, so it carries no contact details.
-const listSelect = { id: true, firstName: true, lastName: true, role: true, club: true, city: true, rating: true, createdAt: true };
+const listSelect = { id: true, firstName: true, lastName: true, role: true, city: true, rating: true, createdAt: true };
 // What the owner gets back after editing — the same shape `/auth/me` returns, so
 // the client can drop it straight into its session user.
 const selfSelect = { ...listSelect, email: true, phone: true, dateOfBirth: true, isDemo: true, demoExpiresAt: true, publicProfile: true, consentAt: true };
@@ -33,7 +33,7 @@ playerRouter.get("/", authMiddleware, async (_req, res: Response) => {
 playerRouter.get("/:id", async (req: AuthenticatedRequest, res: Response) => {
   const player = await prisma.user.findUnique({
     where: { id: req.params.id },
-    select: { id: true, firstName: true, lastName: true, club: true, city: true, rating: true, createdAt: true },
+    select: { id: true, firstName: true, lastName: true, city: true, rating: true, createdAt: true },
   });
   if (!player) { res.status(404).json({ error: "Not found" }); return; }
 
@@ -131,7 +131,7 @@ export const ratingRouter = Router();
 ratingRouter.get("/", async (_req, res: Response) => {
   const players = await prisma.user.findMany({
     where: listed,
-    select: { id: true, firstName: true, lastName: true, club: true, city: true, rating: true },
+    select: { id: true, firstName: true, lastName: true, city: true, rating: true },
     orderBy: { rating: "desc" },
     take: 100,
   });

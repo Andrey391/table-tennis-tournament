@@ -126,7 +126,6 @@ export const UpdateProfileSchema = z.object({
   firstName: z.string().min(1).max(100).optional(),
   lastName: z.string().min(1).max(100).optional(),
   email: z.string().email().optional(),
-  club: z.string().max(100).nullable().optional(),
   city: City.nullable().optional(),
   phone: z.string().max(40).nullable().optional(),
   dateOfBirth: z.string().datetime().nullable().optional(),
@@ -198,7 +197,6 @@ export const SelfRegisterSchema = z.object({
   password: z.string().min(6),
   firstName: z.string().min(1).max(100),
   lastName: z.string().min(1).max(100),
-  club: z.string().max(100).optional(),
   city: City.optional(),
   // Consent to the processing of personal data (152-FZ art. 9) is not optional:
   // no tick, no account. Whether the name may be shown to anyone at all is a
@@ -222,7 +220,6 @@ export const RegisterSchema = z.object({
   password: z.string().min(6),
   firstName: z.string().min(1).max(100),
   lastName: z.string().min(1).max(100),
-  club: z.string().max(100).optional(),
   city: City.optional(),
   rating: z.number().int().min(0).max(5000).optional(),
   role: z.enum(["ADMIN", "ORGANIZER", "JUDGE", "PLAYER", "VIEWER"]).optional(),

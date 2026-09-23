@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback } from "rea
 import { apiService } from "../services/api";
 import { forgetDemo } from "../lib/tour";
 
-interface User { id: string; email: string; role: string; firstName: string; lastName: string; rating: number; club?: string | null; city?: string | null; phone?: string | null; dateOfBirth?: string | null; isDemo?: boolean; demoExpiresAt?: string | null; publicProfile?: boolean; }
+interface User { id: string; email: string; role: string; firstName: string; lastName: string; rating: number; city?: string | null; phone?: string | null; dateOfBirth?: string | null; isDemo?: boolean; demoExpiresAt?: string | null; publicProfile?: boolean; }
 
 interface AuthContextType {
   token: string | null;

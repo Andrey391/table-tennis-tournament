@@ -44,7 +44,7 @@ export default function RatingPage() {
                 <Avatar firstName={p.firstName} lastName={p.lastName} rating={p.rating} size="sm" />
                 <div className="min-w-0">
                   <p className="text-sm font-medium truncate">{p.firstName} {p.lastName}</p>
-                  <p className="text-xs text-[#6b84a0] truncate">{p.club || t("rating.noClub")}</p>
+                  {p.city && <p className="text-xs text-[#6b84a0] truncate">{p.city}</p>}
                 </div>
               </div>
               <span className="text-[#4d6480] text-sm shrink-0 px-1">&rsaquo;</span>

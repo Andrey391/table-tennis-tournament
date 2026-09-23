@@ -10,7 +10,7 @@ export default function Register() {
   const { register } = useAuth();
   const { t } = useT();
   const navigate = useNavigate();
-  const [form, setForm] = React.useState({ email: "", password: "", firstName: "", lastName: "", club: "", city: "" });
+  const [form, setForm] = React.useState({ email: "", password: "", firstName: "", lastName: "", city: "" });
   const [consent, setConsent] = React.useState({ accept: false, publicProfile: false });
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
@@ -55,11 +55,6 @@ export default function Register() {
             <label className={fieldLabel}>{t("auth.password")}</label>
             <input type="password" value={form.password} onChange={set("password")}
               className={field} required minLength={6} />
-          </div>
-          <div>
-            <label className={fieldLabel}>{t("auth.club")}</label>
-            <input type="text" value={form.club} onChange={set("club")} placeholder={t("auth.optional")}
-              className={field} />
           </div>
           <div>
             <label className={fieldLabel}>{t("auth.city")}</label>
