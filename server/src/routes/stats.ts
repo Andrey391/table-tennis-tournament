@@ -5,6 +5,7 @@ import { publicError } from "../shared/errors";
 import { computeStandings } from "../shared/standings";
 import { standingsInclude, inCity, PLAYED_STATUSES } from "../shared/queries";
 import { notDemo } from "../shared/demo";
+import { listed } from "../shared/privacy";
 import { computePlayerStats, computeHeadToHead, computeLeaders, periodStart, LeaderMetric } from "../shared/stats";
 
 // Results feed, player statistics, head-to-head and leaderboards. All read-only
@@ -107,6 +108,11 @@ statsRouter.get("/leaders", async (req, res: Response) => {
       },
       select: statMatchSelect,
     });
-    res.json(computeLeaders(matches, metric as LeaderMetric));
+    // A leaderboard is a public list of names, so only players who agreed to a
+    // public name are on it. Filtered after counting, not in the match query: a
+    // listed player's wins over a hidden one still count.
+    const rows = computeLeaders(matches, metric as LeaderMetric, Number.MAX_SAFE_INTEGER);
+    const shown = new Set((await prisma.user.findMany({ where: { id: { in: rows.map(r => r.player.id) }, ...listed }, select: { id: true } })).map(u => u.id));
+    res.json(rows.filter(r => shown.has(r.player.id)).slice(0, 20));
   } catch (err: any) { res.status(400).json({ error: publicError(err) }); }
 });

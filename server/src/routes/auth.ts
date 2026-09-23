@@ -2,7 +2,8 @@ import { Router, Response } from "express";
 import { publicError } from "../shared/errors";
 import { prisma } from "../config/db";
 import { AuthenticatedRequest, authMiddleware, generateToken } from "../middleware/auth";
-import { LoginSchema, SelfRegisterSchema, ClaimDemoSchema, DemoJoinSchema, ForgotPasswordSchema, ResetPasswordSchema } from "../shared/schemas";
+import { LoginSchema, SelfRegisterSchema, ClaimDemoSchema, DemoJoinSchema, DeleteAccountSchema, ForgotPasswordSchema, ResetPasswordSchema } from "../shared/schemas";
+import { CONSENT_VERSION, anonymiseAccount } from "../shared/privacy";
 import { createDemoAccount, sweepExpiredDemos, joinDemoSeat, DemoJoinError, DEMO_TTL_HOURS } from "../shared/demo";
 import { sendMail } from "../shared/mail";
 import bcrypt from "bcryptjs";
@@ -15,8 +16,9 @@ export const authRouter = Router();
 // know about the account — `isDemo` above all, which decides whether the demo
 // banner and the tour show up — belongs here and nowhere else.
 const meSelect = {
-  id: true, email: true, firstName: true, lastName: true, role: true, club: true, city: true,
+  id: true, email: true, firstName: true, lastName: true, role: true, city: true,
   rating: true, dateOfBirth: true, phone: true, isDemo: true, demoExpiresAt: true,
+  publicProfile: true, consentAt: true, deletedAt: true,
 };
 
 authRouter.post("/login", async (req: AuthenticatedRequest, res: Response) => {
@@ -30,7 +32,7 @@ authRouter.post("/login", async (req: AuthenticatedRequest, res: Response) => {
     const token = generateToken(user.id, user.role);
     res.json({
       token,
-      user: { id: user.id, email: user.email, role: user.role, firstName: user.firstName, lastName: user.lastName, rating: user.rating, club: user.club },
+      user: { id: user.id, email: user.email, role: user.role, firstName: user.firstName, lastName: user.lastName, rating: user.rating },
     });
   } catch (err: any) {
     res.status(400).json({ error: publicError(err) });
@@ -44,13 +46,13 @@ authRouter.post("/login", async (req: AuthenticatedRequest, res: Response) => {
 // events (per-tournament ownership is what actually gates anything).
 authRouter.post("/register", async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const data = SelfRegisterSchema.parse(req.body);
+    const { acceptTerms: _accepted, ...data } = SelfRegisterSchema.parse(req.body);
     const hashed = await bcrypt.hash(data.password, 10);
-    const user = await prisma.user.create({ data: { ...data, password: hashed, role: "ORGANIZER" } });
+    const user = await prisma.user.create({ data: { ...data, password: hashed, role: "ORGANIZER", consentAt: new Date(), consentVersion: CONSENT_VERSION } });
     const token = generateToken(user.id, user.role);
     res.status(201).json({
       token,
-      user: { id: user.id, email: user.email, role: user.role, firstName: user.firstName, lastName: user.lastName, rating: user.rating, club: user.club },
+      user: { id: user.id, email: user.email, role: user.role, firstName: user.firstName, lastName: user.lastName, rating: user.rating },
     });
   } catch (err: any) {
     if (err.code === "P2002") { res.status(400).json({ error: "An account with this email already exists" }); return; }
@@ -96,7 +98,7 @@ authRouter.post("/demo/join", async (req: AuthenticatedRequest, res: Response) =
 // lose their expiry, or the sweep would delete the matches out from under it.
 authRouter.post("/claim", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const data = ClaimDemoSchema.parse(req.body);
+    const { acceptTerms: _accepted, ...data } = ClaimDemoSchema.parse(req.body);
     const current = await prisma.user.findUnique({ where: { id: req.user!.userId }, select: { id: true, isDemo: true } });
     if (!current) { res.status(401).json({ error: "Account no longer exists" }); return; }
     if (!current.isDemo) { res.status(400).json({ error: "This account is already a real one" }); return; }
@@ -105,7 +107,7 @@ authRouter.post("/claim", authMiddleware, async (req: AuthenticatedRequest, res:
     const [user] = await prisma.$transaction([
       prisma.user.update({
         where: { id: current.id },
-        data: { ...data, password: hashed, isDemo: false, demoExpiresAt: null },
+        data: { ...data, password: hashed, isDemo: false, demoExpiresAt: null, consentAt: new Date(), consentVersion: CONSENT_VERSION },
         select: meSelect,
       }),
       prisma.user.updateMany({ where: { demoOwnerId: current.id }, data: { demoExpiresAt: null } }),
@@ -125,9 +127,10 @@ const RESET_MAX_ATTEMPTS = 5;
 const RESET_RESEND_SEC = 60;
 
 // Addresses are stored as typed, so look them up case-insensitively. Demo and
-// seed accounts have addresses nobody can receive mail at.
+// seed accounts have addresses nobody can receive mail at, and a deleted
+// account has no login to restore.
 const findResettableUser = (email: string) => prisma.user.findFirst({
-  where: { email: { equals: email, mode: "insensitive" }, isDemo: false, NOT: [{ email: { endsWith: "@demo.local" } }, { email: { endsWith: "@localhost" } }] },
+  where: { email: { equals: email, mode: "insensitive" }, isDemo: false, deletedAt: null, NOT: [{ email: { endsWith: "@demo.local" } }, { email: { endsWith: "@localhost" } }] },
   select: { id: true, email: true, firstName: true },
 });
 
@@ -208,6 +211,24 @@ authRouter.get("/me", authMiddleware, async (req: AuthenticatedRequest, res: Res
   // (e.g. after the database is reset). Answering 200 with a null body would leave
   // the client "signed in" as nobody until some later write blew up on a foreign
   // key — 401 makes it drop the token and send the user back to the login screen.
-  if (!user) { res.status(401).json({ error: "Account no longer exists" }); return; }
-  res.json(user);
+  if (!user || user.deletedAt) { res.status(401).json({ error: "Account no longer exists" }); return; }
+  const { deletedAt: _deleted, ...me } = user;
+  res.json(me);
+});
+
+// The owner deletes their account (152-FZ: withdrawing consent means the data
+// goes). See anonymiseAccount for what is kept and why. A demo account has no
+// password its visitor knows and deletes itself within a day anyway.
+authRouter.delete("/me", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { password } = DeleteAccountSchema.parse(req.body);
+    const user = await prisma.user.findUnique({ where: { id: req.user!.userId }, select: { id: true, password: true, isDemo: true, deletedAt: true } });
+    if (!user || user.deletedAt) { res.status(401).json({ error: "Account no longer exists" }); return; }
+    if (user.isDemo) { res.status(400).json({ error: "A demo account is deleted automatically" }); return; }
+    if (!(await bcrypt.compare(password, user.password))) { res.status(400).json({ error: "Wrong password" }); return; }
+    await anonymiseAccount(user.id);
+    res.json({ deleted: true });
+  } catch (err: any) {
+    res.status(400).json({ error: publicError(err) });
+  }
 });

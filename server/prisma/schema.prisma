@@ -46,7 +46,6 @@ model User {
   firstName        String
   lastName         String
   role             Role      @default(PLAYER)
-  club             String?
   city             String?
   // FNTR rating: fractional, because a win is worth (100 - gap) / 10 * KT points.
   rating           Float     @default(100)
@@ -65,6 +64,18 @@ model User {
   // its own order and a self-referencing foreign key would only get in the way.
   demoOwnerId      String?
   demoExpiresAt    DateTime?
+  // Consent to the processing of personal data (152-FZ): when it was given and
+  // which version of the privacy policy it was given to. Null on accounts created
+  // before the consent step existed and on demo accounts, which hold no real data.
+  consentAt        DateTime?
+  consentVersion   String?
+  // Separate consent to showing the name to anyone at all (152-FZ art. 10.1):
+  // false keeps the player off the rating list and the leaderboards and masks
+  // their name in every response to a visitor who is not signed in.
+  publicProfile    Boolean   @default(true)
+  // Set when the owner deleted the account. The row survives, anonymised, because
+  // the matches it played are part of other people's standings and ratings.
+  deletedAt        DateTime?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   tournaments      TournamentUser[]
@@ -81,14 +92,14 @@ model User {
   notifications    Notification[]
   passwordResets   PasswordReset[]
 
-  @@index([club])
   @@index([city])
   @@index([rating])
   @@index([demoExpiresAt])
 }
 
 // A venue with tables. Clubs are what bookings, subscriptions and tournaments point at —
-// the old free-text `club` string on User is now only a display-level "home club" note.
+// A player is not "in" a club: the only link between the two is following it (Subscription).
+// The old free-text User.club column is still in the database but no longer mapped.
 model Club {
   id            String   @id @default(uuid())
   name          String

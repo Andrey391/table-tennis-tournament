@@ -2,6 +2,7 @@ import React from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import Logo from "../components/Logo";
+import ConsentFields from "../components/ConsentFields";
 import { useT } from "../i18n";
 import { btnPrimary, card, errorBox, field, fieldLabel } from "../lib/ui";
 
@@ -9,14 +10,15 @@ export default function Register() {
   const { register } = useAuth();
   const { t } = useT();
   const navigate = useNavigate();
-  const [form, setForm] = React.useState({ email: "", password: "", firstName: "", lastName: "", club: "", city: "" });
+  const [form, setForm] = React.useState({ email: "", password: "", firstName: "", lastName: "", city: "" });
+  const [consent, setConsent] = React.useState({ accept: false, publicProfile: false });
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    try { setError(""); await register(form); navigate("/"); }
+    try { setError(""); await register({ ...form, acceptTerms: consent.accept, publicProfile: consent.publicProfile }); navigate("/"); }
     catch (err: any) { setError(err.response?.data?.error || t("auth.registerFailed")); }
     finally { setLoading(false); }
   };
@@ -55,16 +57,12 @@ export default function Register() {
               className={field} required minLength={6} />
           </div>
           <div>
-            <label className={fieldLabel}>{t("auth.club")}</label>
-            <input type="text" value={form.club} onChange={set("club")} placeholder={t("auth.optional")}
-              className={field} />
-          </div>
-          <div>
             <label className={fieldLabel}>{t("auth.city")}</label>
             <input type="text" value={form.city} onChange={set("city")} placeholder={t("auth.optional")}
               className={field} />
           </div>
-          <button type="submit" disabled={loading}
+          <ConsentFields accept={consent.accept} publicProfile={consent.publicProfile} onChange={setConsent} />
+          <button type="submit" disabled={loading || !consent.accept}
             className={`${btnPrimary} w-full`}>
             {loading ? t("auth.creating") : t("auth.createAccount")}
           </button>

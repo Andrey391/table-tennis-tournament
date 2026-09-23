@@ -42,8 +42,7 @@ export default function PlayerPage() {
           <Avatar firstName={p.firstName} lastName={p.lastName} rating={p.rating} size="lg" />
         </div>
         <h1 className="text-xl font-bold">{p.firstName} {p.lastName}</h1>
-        {p.club && <p className="text-sm text-[#6b84a0] mt-1">{p.club}</p>}
-        {p.city && <p className="text-xs text-[#4d6480] mt-0.5">{p.city}</p>}
+        {p.city && <p className="text-sm text-[#6b84a0] mt-1">{p.city}</p>}
         <p className="text-xs text-[#93a8c2] mt-2">{t("player.record", { wins: data.recent.wins, losses: data.recent.losses })}</p>
       </div>
 

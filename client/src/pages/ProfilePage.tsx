@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { apiService } from "../services/api";
 import Avatar from "../components/Avatar";
@@ -7,7 +7,7 @@ import Layout from "../components/Layout";
 import Loader from "../components/Loader";
 import { useT, type Lang } from "../i18n";
 import { playerName, formatDelta, deltaTone, matchDelta, formatRating } from "../lib/format";
-import { btnPrimary, btnSecondary, card, errorBox, field, fieldLabel, noticeBox, sectionLabel } from "../lib/ui";
+import { btnDanger, btnPrimary, btnSecondary, card, errorBox, field, fieldLabel, noticeBox, sectionLabel } from "../lib/ui";
 import PlayerStats from "../components/PlayerStats";
 import PlayerScheduleModal from "../components/PlayerScheduleModal";
 
@@ -21,7 +21,8 @@ type Stats = {
 };
 
 export default function ProfilePage() {
-  const { user, refreshUser, setUser } = useAuth();
+  const { user, refreshUser, setUser, logout } = useAuth();
+  const navigate = useNavigate();
   const { t, lang, setLang } = useT();
   const [stats, setStats] = useState<Stats | null>(null);
   const [history, setHistory] = useState<any[] | null>(null);
@@ -59,7 +60,6 @@ export default function ProfilePage() {
       firstName: user?.firstName ?? "",
       lastName: user?.lastName ?? "",
       email: user?.email ?? "",
-      club: user?.club ?? "",
       city: user?.city ?? "",
       phone: user?.phone ?? "",
       dateOfBirth: toDateInput(user?.dateOfBirth),
@@ -81,7 +81,6 @@ export default function ProfilePage() {
         firstName: edit.firstName,
         lastName: edit.lastName,
         email: edit.email,
-        club: edit.club || null,
         city: edit.city || null,
         phone: edit.phone || null,
         // A date input gives a bare day; the API takes an ISO timestamp.
@@ -95,6 +94,24 @@ export default function ProfilePage() {
       setNotice(t("profile.saved"));
     } catch (err: any) { setError(err.response?.data?.error || t("common.failed")); }
     finally { setBusy(false); }
+  };
+
+  const togglePublic = async () => {
+    if (!user?.id) return;
+    setBusy(true); setError("");
+    try { const r = await apiService.players.update(user.id, { publicProfile: !user.publicProfile }); setUser(r.data); }
+    catch (err: any) { setError(err.response?.data?.error || t("common.failed")); }
+    finally { setBusy(false); }
+  };
+
+  // null: the delete panel is closed; a string: it is open, holding the password.
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const deleteAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!deleting) return;
+    setBusy(true); setError("");
+    try { await apiService.auth.deleteAccount(deleting); logout(); navigate("/"); }
+    catch (err: any) { setError(err.response?.data?.error || t("common.failed")); setBusy(false); }
   };
 
   const rate = (t2: Tally | undefined) => (t2 && t2.played > 0 ? Math.round((t2.wins / t2.played) * 100) : 0);
@@ -139,7 +156,6 @@ export default function ProfilePage() {
         </div>
         <h1 className="text-xl font-bold">{user?.firstName} {user?.lastName}</h1>
         <p className="text-sm text-[#6b84a0] mt-1">{user?.email}</p>
-        {user?.club && <p className="text-xs text-[#4d6480] mt-0.5">{user.club}</p>}
         <button onClick={() => (edit ? cancelEdit() : openEdit())} className="text-xs text-[#ccff00] font-medium mt-2">
           {edit ? t("common.cancel") : t("profile.edit")}
         </button>
@@ -164,15 +180,9 @@ export default function ProfilePage() {
             <label className={fieldLabel}>{t("auth.email")}</label>
             <input type="email" value={edit.email} onChange={e => setEdit({ ...edit, email: e.target.value })} className={field} required />
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className={fieldLabel}>{t("auth.club")}</label>
-              <input type="text" value={edit.club} onChange={e => setEdit({ ...edit, club: e.target.value })} className={field} />
-            </div>
-            <div>
-              <label className={fieldLabel}>{t("auth.city")}</label>
-              <input type="text" value={edit.city} onChange={e => setEdit({ ...edit, city: e.target.value })} className={field} />
-            </div>
+          <div>
+            <label className={fieldLabel}>{t("auth.city")}</label>
+            <input type="text" value={edit.city} onChange={e => setEdit({ ...edit, city: e.target.value })} className={field} />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
@@ -282,7 +292,51 @@ export default function ProfilePage() {
             ))}
           </div>
         </div>
+        {/* The separate consent to a public name (152-FZ art. 10.1), given or
+            withdrawn here at any time. */}
+        {!user?.isDemo && (
+          <div className="flex items-start justify-between gap-3 border-t border-[#1c3350] pt-3 mt-3">
+            <div className="min-w-0">
+              <p className="text-sm">{t("profile.publicProfile")}</p>
+              <p className="text-[11px] text-[#4d6480] mt-0.5">{t("profile.publicProfileHint")}</p>
+            </div>
+            <button onClick={togglePublic} disabled={busy} role="switch" aria-checked={!!user?.publicProfile}
+              className={`w-11 h-6 rounded-full shrink-0 relative transition disabled:opacity-50 ${user?.publicProfile ? "bg-[#ccff00]" : "bg-[#1c3350]"}`}>
+              <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-[#0a1628] transition-all ${user?.publicProfile ? "left-[22px]" : "left-0.5"}`} />
+            </button>
+          </div>
+        )}
+        <div className="border-t border-[#1c3350] pt-3 mt-3">
+          <p className="text-sm mb-1.5">{t("profile.documents")}</p>
+          <div className="flex flex-col gap-1 text-xs">
+            <Link to="/privacy" className="text-[#ccff00]">{t("legal.privacy")}</Link>
+            <Link to="/terms" className="text-[#ccff00]">{t("legal.terms")}</Link>
+          </div>
+        </div>
       </div>
+
+      {/* Deleting the account: withdrawing consent means the data goes (152-FZ).
+          Confirmed in place with the password, like every irreversible action. A
+          demo account has no password its visitor knows and expires on its own. */}
+      {!user?.isDemo && (
+        <div className={`${card} p-4 mt-4`}>
+          {deleting === null ? (
+            <button onClick={() => { setError(""); setDeleting(""); }} className="text-sm text-red-400 font-medium">{t("profile.deleteAccount")}</button>
+          ) : (
+            <form onSubmit={deleteAccount} className="space-y-3">
+              <p className="text-sm font-bold text-red-400">{t("profile.deleteAccount")}</p>
+              <p className="text-[11px] text-[#93a8c2]">{t("profile.deleteHint")}</p>
+              {error && <div className={errorBox}>{error}</div>}
+              <input type="password" placeholder={t("profile.deletePassword")} value={deleting} onChange={e => setDeleting(e.target.value)}
+                className={field} autoComplete="current-password" required />
+              <div className="flex gap-3">
+                <button type="button" onClick={() => setDeleting(null)} disabled={busy} className={`${btnSecondary} flex-1`}>{t("common.cancel")}</button>
+                <button type="submit" disabled={busy || !deleting} className={`${btnDanger} flex-1`}>{busy ? t("profile.deleting") : t("profile.deleteConfirm")}</button>
+              </div>
+            </form>
+          )}
+        </div>
+      )}
 
       {user && <PlayerScheduleModal open={showSchedule} onClose={() => setShowSchedule(false)} playerId={user.id} />}
     </Layout>

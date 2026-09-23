@@ -4,7 +4,7 @@
 
 import { normalizeCity } from "./city";
 
-export const playerSelect = { id: true, firstName: true, lastName: true, club: true, rating: true };
+export const playerSelect = { id: true, firstName: true, lastName: true, city: true, rating: true };
 
 export const clubSelect = { id: true, name: true, city: true, address: true, phone: true };
 

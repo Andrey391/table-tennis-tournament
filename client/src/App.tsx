@@ -23,6 +23,7 @@ import GamesPage from "./pages/GamesPage";
 import PlayerPage from "./pages/PlayerPage";
 import DemoJoin from "./pages/DemoJoin";
 import NotificationsPage from "./pages/NotificationsPage";
+import LegalPage from "./pages/LegalPage";
 import Tour from "./components/Tour";
 
 // Wraps the screens that write something. Everything else is readable by a guest:
@@ -53,6 +54,8 @@ function App() {
           <Route path="/rating" element={<RatingPage />} />
           <Route path="/games" element={<GamesPage />} />
           <Route path="/clubs" element={<ClubsPage />} />
+          <Route path="/privacy" element={<LegalPage kind="privacy" />} />
+          <Route path="/terms" element={<LegalPage kind="terms" />} />
           <Route path="/club/:id" element={<ClubPage />} />
           <Route path="/tournament/:id" element={<TournamentPage />} />
           <Route path="/tournament/:id/match/:matchId" element={<MatchPage />} />

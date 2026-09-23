@@ -5,6 +5,7 @@ import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
 import { UpdateProfileSchema } from "../shared/schemas";
 import { summariseMatches } from "../shared/stats";
 import { notDemo } from "../shared/demo";
+import { listed } from "../shared/privacy";
 import { startOfUtcDay } from "../shared/booking";
 import { playerSelect } from "../shared/queries";
 import bcrypt from "bcryptjs";
@@ -12,15 +13,16 @@ import bcrypt from "bcryptjs";
 export const playerRouter = Router();
 
 // Any signed-up account can read this list, so it carries no contact details.
-const listSelect = { id: true, firstName: true, lastName: true, role: true, club: true, city: true, rating: true, createdAt: true };
+const listSelect = { id: true, firstName: true, lastName: true, role: true, city: true, rating: true, createdAt: true };
 // What the owner gets back after editing — the same shape `/auth/me` returns, so
 // the client can drop it straight into its session user.
-const selfSelect = { ...listSelect, email: true, phone: true, dateOfBirth: true };
+const selfSelect = { ...listSelect, email: true, phone: true, dateOfBirth: true, isDemo: true, demoExpiresAt: true, publicProfile: true, consentAt: true };
 
 playerRouter.get("/", authMiddleware, async (_req, res: Response) => {
   // Demo accounts are throwaway, and their sparring partners are not people at
   // all — neither belongs in a list of players you can add to a real event.
-  const players = await prisma.user.findMany({ where: notDemo, select: listSelect, orderBy: { rating: "desc" } });
+  // Deleted accounts are not people you can add either.
+  const players = await prisma.user.findMany({ where: { ...notDemo, deletedAt: null }, select: listSelect, orderBy: { rating: "desc" } });
   res.json(players);
 });
 
@@ -31,7 +33,7 @@ playerRouter.get("/", authMiddleware, async (_req, res: Response) => {
 playerRouter.get("/:id", async (req: AuthenticatedRequest, res: Response) => {
   const player = await prisma.user.findUnique({
     where: { id: req.params.id },
-    select: { id: true, firstName: true, lastName: true, club: true, city: true, rating: true, createdAt: true },
+    select: { id: true, firstName: true, lastName: true, city: true, rating: true, createdAt: true },
   });
   if (!player) { res.status(404).json({ error: "Not found" }); return; }
 
@@ -125,10 +127,11 @@ playerRouter.put("/:id", authMiddleware, async (req: AuthenticatedRequest, res: 
 
 export const ratingRouter = Router();
 
+// The public ladder: only players who agreed to their name being shown to anyone.
 ratingRouter.get("/", async (_req, res: Response) => {
   const players = await prisma.user.findMany({
-    where: notDemo,
-    select: { id: true, firstName: true, lastName: true, club: true, city: true, rating: true },
+    where: listed,
+    select: { id: true, firstName: true, lastName: true, city: true, rating: true },
     orderBy: { rating: "desc" },
     take: 100,
   });

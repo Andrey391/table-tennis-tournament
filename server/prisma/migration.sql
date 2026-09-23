@@ -64,6 +64,14 @@ ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "demoOwnerId" TEXT;
 ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "demoExpiresAt" TIMESTAMP(3);
 CREATE INDEX IF NOT EXISTS "User_demoExpiresAt_idx" ON "User"("demoExpiresAt");
 
+-- Personal-data consent (152-FZ): when and to which policy version it was given,
+-- whether the name may be shown publicly, and account deletion (the row is kept,
+-- anonymised, because its matches belong to other people's standings too).
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "consentAt" TIMESTAMP(3);
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "consentVersion" TEXT;
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "publicProfile" BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP(3);
+
 -- ---------------------------------------------------------------------------
 -- 3. Clubs and their tables.
 -- ---------------------------------------------------------------------------

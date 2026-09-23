@@ -5,6 +5,9 @@ const api = axios.create({ baseURL: "/api", headers: { "Content-Type": "applicat
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  // A player who keeps their name private is masked for guests; the server words
+  // the placeholder in the language the app is shown in.
+  try { config.headers["X-Lang"] = localStorage.getItem("lang") || "ru"; } catch { /* storage blocked */ }
   return config;
 });
 
@@ -21,7 +24,9 @@ export const apiService = {
     // Forgot password: mail a 6-digit code, then trade it for a new password.
     forgot: (email: string) => api.post("/auth/forgot", { email }),
     reset: (d: { email: string; code: string; newPassword: string }) => api.post("/auth/reset", d),
-    claim: (d: { email: string; password: string; firstName: string; lastName: string; city?: string }) => api.post("/auth/claim", d),
+    claim: (d: { email: string; password: string; firstName: string; lastName: string; city?: string; acceptTerms: boolean; publicProfile: boolean }) => api.post("/auth/claim", d),
+    // Deletes (anonymises) the caller's own account; asks for the password again.
+    deleteAccount: (password: string) => api.delete("/auth/me", { data: { password } }),
   },
   players: {
     getAll: () => api.get("/players"),
@@ -33,7 +38,8 @@ export const apiService = {
     // The owner's own profile; a new password needs the current one alongside it.
     update: (id: string, d: {
       firstName?: string; lastName?: string; email?: string;
-      club?: string | null; city?: string | null; phone?: string | null; dateOfBirth?: string | null;
+      city?: string | null; phone?: string | null; dateOfBirth?: string | null;
+      publicProfile?: boolean;
       currentPassword?: string; newPassword?: string;
     }) => api.put(`/players/${id}`, d),
   },
@@ -115,6 +121,8 @@ export const apiService = {
     }) => api.post("/bookings", d),
     remove: (id: string) => api.delete(`/bookings/${id}`),
     pay: (id: string) => api.post(`/bookings/${id}/pay`),
+    // { enabled, test }: whether online payment exists at all, and whether it is a mock.
+    paymentConfig: () => api.get("/bookings/payments"),
   },
   subscriptions: {
     getMine: () => api.get("/subscriptions/mine"),

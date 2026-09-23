@@ -19,11 +19,11 @@ export type StandingsMatch = {
 
 export type StandingsPlayer = {
   userId: string;
-  user: { firstName: string; lastName: string; club: string | null; rating: number } | null;
+  user: { firstName: string; lastName: string; rating: number } | null;
 };
 
 export type StandingsRow = {
-  userId: string; firstName: string; lastName: string; club?: string | null; rating: number;
+  userId: string; firstName: string; lastName: string; rating: number;
   wins: number; losses: number; setsWon: number; setsLost: number; buchholz: number;
   // Sonneborn-Berger: sum of the wins of every opponent this player actually beat
   // (a loss credits nothing, unlike Buchholz which counts every opponent played).
@@ -42,7 +42,7 @@ export function computeStandings(players: StandingsPlayer[], matches: StandingsM
   const beatenOpponents = new Map<string, string[]>();
   for (const p of players) {
     if (!p.user) continue;
-    stats.set(p.userId, { userId: p.userId, firstName: p.user.firstName, lastName: p.user.lastName, club: p.user.club, rating: p.user.rating, wins: 0, losses: 0, setsWon: 0, setsLost: 0, buchholz: 0, sonnebornBerger: 0, ratingChange: 0 });
+    stats.set(p.userId, { userId: p.userId, firstName: p.user.firstName, lastName: p.user.lastName, rating: p.user.rating, wins: 0, losses: 0, setsWon: 0, setsLost: 0, buchholz: 0, sonnebornBerger: 0, ratingChange: 0 });
     opponents.set(p.userId, []);
     beatenOpponents.set(p.userId, []);
   }
