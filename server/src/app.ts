@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
+import compression from "compression";
 import rateLimit from "express-rate-limit";
 import { authRouter } from "./routes/auth";
 import { tournamentRouter } from "./routes/tournaments";
@@ -32,12 +33,17 @@ export function createApp(options: { defaultClientUrl?: string } = {}) {
   app.use(helmet({ contentSecurityPolicy: false }));
   const allowedOrigins = (process.env.CLIENT_URL || options.defaultClientUrl || "").split(",").map(s => s.trim()).filter(Boolean);
   app.use(cors({ origin: allowedOrigins.includes("*") ? true : allowedOrigins.length ? allowedOrigins : false, credentials: true }));
+  // An event page is every match with its sets and is polled every few seconds;
+  // gzip shrinks that JSON several times over on a phone's connection.
+  app.use(compression());
   app.use(express.json({ limit: "100kb" }));
   // The scoring screen polls every 2s (~450 requests per 15 min), so the general
   // limit has to sit above that; sign-in and sign-up get their own strict one
   // against password guessing. (Per instance on serverless: a floor, not a guarantee.)
   app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 1500 }));
   app.use(["/api/auth/login", "/api/auth/register"], rateLimit({ windowMs: 15 * 60 * 1000, max: 20, message: { error: "Too many attempts, try again later" } }));
+  // A reset code is 6 digits; with 5 tries per code this caps guessing per IP.
+  app.use(["/api/auth/forgot", "/api/auth/reset"], rateLimit({ windowMs: 15 * 60 * 1000, max: 10, message: { error: "Too many attempts, try again later" } }));
   // Starting a demo writes a guest, seven sparring partners and an event, and
   // needs no credentials at all — so it gets a limit of its own, tighter than the
   // overall one and looser than sign-in (one visitor may legitimately restart it).

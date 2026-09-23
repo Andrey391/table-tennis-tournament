@@ -93,6 +93,7 @@ export async function anonymiseAccount(userId: string) {
     prisma.subscription.deleteMany({ where: { userId } }),
     prisma.auditLog.deleteMany({ where: { userId } }),
     prisma.session.deleteMany({ where: { userId } }),
+    prisma.passwordReset.deleteMany({ where: { userId } }),
     // A roster row with no match behind it is just a sign-up; one with matches
     // has to stay, or those matches drop out of the event's standings.
     prisma.tournamentUser.deleteMany({

@@ -58,9 +58,10 @@ statsRouter.get("/results", async (req, res: Response) => {
 statsRouter.get("/players/:id/stats", async (req, res: Response) => {
   try {
     const userId = req.params.id;
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { rating: true } });
-    if (!user) { res.status(404).json({ error: "Not found" }); return; }
-    const [matches, finished] = await Promise.all([
+    // All three at once: the 404 is decided after, which only costs two wasted
+    // (indexed) reads for an id that does not exist.
+    const [user, matches, finished] = await Promise.all([
+      prisma.user.findUnique({ where: { id: userId }, select: { rating: true } }),
       prisma.match.findMany({ where: { status: "COMPLETED", OR: [{ player1Id: userId }, { player2Id: userId }] }, select: statMatchSelect }),
       // Finished tournaments (games have no placings worth a medal) with at least
       // three players: winning a two-person "tournament" is just winning a match.
@@ -69,6 +70,7 @@ statsRouter.get("/players/:id/stats", async (req, res: Response) => {
         include: standingsInclude,
       }),
     ]);
+    if (!user) { res.status(404).json({ error: "Not found" }); return; }
     const placings = finished
       .filter(e => e.players.length >= 3)
       .map(e => computeStandings(e.players, e.matches).findIndex(r => r.userId === userId) + 1)

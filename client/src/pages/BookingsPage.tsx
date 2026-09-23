@@ -5,6 +5,7 @@ import Layout from "../components/Layout";
 import EventForm from "../components/EventForm";
 import Loader from "../components/Loader";
 import EmptyState from "../components/EmptyState";
+import { useConfirm } from "../components/ConfirmDialog";
 import { useT } from "../i18n";
 import { formatShortDate, formatSlot } from "../lib/format";
 import { card, errorBox, pageTitle, sectionLabel } from "../lib/ui";
@@ -15,6 +16,7 @@ export default function BookingsPage() {
   // null until the first answer, so "no bookings" only ever means it.
   const [bookings, setBookings] = useState<any[] | null>(null);
   const [error, setError] = useState("");
+  const [confirm, confirmDialog] = useConfirm();
   // Collapsed by default so "мои брони" is visible without scrolling past the
   // form first — it only opens when the user actually wants to book something.
   // `?club=` comes from a club page's "book a table": the form opens with that
@@ -41,7 +43,12 @@ export default function BookingsPage() {
     if (eventId) navigate(`/tournament/${eventId}`);
   };
 
+  // The table goes back to the club; the event it created stays (people may
+  // already have joined), which the dialog says so nobody expects it gone too.
   const removeBooking = async (id: string) => {
+    const b = bookings?.find(x => x.id === id);
+    const when = b ? `${b.club?.name ?? ""} · ${formatShortDate(b.date, lang)} · ${formatSlot(b.startTime, b.durationHours)}` : "";
+    if (!(await confirm({ title: t("confirm.bookingTitle"), text: `${when}. ${t("confirm.bookingText")}`, confirmLabel: t("confirm.bookingGo"), danger: true }))) return;
     try { await apiService.bookings.remove(id); load(); } catch (err: any) { setError(err.response?.data?.error || t("common.failed")); }
   };
 
@@ -115,6 +122,7 @@ export default function BookingsPage() {
           </div>
         )}
       </section>
+      {confirmDialog}
     </Layout>
   );
 }

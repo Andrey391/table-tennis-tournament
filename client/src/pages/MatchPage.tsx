@@ -7,8 +7,10 @@ import { useT } from "../i18n";
 import { playerName } from "../lib/format";
 import SetsToWinPicker from "../components/SetsToWinPicker";
 import Loader from "../components/Loader";
+import { useConfirm } from "../components/ConfirmDialog";
 import { tourDone, rememberDemoMatch } from "../lib/tour";
-import { backLink, btnDanger, btnPrimaryLg, btnSecondary, card, errorBox } from "../lib/ui";
+import { usePolling } from "../lib/usePolling";
+import { backLink, btnPrimaryLg, btnSecondary, card, errorBox } from "../lib/ui";
 
 // The unit of scoring is the set ("партия"), not the point. The judge marks who
 // took each set; nothing tracks the rally-by-rally score, so there is no deuce,
@@ -22,7 +24,7 @@ export default function MatchPage() {
   const [match, setMatch] = useState<any>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [confirming, setConfirming] = useState<null | "end" | "forfeit1" | "forfeit2" | "reopen">(null);
+  const [confirm, confirmDialog] = useConfirm();
   const [showMore, setShowMore] = useState(false);
   const [setScore, setSetScore] = useState({ a: "", b: "" });
   // The board is polled every 2s while the judge is tapping sets into it. A poll
@@ -54,11 +56,7 @@ export default function MatchPage() {
     } catch (e) { console.error(e); }
   }, [matchId]);
 
-  useEffect(() => { fetchMatch(); }, [fetchMatch]);
-  useEffect(() => {
-    const i = setInterval(fetchMatch, 2000);
-    return () => clearInterval(i);
-  }, [fetchMatch]);
+  usePolling(fetchMatch, 2000, matchId);
 
   const fail = (e: any) => setError(e.response?.data?.error || t("common.failed"));
 
@@ -87,7 +85,6 @@ export default function MatchPage() {
     setBusy(false);
   };
   const undo = () => write(async () => {
-    setConfirming(null);
     try { const r = await apiService.matches.undo(matchId!); setMatch(r.data.match); } catch (e) { fail(e); }
   });
   const endMatch = () => write(async () => {
@@ -101,12 +98,11 @@ export default function MatchPage() {
         const r = await apiService.matches.getById(matchId!);
         if (r.data.status === "COMPLETED") { tourDone("end"); navigate(`/tournament/${id}`); return; }
       } catch { /* fall through to the original error */ }
-      fail(e); setConfirming(null);
+      fail(e);
     }
   });
   // Same exit as ending a match: the result is settled, back to the round.
   const forfeit = (loserSide: 1 | 2) => write(async () => {
-    setConfirming(null);
     try { await apiService.matches.forfeit(matchId!, { loserSide }); navigate(`/tournament/${id}`); } catch (e) { fail(e); }
   });
 
@@ -123,6 +119,25 @@ export default function MatchPage() {
   const suggestEnd = canScore && match.status === "IN_PROGRESS" && targetReached && !level;
   const leader = match.setsWon1 > match.setsWon2 ? match.player1 : match.player2;
   const endBlockedReason = played.length === 0 ? t("match.noSetsYet") : level ? t("match.drawBlocked") : "";
+
+  // Everything below settles or discards something, so each asks first, in a
+  // dialog. The request itself still goes through write() once it is confirmed.
+  const askEnd = async () => {
+    if (await confirm({ title: t("match.end"), text: targetReached ? t("match.endConfirm") : t("match.endEarlyConfirm", { n: target }), confirmLabel: t("match.end") })) endMatch();
+  };
+  const askForfeit = async (side: 1 | 2) => {
+    const name = playerName(side === 1 ? match.player1 : match.player2, "P" + side);
+    if (await confirm({ title: `${name} ${t("match.noShow")}`, text: t("match.forfeitConfirm", { name }), danger: true })) forfeit(side);
+  };
+  const askUndo = async () => {
+    const last = played[played.length - 1];
+    if (!last) return;
+    const text = t("confirm.undoSetText", { n: last.index, name: playerName(last.winner === 1 ? match.player1 : match.player2, "—") });
+    if (await confirm({ title: t("match.undoSet"), text, confirmLabel: t("confirm.undo"), danger: true })) undo();
+  };
+  const askReopen = async () => {
+    if (await confirm({ title: t("match.reopen"), text: t("match.reopenHint"), danger: true })) undo();
+  };
 
   const sides = [
     { n: 1 as const, player: match.player1, won: match.setsWon1, color: "#3b82f6", fallback: "P1" },
@@ -198,17 +213,9 @@ export default function MatchPage() {
             </div>
             {/* A result entered by mistake has to be fixable; reopening is the
                 manager's call and hands the rating change back. */}
-            {isManager && played.length > 0 && (confirming === "reopen" ? (
-              <div className="bg-[#101f36] border border-red-500/30 rounded-lg p-3 space-y-2">
-                <p className="text-sm text-[#93a8c2] text-center">{t("match.reopenHint")}</p>
-                <div className="flex gap-2">
-                  <button onClick={() => setConfirming(null)} className={`${btnSecondary} flex-1`}>{t("common.cancel")}</button>
-                  <button onClick={undo} className={`${btnDanger} flex-1`}>{t("common.confirm")}</button>
-                </div>
-              </div>
-            ) : (
-              <button onClick={() => setConfirming("reopen")} className={`${btnSecondary} w-full`}>{t("match.reopen")}</button>
-            ))}
+            {isManager && played.length > 0 && (
+              <button onClick={askReopen} className={`${btnSecondary} w-full`}>{t("match.reopen")}</button>
+            )}
           </div>
         ) : !canScore ? (
           <p className={`${card} text-center py-3 text-sm text-[#6b84a0]`}>
@@ -258,7 +265,7 @@ export default function MatchPage() {
                     reach the standings, the stats and the rating — so ending it is
                     the primary action here. Table tennis has no draws, so a level
                     tally cannot be ended: the pair plays a deciding set. */}
-                <button onClick={() => setConfirming("end")} disabled={!!endBlockedReason} data-tour="finish"
+                <button onClick={askEnd} disabled={!!endBlockedReason} data-tour="finish"
                   className={`w-full py-3.5 rounded-lg text-base font-bold active:scale-[0.98] transition-transform disabled:opacity-40 ${
                     suggestEnd ? "bg-[#ccff00] text-[#0a1628]" : "bg-[#1c3350] text-[#93a8c2] border border-[#1c3350]"
                   }`}>
@@ -267,7 +274,7 @@ export default function MatchPage() {
                 </button>
                 {endBlockedReason && <p className="text-center text-[11px] text-yellow-400">{endBlockedReason}</p>}
 
-                <button onClick={undo} disabled={played.length === 0}
+                <button onClick={askUndo} disabled={played.length === 0}
                   className={`${btnSecondary} w-full`}>
                   {t("match.undoSet")}
                 </button>
@@ -286,7 +293,7 @@ export default function MatchPage() {
                   <>
                     <div className="grid grid-cols-2 gap-2">
                       {sides.map(sd => (
-                        <button key={sd.n} onClick={() => setConfirming(sd.n === 1 ? "forfeit1" : "forfeit2")}
+                        <button key={sd.n} onClick={() => askForfeit(sd.n)}
                           className="text-red-400 py-2 rounded-lg text-xs border border-red-500/20 bg-red-500/5">
                           {playerName(sd.player, sd.fallback)} {t("match.noShow")}
                         </button>
@@ -298,24 +305,10 @@ export default function MatchPage() {
               </div>
             )}
 
-            {confirming && confirming !== "reopen" && (
-              <div className="bg-[#101f36] border border-red-500/30 rounded-lg p-3 space-y-2">
-                <p className="text-sm text-[#93a8c2] text-center">
-                  {confirming === "end"
-                    ? (targetReached ? t("match.endConfirm") : t("match.endEarlyConfirm", { n: target }))
-                    : t("match.forfeitConfirm", { name: playerName(confirming === "forfeit1" ? match.player1 : match.player2, "P" + confirming.slice(-1)) })}
-                </p>
-                <div className="flex gap-2">
-                  <button onClick={() => setConfirming(null)} className={`${btnSecondary} flex-1`}>{t("common.cancel")}</button>
-                  <button onClick={() => (confirming === "end" ? endMatch() : forfeit(confirming === "forfeit1" ? 1 : 2))}
-                    data-tour={confirming === "end" ? "confirm-end" : undefined}
-                    className={`${btnDanger} flex-1`}>{t("common.confirm")}</button>
-                </div>
-              </div>
-            )}
           </div>
         )}
       </div>
+      {confirmDialog}
     </div>
   );
 }

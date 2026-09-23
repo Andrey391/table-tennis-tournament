@@ -1,5 +1,9 @@
 generator client {
   provider = "prisma-client-js"
+  // Loads nested includes (an event with its players, matches and sets) in one
+  // SQL query instead of one query per relation — each of which paid the full
+  // round trip to the database.
+  previewFeatures = ["relationJoins"]
 }
 
 datasource db {
@@ -86,6 +90,7 @@ model User {
   createdClubs     Club[]    @relation("clubCreator")
   byes             RoundBye[]
   notifications    Notification[]
+  passwordResets   PasswordReset[]
 
   @@index([city])
   @@index([rating])
@@ -184,6 +189,10 @@ model Tournament {
   @@index([kind, status])
   @@index([startTime])
   @@index([clubId])
+  // "/tournaments/mine" and the demo sweep look events up by manager; the feed
+  // filters public events and orders them by start.
+  @@index([organizerId])
+  @@index([isPublic, startTime])
 }
 
 // A table reservation. No payment processing — this is just a record of who booked what/when.
@@ -240,7 +249,7 @@ model ChatMessage {
   text         String
   createdAt    DateTime   @default(now())
 
-  @@index([tournamentId])
+  @@index([tournamentId, createdAt])
 }
 
 // Who sat a round out. With an odd headcount the pairing endpoint picks exactly
@@ -278,6 +287,8 @@ model TournamentUser {
   @@unique([tournamentId, userId])
   @@index([tournamentId])
   @@index([tournamentId, seed])
+  // A player's events: /tournaments/mine, /results?userId, profile and stats.
+  @@index([userId])
 }
 
 model Match {
@@ -322,6 +333,11 @@ model Match {
   @@index([tournamentId])
   @@index([tournamentId, round])
   @@index([status])
+  // A player's matches (profile, stats, h2h, /matches/mine) and the leaders
+  // window; without these every one of them scans the whole table.
+  @@index([player1Id])
+  @@index([player2Id])
+  @@index([status, endedAt])
 }
 
 // One set ("партия") inside a match. A set is the unit of scoring: the judge marks
@@ -375,6 +391,22 @@ model Notification {
   @@index([userId, createdAt])
   @@index([userId, readAt])
   @@index([tournamentId])
+}
+
+// A "forgot password" code sent by email (POST /auth/forgot). Only a bcrypt hash
+// of the 6-digit code is stored; it lives 15 minutes, burns after 5 wrong tries,
+// and a user has at most one at a time (a new request replaces the old one).
+model PasswordReset {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash  String
+  expiresAt DateTime
+  attempts  Int       @default(0)
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
 }
 
 model AuditLog {

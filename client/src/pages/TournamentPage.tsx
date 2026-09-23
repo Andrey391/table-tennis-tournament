@@ -7,10 +7,12 @@ import Avatar from "../components/Avatar";
 import Loader from "../components/Loader";
 import SetsToWinPicker from "../components/SetsToWinPicker";
 import { useT } from "../i18n";
-import { btnDanger, btnPrimary, btnPrimaryLg, btnSecondary, btnSmall, card, errorBox, field, fieldLabel, noticeBox, sectionLabel } from "../lib/ui";
+import { btnPrimary, btnPrimaryLg, btnSmall, card, errorBox, field, fieldLabel, noticeBox, sectionLabel } from "../lib/ui";
 import { tourDone, requestClaim, rememberDemoTournament } from "../lib/tour";
 import { formatEventDay, formatTimeRange, playerName, matchScoreLine, formatDelta, deltaTone, formatRating } from "../lib/format";
 import EmptyState from "../components/EmptyState";
+import { useConfirm } from "../components/ConfirmDialog";
+import { usePolling } from "../lib/usePolling";
 
 export default function TournamentPage() {
   const { id } = useParams<{ id: string }>();
@@ -26,21 +28,34 @@ export default function TournamentPage() {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [confirmArchive, setConfirmArchive] = useState(false);
+  const [confirm, confirmDialog] = useConfirm();
   const [edit, setEdit] = useState<any>(null);
   const [clubs, setClubs] = useState<any[]>([]);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [tiebreak, setTiebreak] = useState<"buchholz" | "sonnebornberger">("buchholz");
 
-  const load = () => {
+  // The table only moves when a match is settled or reopened, or the roster
+  // changes — so it is re-read when that fingerprint of the event changes, not
+  // on every poll. It is the heavier of the two requests (every completed match).
+  const standingsKey = useRef("");
+  const load = async () => {
     if (!id) return;
-    apiService.tournaments.getById(id).then(r => setTournament(r.data)).catch(console.error);
-    apiService.tournaments.standings(id, tiebreak).then(r => setStandings(r.data)).catch(console.error);
+    try {
+      // First load (or a new tiebreak): nothing to compare with, so both at once.
+      const early = standingsKey.current.startsWith(`${tiebreak}|`) ? null : apiService.tournaments.standings(id, tiebreak);
+      const { data } = await apiService.tournaments.getById(id);
+      setTournament(data);
+      const key = [tiebreak, ...(data.matches || []).filter((m: any) => m.status === "COMPLETED").map((m: any) => `${m.id}:${m.setsWon1}:${m.setsWon2}`),
+        ...(data.players || []).map((p: any) => `${p.userId}:${p.status}`)].join("|");
+      if (key !== standingsKey.current) {
+        const r = await (early ?? apiService.tournaments.standings(id, tiebreak));
+        standingsKey.current = key;
+        setStandings(r.data);
+      }
+    } catch (e) { console.error(e); }
   };
 
-  useEffect(load, [id, tiebreak]);
   // A demo visitor who opens their event from anywhere — a link, the feed, a
   // reload — makes it the one the Dashboard and the tour offer to return to.
   useEffect(() => {
@@ -49,16 +64,14 @@ export default function TournamentPage() {
   // Participants keep this page open during the event and expect it to move on its
   // own when the manager pairs a new round; without a poll it froze at whatever
   // was on screen when they opened it.
-  useEffect(() => {
-    const i = setInterval(load, 5000);
-    return () => clearInterval(i);
-  }, [id, tiebreak]);
+  usePolling(load, 5000, `${id}|${tiebreak}`);
   // GET /players carries emails and stays behind auth; it also only feeds the
-  // manager's "add players" picker, so a guest has no reason to ask for it.
+  // manager's "add players" picker — the whole player list, so it is fetched when
+  // the picker opens rather than by everyone who opens the event.
   useEffect(() => {
-    if (isGuest) return;
+    if (isGuest || !showAdd) return;
     apiService.players.getAll().then(r => setAllPlayers(r.data)).catch(console.error);
-  }, [isGuest]);
+  }, [isGuest, showAdd]);
   useEffect(() => { apiService.clubs.getAll().then(r => setClubs(r.data)).catch(console.error); }, []);
   // Participants keep this page open between rounds; when the manager pairs the
   // next one, say so (and buzz the phone) rather than let it change silently.
@@ -131,14 +144,37 @@ export default function TournamentPage() {
     catch (e: any) { setError(e.response?.data?.error || t("common.failed")); }
   };
 
+  // Rejecting a request, taking someone off the roster and withdrawing a player
+  // who has already played are three different losses; the dialog says which.
   const removePlayer = async (userId: string) => {
     if (!id) return;
+    const entry = tournament.players.find((p: any) => p.userId === userId);
+    const name = `${entry?.user?.firstName ?? ""} ${entry?.user?.lastName ?? ""}`.trim();
+    const played = (tournament.matches || []).some((m: any) => m.player1Id === userId || m.player2Id === userId);
+    const kind = entry?.status === "PENDING" ? "reject" : played ? "withdraw" : "remove";
+    const ok = await confirm({
+      title: t(`confirm.${kind}Title`, { name }),
+      text: t(`confirm.${kind}Text`),
+      confirmLabel: t(kind === "reject" ? "tournament.reject" : kind === "withdraw" ? "tournament.withdraw" : "common.remove"),
+      danger: true,
+    });
+    if (!ok) return;
     try { await apiService.tournaments.removePlayer(id, userId); load(); }
     catch (e: any) { setError(e.response?.data?.error || t("common.failed")); }
   };
 
+  // Pairing cannot be taken back: the round's matches exist from here on, and in
+  // round 1 the roster order is fixed as the seeding.
   const pair = async () => {
     if (!id) return;
+    const first = tournament.status === "DRAFT";
+    const n = (tournament.matches || []).reduce((max: number, m: any) => Math.max(max, m.round), 0) + 1;
+    const ok = await confirm({
+      title: first && tournament.kind === "GAME" ? t("tournament.startGame") : t("tournament.startRound", { n }),
+      text: first ? t("confirm.pairFirstText", { n: tournament.players.filter((p: any) => p.status === "REGISTERED").length }) : t("confirm.pairNextText"),
+      confirmLabel: t("confirm.pairGo"),
+    });
+    if (!ok) return;
     setBusy(true); setError("");
     try { await apiService.tournaments.pair(id); tourDone("pair"); load(); }
     catch (e: any) { setError(e.response?.data?.error || t("common.failed")); }
@@ -221,6 +257,7 @@ export default function TournamentPage() {
 
   const removeTournament = async () => {
     if (!id) return;
+    if (!(await confirm({ title: t("tournament.delete"), text: t("tournament.deleteConfirm"), confirmLabel: t("common.delete"), danger: true }))) return;
     setBusy(true); setError("");
     try { await apiService.tournaments.remove(id); navigate("/"); }
     catch (e: any) { setError(e.response?.data?.error || t("common.failed")); setBusy(false); }
@@ -230,8 +267,9 @@ export default function TournamentPage() {
   // it away keeps every match, set and rating change it already produced intact.
   const archiveTournament = async () => {
     if (!id) return;
+    if (!(await confirm({ title: t("tournament.archive"), text: t("tournament.archiveConfirm"), confirmLabel: t("tournament.archive") }))) return;
     setBusy(true); setError("");
-    try { await apiService.tournaments.archive(id); setConfirmArchive(false); load(); }
+    try { await apiService.tournaments.archive(id); load(); }
     catch (e: any) { setError(e.response?.data?.error || t("common.failed")); }
     finally { setBusy(false); }
   };
@@ -664,21 +702,9 @@ export default function TournamentPage() {
       )}
       {isManager && tournament.status === "COMPLETED" && !tournament.archivedAt && (
         <section className="mt-8">
-          {confirmArchive ? (
-            <div className="bg-[#101f36] border border-[#1c3350] rounded-lg p-3 text-center space-y-2">
-              <p className="text-sm text-[#93a8c2]">{t("tournament.archiveConfirm")}</p>
-              <div className="flex gap-2">
-                <button onClick={() => setConfirmArchive(false)} className={`${btnSecondary} flex-1`}>{t("common.cancel")}</button>
-                <button onClick={archiveTournament} disabled={busy} className={`${btnPrimary} flex-1`}>
-                  {busy ? t("tournament.archiving") : t("tournament.archive")}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <button onClick={() => setConfirmArchive(true)} className="w-full text-[#93a8c2] py-3 rounded-lg text-sm border border-[#1c3350] bg-[#101f36]">
-              {t("tournament.archive")}
-            </button>
-          )}
+          <button onClick={archiveTournament} disabled={busy} className="w-full text-[#93a8c2] py-3 rounded-lg text-sm border border-[#1c3350] bg-[#101f36]">
+            {busy ? t("tournament.archiving") : t("tournament.archive")}
+          </button>
         </section>
       )}
       {isManager && tournament.archivedAt && (
@@ -690,23 +716,12 @@ export default function TournamentPage() {
       )}
       {isManager && tournament.status !== "COMPLETED" && (
         <section className="mt-8">
-          {confirmDelete ? (
-            <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 text-center space-y-2">
-              <p className="text-sm text-[#93a8c2]">{t("tournament.deleteConfirm")}</p>
-              <div className="flex gap-2">
-                <button onClick={() => setConfirmDelete(false)} className={`${btnSecondary} flex-1`}>{t("common.cancel")}</button>
-                <button onClick={removeTournament} disabled={busy} className={`${btnDanger} flex-1`}>
-                  {busy ? t("tournament.deleting") : t("common.delete")}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <button onClick={() => setConfirmDelete(true)} className="w-full text-red-400 py-3 rounded-lg text-sm border border-red-500/20 bg-red-500/5">
-              {t("tournament.delete")}
-            </button>
-          )}
+          <button onClick={removeTournament} disabled={busy} className="w-full text-red-400 py-3 rounded-lg text-sm border border-red-500/20 bg-red-500/5">
+            {busy ? t("tournament.deleting") : t("tournament.delete")}
+          </button>
         </section>
       )}
+      {confirmDialog}
     </Layout>
   );
 }

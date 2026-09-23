@@ -493,4 +493,34 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 
+-- 21. "Forgot password" codes (see PasswordReset in schema.prisma). Only a hash
+-- of the code is stored; deleting a user takes their codes with them.
+CREATE TABLE IF NOT EXISTS "PasswordReset" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "codeHash" TEXT NOT NULL,
+    "expiresAt" TIMESTAMP(3) NOT NULL,
+    "attempts" INTEGER NOT NULL DEFAULT 0,
+    "usedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "PasswordReset_pkey" PRIMARY KEY ("id")
+);
+CREATE INDEX IF NOT EXISTS "PasswordReset_userId_idx" ON "PasswordReset"("userId");
+DO $$ BEGIN
+  ALTER TABLE "PasswordReset" ADD CONSTRAINT "PasswordReset_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+
+-- 22. Indexes for the lookups every profile, stats page and poll makes: a
+-- player's matches and events, a manager's events, the public feed, the chat.
+CREATE INDEX IF NOT EXISTS "Tournament_organizerId_idx" ON "Tournament"("organizerId");
+CREATE INDEX IF NOT EXISTS "Tournament_isPublic_startTime_idx" ON "Tournament"("isPublic", "startTime");
+CREATE INDEX IF NOT EXISTS "TournamentUser_userId_idx" ON "TournamentUser"("userId");
+CREATE INDEX IF NOT EXISTS "Match_player1Id_idx" ON "Match"("player1Id");
+CREATE INDEX IF NOT EXISTS "Match_player2Id_idx" ON "Match"("player2Id");
+CREATE INDEX IF NOT EXISTS "Match_status_endedAt_idx" ON "Match"("status", "endedAt");
+CREATE INDEX IF NOT EXISTS "ChatMessage_tournamentId_createdAt_idx" ON "ChatMessage"("tournamentId", "createdAt");
+
+
 COMMIT;

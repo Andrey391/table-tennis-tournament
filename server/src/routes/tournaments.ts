@@ -6,7 +6,7 @@ import { CreateTournamentSchema, UpdateTournamentSchema, AddPlayersSchema, ChatM
 import { computeStandings } from "../shared/standings";
 import { checkCanEnd } from "../shared/scoring";
 import { generateRoundPairings } from "../shared/scheduler";
-import { playerSelect, clubSelect, matchInclude, feedInclude, FEED_PLAYERS, standingsInclude, inCity, queryString } from "../shared/queries";
+import { playerSelect, clubSelect, matchInclude, tournamentDetailInclude, feedInclude, FEED_PLAYERS, standingsInclude, inCity, queryString } from "../shared/queries";
 import { hasOpenDemoSeat, resetDemoRound1 } from "../shared/demo";
 import { notify, notifyClubFollowers, eventAudience, shortName } from "../shared/notify";
 import AuditLog from "../models/AuditLog";
@@ -162,21 +162,18 @@ tournamentRouter.get("/mine", authMiddleware, async (req: AuthenticatedRequest, 
   })));
 });
 
+// Only a demo event can have an open seat (the manager's page reads it to decide
+// whether to offer the invitation link), so every other event — every poll of a
+// real club night — skips that second query.
+async function withDemoSeat<T extends { id: string; organizer: { isDemo: boolean } & Record<string, unknown> }>(tournament: T) {
+  const { isDemo, ...organizer } = tournament.organizer;
+  return { ...tournament, organizer, demoSeatOpen: isDemo ? await hasOpenDemoSeat(tournament.id) : false };
+}
+
 tournamentRouter.get("/:id", async (req, res: Response) => {
-  const tournament = await prisma.tournament.findUnique({
-    where: { id: req.params.id },
-    include: {
-      organizer: { select: { id: true, firstName: true, lastName: true } },
-      club: { select: clubSelect },
-      players: { include: { user: { select: playerSelect } }, orderBy: { seed: "asc" } },
-      byes: { include: { user: { select: playerSelect } } },
-      matches: { include: matchInclude, orderBy: [{ round: "asc" }, { matchIndex: "asc" }] },
-    },
-  });
+  const tournament = await prisma.tournament.findUnique({ where: { id: req.params.id }, include: tournamentDetailInclude });
   if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
-  // Only a demo event can have an open seat; the manager's page reads this to
-  // decide whether to offer the invitation link.
-  res.json({ ...tournament, demoSeatOpen: await hasOpenDemoSeat(tournament.id) });
+  res.json(await withDemoSeat(tournament));
 });
 
 // Wipes round 1 of the caller's own demo event back to freshly-paired (no sets,
@@ -187,18 +184,9 @@ tournamentRouter.get("/:id", async (req, res: Response) => {
 tournamentRouter.post("/:id/demo-reset-round1", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     await resetDemoRound1(req.params.id, req.user!.userId);
-    const tournament = await prisma.tournament.findUnique({
-      where: { id: req.params.id },
-      include: {
-        organizer: { select: { id: true, firstName: true, lastName: true } },
-        club: { select: clubSelect },
-        players: { include: { user: { select: playerSelect } }, orderBy: { seed: "asc" } },
-        byes: { include: { user: { select: playerSelect } } },
-        matches: { include: matchInclude, orderBy: [{ round: "asc" }, { matchIndex: "asc" }] },
-      },
-    });
+    const tournament = await prisma.tournament.findUnique({ where: { id: req.params.id }, include: tournamentDetailInclude });
     if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
-    res.json({ ...tournament, demoSeatOpen: await hasOpenDemoSeat(tournament.id) });
+    res.json(await withDemoSeat(tournament));
   } catch (err) {
     res.status(400).json({ error: publicError(err) });
   }
@@ -555,15 +543,29 @@ async function assertCanUseChat(res: Response, tournamentId: string, userId: str
   return tournament;
 }
 
+const CHAT_PAGE = 100;
+
 tournamentRouter.get("/:id/chat", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const tournament = await assertCanUseChat(res, req.params.id, req.user!.userId);
   if (!tournament) return;
-  const messages = await prisma.chatMessage.findMany({
-    where: { tournamentId: req.params.id },
-    include: { user: { select: { id: true, firstName: true, lastName: true } } },
-    orderBy: { createdAt: "asc" },
+  // The page polls every few seconds; `?after=<createdAt of the last message it
+  // has>` answers with only that moment onwards (gte, so two messages written in
+  // the same millisecond are not lost; the client drops the repeat by id), and
+  // the first load gets the latest
+  // CHAT_PAGE messages rather than the whole history.
+  const afterRaw = queryString(req.query.after);
+  const after = afterRaw ? new Date(afterRaw) : null;
+  const include = { user: { select: { id: true, firstName: true, lastName: true } } };
+  if (after && !isNaN(after.getTime())) {
+    res.json(await prisma.chatMessage.findMany({
+      where: { tournamentId: req.params.id, createdAt: { gte: after } }, include, orderBy: { createdAt: "asc" }, take: CHAT_PAGE,
+    }));
+    return;
+  }
+  const latest = await prisma.chatMessage.findMany({
+    where: { tournamentId: req.params.id }, include, orderBy: { createdAt: "desc" }, take: CHAT_PAGE,
   });
-  res.json(messages);
+  res.json(latest.reverse());
 });
 
 tournamentRouter.post("/:id/chat", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {

@@ -41,6 +41,7 @@ export default function Login() {
             <label className={fieldLabel}>{t("auth.password")}</label>
             <input type="password" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)}
               className={field} required />
+            <Link to="/forgot" state={{ email }} className="block text-right text-xs text-[#93a8c2] mt-1.5">{t("auth.forgot")}</Link>
           </div>
           <button type="submit" disabled={loading}
             className={`${btnPrimary} w-full`}>

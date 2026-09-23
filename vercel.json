@@ -3,6 +3,7 @@
   "installCommand": "npm install",
   "buildCommand": "prisma generate --schema=server/prisma/schema.prisma && npm run build -w client",
   "framework": null,
+  "regions": ["dub1"],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index" }
   ]

@@ -21,6 +21,9 @@ export const apiService = {
     demo: () => api.post("/auth/demo"),
     // Redeems a demo invitation link: takes the open seat in that event as a guest.
     joinDemo: (tournamentId: string) => api.post("/auth/demo/join", { tournamentId }),
+    // Forgot password: mail a 6-digit code, then trade it for a new password.
+    forgot: (email: string) => api.post("/auth/forgot", { email }),
+    reset: (d: { email: string; code: string; newPassword: string }) => api.post("/auth/reset", d),
     claim: (d: { email: string; password: string; firstName: string; lastName: string; city?: string; acceptTerms: boolean; publicProfile: boolean }) => api.post("/auth/claim", d),
     // Deletes (anonymises) the caller's own account; asks for the password again.
     deleteAccount: (password: string) => api.delete("/auth/me", { data: { password } }),
@@ -69,7 +72,8 @@ export const apiService = {
     // Wipes round 1 of the caller's own demo event (sets, tally, rating) back to
     // freshly-paired once the guided tour that scored it is done.
     resetDemoRound1: (id: string) => api.post(`/tournaments/${id}/demo-reset-round1`),
-    getChat: (id: string) => api.get(`/tournaments/${id}/chat`),
+    // `after` (the last message's createdAt) returns only newer messages.
+    getChat: (id: string, after?: string) => api.get(`/tournaments/${id}/chat`, { params: after ? { after } : undefined }),
     sendChat: (id: string, d: { text: string }) => api.post(`/tournaments/${id}/chat`, d),
   },
   matches: {

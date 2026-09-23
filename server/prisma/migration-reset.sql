@@ -33,6 +33,7 @@ BEGIN;
 --    pointing at these tables from anything left behind.
 -- ---------------------------------------------------------------------------
 
+DROP TABLE IF EXISTS "PasswordReset" CASCADE;
 DROP TABLE IF EXISTS "Notification" CASCADE;
 DROP TABLE IF EXISTS "ChatMessage" CASCADE;
 DROP TABLE IF EXISTS "MatchSet" CASCADE;
@@ -330,7 +331,6 @@ CREATE TABLE "ChatMessage" (
 
     CONSTRAINT "ChatMessage_pkey" PRIMARY KEY ("id")
 );
-CREATE INDEX "ChatMessage_tournamentId_idx" ON "ChatMessage"("tournamentId");
 ALTER TABLE "ChatMessage" ADD CONSTRAINT "ChatMessage_tournamentId_fkey" FOREIGN KEY ("tournamentId") REFERENCES "Tournament"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "ChatMessage" ADD CONSTRAINT "ChatMessage_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
@@ -379,5 +379,27 @@ CREATE TABLE "Session" (
     CONSTRAINT "Session_pkey" PRIMARY KEY ("id")
 );
 CREATE UNIQUE INDEX "Session_token_key" ON "Session"("token");
+
+CREATE TABLE "PasswordReset" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "codeHash" TEXT NOT NULL,
+    "expiresAt" TIMESTAMP(3) NOT NULL,
+    "attempts" INTEGER NOT NULL DEFAULT 0,
+    "usedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "PasswordReset_pkey" PRIMARY KEY ("id")
+);
+CREATE INDEX "PasswordReset_userId_idx" ON "PasswordReset"("userId");
+ALTER TABLE "PasswordReset" ADD CONSTRAINT "PasswordReset_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+CREATE INDEX "Tournament_organizerId_idx" ON "Tournament"("organizerId");
+CREATE INDEX "Tournament_isPublic_startTime_idx" ON "Tournament"("isPublic", "startTime");
+CREATE INDEX "TournamentUser_userId_idx" ON "TournamentUser"("userId");
+CREATE INDEX "Match_player1Id_idx" ON "Match"("player1Id");
+CREATE INDEX "Match_player2Id_idx" ON "Match"("player2Id");
+CREATE INDEX "Match_status_endedAt_idx" ON "Match"("status", "endedAt");
+CREATE INDEX "ChatMessage_tournamentId_createdAt_idx" ON "ChatMessage"("tournamentId", "createdAt");
 
 COMMIT;
