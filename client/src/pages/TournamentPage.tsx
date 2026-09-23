@@ -330,7 +330,7 @@ export default function TournamentPage() {
         )}
         {tournament.club && (
           <div>
-            <p className="text-sm">{tournament.club.name} &middot; {tournament.club.city}</p>
+            <Link to={`/club/${tournament.club.id}`} className="text-sm text-[#ccff00]">{tournament.club.name} &middot; {tournament.club.city}</Link>
             {tournament.club.address && <p className="text-xs text-[#6b84a0]">{tournament.club.address}</p>}
             {tournament.club.phone && <p className="text-xs text-[#6b84a0]">{tournament.club.phone}</p>}
           </div>

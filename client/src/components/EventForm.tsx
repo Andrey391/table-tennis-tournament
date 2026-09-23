@@ -50,9 +50,12 @@ const overlaps = (aStart: string, aHours: number, bStart: string, bHours: number
 // solely on /clubs now; this form only ever *selects* among what's there.
 export default function EventForm({
   defaultEventType = "GAME",
+  initialClubId = "",
   onCreated,
 }: {
   defaultEventType?: "GAME" | "TOURNAMENT";
+  // Preselected venue, when the form is opened from a club's own page.
+  initialClubId?: string;
   onCreated: (result: any) => void;
 }) {
   const { t, lang } = useT();
@@ -65,7 +68,7 @@ export default function EventForm({
   const [form, setForm] = useState(() => {
     const startDate = roundedUpHour();
     return {
-      clubId: "", tableId: "", date: toDateStr(startDate), startTime: toTimeStr(startDate), endTime: addHour(toTimeStr(startDate)),
+      clubId: initialClubId, tableId: "", date: toDateStr(startDate), startTime: toTimeStr(startDate), endTime: addHour(toTimeStr(startDate)),
       eventType: defaultEventType, eventTitle: "", description: "",
       setsToWin: 3, tablesCount: 4, maxPlayers: "", minRating: "", maxRating: "", ratingWeight: "0.5",
       isPublic: true, access: "OPEN" as "OPEN" | "CLOSED",

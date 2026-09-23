@@ -25,10 +25,18 @@ clubRouter.get("/", async (req, res: Response) => {
       ...(city ? { city: cityIs(city) } : {}),
       ...(q ? { name: { contains: q, mode: "insensitive" as const } } : {}),
     },
-    include: { _count: { select: { tables: true, subscriptions: true, tournaments: true } } },
+    include: {
+      _count: { select: { tables: true, subscriptions: true, tournaments: true } },
+      tables: { select: { pricePerHour: true } },
+    },
     orderBy: [{ city: "asc" }, { name: "asc" }],
   });
-  res.json(clubs);
+  // The list card shows "from N per hour": the cheapest priced table, or null
+  // when no table has a price (booking there is free).
+  res.json(clubs.map(({ tables, ...c }) => {
+    const prices = tables.map(t => t.pricePerHour).filter((p): p is number => p != null);
+    return { ...c, minPrice: prices.length ? Math.min(...prices) : null };
+  }));
 });
 
 // Powers the "your city" picker on the home screen — must stay above "/:id".
