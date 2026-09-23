@@ -104,8 +104,8 @@ export default function ResultsPage() {
                         <div key={p.userId} className="flex items-center gap-2 text-sm">
                           <span className="w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center text-[#0a1628] shrink-0" style={{ background: MEDALS[i] }}>{i + 1}</span>
                           <span className="truncate flex-1">{playerName(p)}</span>
-                          <span className="text-xs text-[#93a8c2] shrink-0">{p.wins}{t("tournament.winShort")} {p.losses}{t("tournament.lossShort")}</span>
-                          {e.kind === "TOURNAMENT" && <span className={`text-xs font-mono w-10 text-right shrink-0 ${deltaTone(p.ratingChange)}`}>{formatDelta(p.ratingChange)}</span>}
+                          <span className="text-xs font-mono shrink-0" title={t("results.setsHint")}><span className="text-green-400">{p.setsWon}</span><span className="text-[#4d6480]">:</span><span className="text-red-400">{p.setsLost}</span></span>
+                          {e.kind === "TOURNAMENT" && <span className={`text-xs font-mono w-14 text-right shrink-0 pl-2 border-l border-[#1c3350] ${deltaTone(p.ratingChange)}`}>{formatDelta(p.ratingChange)}</span>}
                         </div>
                       ))}
                     </div>
