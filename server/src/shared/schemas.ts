@@ -130,6 +130,8 @@ export const UpdateProfileSchema = z.object({
   city: City.nullable().optional(),
   phone: z.string().max(40).nullable().optional(),
   dateOfBirth: z.string().datetime().nullable().optional(),
+  // Giving or withdrawing the consent to a public name (152-FZ art. 10.1).
+  publicProfile: z.boolean().optional(),
   // A new password is only accepted together with the current one, so a borrowed
   // unlocked phone can't be used to take the account over.
   currentPassword: z.string().optional(),
@@ -198,12 +200,20 @@ export const SelfRegisterSchema = z.object({
   lastName: z.string().min(1).max(100),
   club: z.string().max(100).optional(),
   city: City.optional(),
+  // Consent to the processing of personal data (152-FZ art. 9) is not optional:
+  // no tick, no account. Whether the name may be shown to anyone at all is a
+  // separate consent (art. 10.1), and saying no to it still gets an account.
+  acceptTerms: z.literal(true, { errorMap: () => ({ message: "You have to accept the privacy policy and the terms of use" }) }),
+  publicProfile: z.boolean().default(false),
 });
 
 // Signing up from inside a demo. Same fields as a fresh signup — the point is
 // that it updates the account the visitor is already using instead of creating a
 // second one, so the event they ran comes with them.
 export const ClaimDemoSchema = SelfRegisterSchema;
+
+// Deleting one's own account asks for the password again: it cannot be undone.
+export const DeleteAccountSchema = z.object({ password: z.string().min(1) });
 
 export const DemoJoinSchema = z.object({ tournamentId: z.string().min(1).max(100) });
 

@@ -6,7 +6,7 @@ import { CreateBookingSchema } from "../shared/schemas";
 import { startOfUtcDay, bookingStartsAt, bookingEndsAt, countFreeTables, findNextFreeSlot } from "../shared/booking";
 import { findBookingConflict } from "./clubs";
 import { bookingInclude } from "../shared/queries";
-import { computeBookingPrice, initiatePayment } from "../shared/payments";
+import { computeBookingPrice, initiatePayment, paymentMode } from "../shared/payments";
 import { notifyClubFollowers } from "../shared/notify";
 
 export const bookingRouter = Router();
@@ -113,6 +113,12 @@ bookingRouter.get("/mine", authMiddleware, async (req: AuthenticatedRequest, res
   res.json(bookings);
 });
 
+// Whether the Pay button should exist at all, and whether a payment is a test one.
+bookingRouter.get("/payments", (_req, res: Response) => {
+  const mode = paymentMode();
+  res.json({ enabled: mode !== "off", test: mode === "mock" });
+});
+
 // Starts (and, under the mock provider, immediately completes) payment for an
 // UNPAID booking. Only the booking's own owner can pay for it — nobody should
 // be able to trigger a charge against someone else's reservation.
@@ -123,6 +129,7 @@ bookingRouter.post("/:id/pay", authMiddleware, async (req: AuthenticatedRequest,
     if (booking.userId !== req.user!.userId) { res.status(403).json({ error: "Not your booking" }); return; }
     if (booking.paymentStatus !== "UNPAID") { res.status(400).json({ error: `Booking is already ${booking.paymentStatus.toLowerCase()}` }); return; }
     if (!booking.priceTotal) { res.status(400).json({ error: "This booking has no price to pay" }); return; }
+    if (paymentMode() === "off") { res.status(400).json({ error: "Online payment is not available, pay at the club" }); return; }
 
     const intent = await initiatePayment(booking);
     // A real provider confirms asynchronously via its own webhook, which would

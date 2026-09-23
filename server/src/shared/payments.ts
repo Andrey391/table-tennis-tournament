@@ -21,11 +21,14 @@ export function computeBookingPrice(table: Pick<ClubTable, "pricePerHour"> | nul
 // once the provider itself confirms funds moved.
 //
 // PAYMENT_PROVIDER unset (the default everywhere until an operator sets it)
-// runs `mockProvider`, which confirms the payment immediately with no money
-// changing hands — good enough to exercise the booking flow end to end in
-// dev/staging, and it is the only mode that works without any provider
-// credentials. Wire a real provider by adding a case below that calls out to
-// its SDK and reads its own webhook signature, then setting PAYMENT_PROVIDER.
+// means online payment is off: a priced booking stays UNPAID and the client says
+// it is paid at the club. PAYMENT_PROVIDER=mock confirms a payment immediately
+// with no money changing hands — for exercising the flow in dev/staging only,
+// and refused under NODE_ENV=production: it used to be the default, which put
+// "Paid" on real bookings nobody had paid for, telling a club it had its money
+// and a player they owed nothing. Wire a real provider by adding a case below
+// that calls out to its SDK and reads its own webhook signature, then setting
+// PAYMENT_PROVIDER.
 // --------------------------------------------------------------------------
 
 export interface PaymentIntent {
@@ -36,9 +39,20 @@ export interface PaymentIntent {
   redirectUrl: string | null;
 }
 
+export type PaymentMode = "off" | "mock" | "live";
+
+export function paymentMode(): PaymentMode {
+  const provider = process.env.PAYMENT_PROVIDER;
+  if (!provider) return "off";
+  if (provider === "mock") return process.env.NODE_ENV === "production" ? "off" : "mock";
+  return "live";
+}
+
 export async function initiatePayment(booking: Pick<Booking, "id" | "priceTotal">): Promise<PaymentIntent> {
   const provider = process.env.PAYMENT_PROVIDER;
-  if (!provider || provider === "mock") {
+  const mode = paymentMode();
+  if (mode === "off") throw new Error("Online payment is not available");
+  if (mode === "mock") {
     return { paymentRef: `mock_${booking.id}`, redirectUrl: null };
   }
   throw new Error(`Unknown PAYMENT_PROVIDER "${provider}" — no gateway integration is wired up yet`);

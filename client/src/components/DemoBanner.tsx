@@ -3,6 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import { useT } from "../i18n";
 import { btnPrimary, field, fieldLabel } from "../lib/ui";
 import { onClaimRequested } from "../lib/tour";
+import ConsentFields from "./ConsentFields";
 
 // Says out loud that this account is temporary, and offers the one thing that
 // makes it permanent. Claiming updates the account the visitor is already using,
@@ -13,6 +14,7 @@ export default function DemoBanner() {
   const { t } = useT();
   const [open, setOpen] = React.useState(false);
   const [form, setForm] = React.useState({ email: "", password: "", firstName: "", lastName: "" });
+  const [consent, setConsent] = React.useState({ accept: false, publicProfile: false });
   const [error, setError] = React.useState("");
   const [saving, setSaving] = React.useState(false);
 
@@ -32,7 +34,7 @@ export default function DemoBanner() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    try { setError(""); await claimDemo(form); setOpen(false); }
+    try { setError(""); await claimDemo({ ...form, acceptTerms: consent.accept, publicProfile: consent.publicProfile }); setOpen(false); }
     catch (err: any) { setError(err.response?.data?.error || t("demo.claimFailed")); }
     finally { setSaving(false); }
   };
@@ -74,7 +76,8 @@ export default function DemoBanner() {
             <label className={fieldLabel}>{t("auth.password")}</label>
             <input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} className={field} minLength={6} required />
           </div>
-          <button type="submit" disabled={saving}
+          <ConsentFields accept={consent.accept} publicProfile={consent.publicProfile} onChange={setConsent} />
+          <button type="submit" disabled={saving || !consent.accept}
             className={`${btnPrimary} w-full`}>
             {saving ? t("demo.claiming") : t("demo.claim")}
           </button>
