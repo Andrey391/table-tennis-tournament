@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { apiService } from "../services/api";
 import Layout from "../components/Layout";
 import EventForm from "../components/EventForm";
@@ -20,7 +20,11 @@ export default function BookingsPage() {
   const [error, setError] = useState("");
   // Collapsed by default so "мои брони" is visible without scrolling past the
   // form first — it only opens when the user actually wants to book something.
-  const [showForm, setShowForm] = useState(false);
+  // `?club=` comes from a club page's "book a table": the form opens with that
+  // venue already picked.
+  const [searchParams] = useSearchParams();
+  const clubParam = searchParams.get("club") || "";
+  const [showForm, setShowForm] = useState(!!clubParam);
 
   const load = () => {
     // On failure a list settles to empty rather than spinning forever.
@@ -78,7 +82,7 @@ export default function BookingsPage() {
             {showForm ? t("common.cancel") : `+ ${t("play.bookAction")}`}
           </button>
         </div>
-        {showForm && <EventForm defaultEventType="GAME" onCreated={onCreated} />}
+        {showForm && <EventForm defaultEventType="GAME" initialClubId={clubParam} onCreated={onCreated} />}
       </section>
 
       <section className="mb-6">

@@ -25,13 +25,14 @@ const statMatchSelect = {
 // (quick games), which their profile history already shows anyway.
 statsRouter.get("/results", async (req, res: Response) => {
   try {
-    const { kind, city, userId, q } = req.query as Record<string, string | undefined>;
+    const { kind, city, clubId, userId, q } = req.query as Record<string, string | undefined>;
     const events = await prisma.tournament.findMany({
       where: {
         status: { in: ["ACTIVE", "COMPLETED"] },
         ...(userId ? { players: { some: { userId, status: PLAYED_STATUSES } } } : { isPublic: true }),
         ...(kind ? { kind } : {}),
         ...(city ? inCity(city) : {}),
+        ...(clubId ? { clubId } : {}),
         ...(q ? { name: { contains: q, mode: "insensitive" as const } } : {}),
       },
       include: {

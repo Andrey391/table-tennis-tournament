@@ -122,7 +122,7 @@ export const apiService = {
   },
   // Results feed with podiums, per-player statistics, head-to-head and leaderboards.
   stats: {
-    results: (params?: { kind?: string; city?: string; userId?: string; q?: string }) => api.get("/results", { params }),
+    results: (params?: { kind?: string; city?: string; clubId?: string; userId?: string; q?: string }) => api.get("/results", { params }),
     player: (id: string) => api.get(`/players/${id}/stats`),
     headToHead: (id: string, otherId: string) => api.get(`/players/${id}/h2h/${otherId}`),
     leaders: (params: { metric: "rating" | "wins" | "played"; period: "month" | "year" | "all"; city?: string }) => api.get("/leaders", { params }),
