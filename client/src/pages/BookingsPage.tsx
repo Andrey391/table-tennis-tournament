@@ -51,6 +51,10 @@ export default function BookingsPage() {
   };
 
   const [payingId, setPayingId] = useState<string | null>(null);
+  // Online payment is off until the operator wires up a provider; a priced booking
+  // is then paid at the club, and a "Pay" button would promise something that isn't there.
+  const [payments, setPayments] = useState<{ enabled: boolean; test: boolean }>({ enabled: false, test: false });
+  useEffect(() => { apiService.bookings.paymentConfig().then(r => setPayments(r.data)).catch(() => {}); }, []);
   const payBooking = async (id: string) => {
     setPayingId(id);
     setError("");
@@ -109,12 +113,13 @@ export default function BookingsPage() {
                   {b.priceTotal != null && (
                     <p className="text-xs mt-1">
                       <span className="text-[#93a8c2]">{t("play.bookingPrice")}: {b.priceTotal} {t("play.currency")}</span>{" "}
-                      {b.paymentStatus === "PAID" && <span className="text-[#ccff00]">&middot; {t("play.paid")}</span>}
+                      {b.paymentStatus === "PAID" && <span className="text-[#ccff00]">&middot; {t("play.paid")}{b.paymentRef?.startsWith("mock_") && ` (${t("play.testPayment")})`}</span>}
+                      {b.paymentStatus === "UNPAID" && !payments.enabled && <span className="text-[#6b84a0]">&middot; {t("play.payAtClub")}</span>}
                     </p>
                   )}
                 </div>
                 <div className="flex flex-col items-end gap-1 shrink-0">
-                  {b.priceTotal != null && b.paymentStatus === "UNPAID" && (
+                  {b.priceTotal != null && b.paymentStatus === "UNPAID" && payments.enabled && (
                     <button onClick={() => payBooking(b.id)} disabled={payingId === b.id} className="text-[#ccff00] text-xs px-2 py-1 font-bold disabled:opacity-50">
                       {payingId === b.id ? t("play.paying") : t("play.pay")}
                     </button>

@@ -104,6 +104,11 @@ CREATE TABLE "User" (
     "isDemo" BOOLEAN NOT NULL DEFAULT false,
     "demoOwnerId" TEXT,
     "demoExpiresAt" TIMESTAMP(3),
+    -- Personal-data consent (152-FZ), public-name consent and account deletion.
+    "consentAt" TIMESTAMP(3),
+    "consentVersion" TEXT,
+    "publicProfile" BOOLEAN NOT NULL DEFAULT true,
+    "deletedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 

@@ -57,6 +57,10 @@ export default function Login() {
           <p className="text-center text-sm text-[#6b84a0]">
             {t("auth.noAccount")} <Link to="/register" className="text-[#ccff00] font-medium">{t("auth.register")}</Link>
           </p>
+          <p className="text-center text-[11px] text-[#4d6480] flex flex-wrap justify-center gap-x-3 gap-y-1">
+            <Link to="/privacy">{t("legal.privacy")}</Link>
+            <Link to="/terms">{t("legal.terms")}</Link>
+          </p>
         </form>
       </div>
     </div>
