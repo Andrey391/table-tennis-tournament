@@ -14,9 +14,11 @@ const PAGE = 50;
 // deployment has a scheduler, and an inbox only grows while its owner uses it.
 notificationRouter.get("/", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.user!.userId;
-  await prisma.notification.deleteMany({ where: { userId, createdAt: { lt: new Date(Date.now() - NOTIFICATION_TTL_DAYS * 86400 * 1000) } } })
-    .catch((e) => console.error("[NOTIFY sweep]", e?.message));
-  const [items, unread] = await Promise.all([
+  // The sweep runs alongside the reads rather than before them: it only removes
+  // rows past the retention window, which the page of 50 newest never shows.
+  const [, items, unread] = await Promise.all([
+    prisma.notification.deleteMany({ where: { userId, createdAt: { lt: new Date(Date.now() - NOTIFICATION_TTL_DAYS * 86400 * 1000) } } })
+      .catch((e) => console.error("[NOTIFY sweep]", e?.message)),
     prisma.notification.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: PAGE }),
     prisma.notification.count({ where: { userId, readAt: null } }),
   ]);

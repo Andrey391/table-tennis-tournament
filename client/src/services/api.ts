@@ -66,7 +66,8 @@ export const apiService = {
     // Wipes round 1 of the caller's own demo event (sets, tally, rating) back to
     // freshly-paired once the guided tour that scored it is done.
     resetDemoRound1: (id: string) => api.post(`/tournaments/${id}/demo-reset-round1`),
-    getChat: (id: string) => api.get(`/tournaments/${id}/chat`),
+    // `after` (the last message's createdAt) returns only newer messages.
+    getChat: (id: string, after?: string) => api.get(`/tournaments/${id}/chat`, { params: after ? { after } : undefined }),
     sendChat: (id: string, d: { text: string }) => api.post(`/tournaments/${id}/chat`, d),
   },
   matches: {

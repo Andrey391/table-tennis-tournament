@@ -9,6 +9,7 @@ import SetsToWinPicker from "../components/SetsToWinPicker";
 import Loader from "../components/Loader";
 import { useConfirm } from "../components/ConfirmDialog";
 import { tourDone, rememberDemoMatch } from "../lib/tour";
+import { usePolling } from "../lib/usePolling";
 import { backLink, btnPrimaryLg, btnSecondary, card, errorBox } from "../lib/ui";
 
 // The unit of scoring is the set ("партия"), not the point. The judge marks who
@@ -55,11 +56,7 @@ export default function MatchPage() {
     } catch (e) { console.error(e); }
   }, [matchId]);
 
-  useEffect(() => { fetchMatch(); }, [fetchMatch]);
-  useEffect(() => {
-    const i = setInterval(fetchMatch, 2000);
-    return () => clearInterval(i);
-  }, [fetchMatch]);
+  usePolling(fetchMatch, 2000, matchId);
 
   const fail = (e: any) => setError(e.response?.data?.error || t("common.failed"));
 

@@ -504,4 +504,15 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 
+-- 22. Indexes for the lookups every profile, stats page and poll makes: a
+-- player's matches and events, a manager's events, the public feed, the chat.
+CREATE INDEX IF NOT EXISTS "Tournament_organizerId_idx" ON "Tournament"("organizerId");
+CREATE INDEX IF NOT EXISTS "Tournament_isPublic_startTime_idx" ON "Tournament"("isPublic", "startTime");
+CREATE INDEX IF NOT EXISTS "TournamentUser_userId_idx" ON "TournamentUser"("userId");
+CREATE INDEX IF NOT EXISTS "Match_player1Id_idx" ON "Match"("player1Id");
+CREATE INDEX IF NOT EXISTS "Match_player2Id_idx" ON "Match"("player2Id");
+CREATE INDEX IF NOT EXISTS "Match_status_endedAt_idx" ON "Match"("status", "endedAt");
+CREATE INDEX IF NOT EXISTS "ChatMessage_tournamentId_createdAt_idx" ON "ChatMessage"("tournamentId", "createdAt");
+
+
 COMMIT;

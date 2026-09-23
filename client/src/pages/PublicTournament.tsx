@@ -1,10 +1,11 @@
 import { useParams } from "react-router-dom";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { apiService } from "../services/api";
 import { useT } from "../i18n";
 import { playerName, matchScoreLine } from "../lib/format";
 import Logo from "../components/Logo";
 import Loader from "../components/Loader";
+import { usePolling } from "../lib/usePolling";
 import EmptyState from "../components/EmptyState";
 import { card, sectionLabel } from "../lib/ui";
 
@@ -16,17 +17,15 @@ export default function PublicTournament() {
 
   const load = useCallback(() => {
     if (!id) return;
-    apiService.public.tournament(id).then(r => setData(r.data)).catch(console.error);
-    apiService.public.standings(id).then(r => setStandings(r.data)).catch(console.error);
+    return Promise.all([
+      apiService.public.tournament(id).then(r => setData(r.data)).catch(console.error),
+      apiService.public.standings(id).then(r => setStandings(r.data)).catch(console.error),
+    ]);
   }, [id]);
 
   // Spectators park this page on a phone and look back at it between rallies, so
   // it has to move on its own the way the live board does.
-  useEffect(() => { load(); }, [load]);
-  useEffect(() => {
-    const i = setInterval(load, 5000);
-    return () => clearInterval(i);
-  }, [load]);
+  usePolling(load, 5000, id);
 
   if (!data) return <div className="min-h-screen bg-[#0a1628] flex items-center justify-center"><Loader className="" /></div>;
 

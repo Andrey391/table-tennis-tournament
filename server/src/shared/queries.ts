@@ -17,6 +17,17 @@ export const matchInclude = {
 };
 
 // How many participants a feed card shows faces for; `_count` says how many more.
+// An event's own page (GET /tournaments/:id and the demo reset). The organizer's
+// `isDemo` is there so the demo-seat lookup only runs for a demo event; the
+// route strips it before answering.
+export const tournamentDetailInclude = {
+  organizer: { select: { id: true, firstName: true, lastName: true, isDemo: true } },
+  club: { select: clubSelect },
+  players: { include: { user: { select: playerSelect } }, orderBy: { seed: "asc" as const } },
+  byes: { include: { user: { select: playerSelect } } },
+  matches: { include: matchInclude, orderBy: [{ round: "asc" as const }, { matchIndex: "asc" as const }] },
+};
+
 export const FEED_PLAYERS = 4;
 
 // "9/9 players" counts approved participants only — pending requests don't fill the tournament.

@@ -1,5 +1,6 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useEffect, useState, useRef, useCallback } from "react";
+import { usePolling } from "../lib/usePolling";
 import { apiService } from "../services/api";
 import Loader from "../components/Loader";
 import { useT } from "../i18n";
@@ -16,14 +17,26 @@ export default function TournamentChatPage() {
   const [error, setError] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // After the first page, each poll asks only for what is newer than the last
+  // message on screen and appends it (by id, so a message never shows twice).
+  const lastAt = useRef<string | undefined>(undefined);
   const load = useCallback(async () => {
     if (!id) return;
-    try { const r = await apiService.tournaments.getChat(id); setMessages(r.data); }
+    try {
+      const r = await apiService.tournaments.getChat(id, lastAt.current);
+      const fresh: any[] = r.data;
+      if (fresh.length) lastAt.current = fresh[fresh.length - 1].createdAt;
+      setMessages(m => {
+        if (!m) return fresh;
+        const known = new Set(m.map(x => x.id));
+        const added = fresh.filter(x => !known.has(x.id));
+        return added.length ? [...m, ...added] : m;
+      });
+    }
     catch (e: any) { setError(e.response?.data?.error || t("common.failed")); setMessages(m => m ?? []); }
   }, [id]);
 
-  useEffect(() => { load(); }, [load]);
-  useEffect(() => { const i = setInterval(load, 3000); return () => clearInterval(i); }, [load]);
+  usePolling(load, 3000, id);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages?.length]);
 
   const send = async (e: React.FormEvent) => {

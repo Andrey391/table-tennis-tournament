@@ -12,6 +12,7 @@ import { tourDone, requestClaim, rememberDemoTournament } from "../lib/tour";
 import { formatEventDay, formatTimeRange, playerName, matchScoreLine, formatDelta, deltaTone, formatRating } from "../lib/format";
 import EmptyState from "../components/EmptyState";
 import { useConfirm } from "../components/ConfirmDialog";
+import { usePolling } from "../lib/usePolling";
 
 export default function TournamentPage() {
   const { id } = useParams<{ id: string }>();
@@ -34,13 +35,27 @@ export default function TournamentPage() {
   const [error, setError] = useState("");
   const [tiebreak, setTiebreak] = useState<"buchholz" | "sonnebornberger">("buchholz");
 
-  const load = () => {
+  // The table only moves when a match is settled or reopened, or the roster
+  // changes — so it is re-read when that fingerprint of the event changes, not
+  // on every poll. It is the heavier of the two requests (every completed match).
+  const standingsKey = useRef("");
+  const load = async () => {
     if (!id) return;
-    apiService.tournaments.getById(id).then(r => setTournament(r.data)).catch(console.error);
-    apiService.tournaments.standings(id, tiebreak).then(r => setStandings(r.data)).catch(console.error);
+    try {
+      // First load (or a new tiebreak): nothing to compare with, so both at once.
+      const early = standingsKey.current.startsWith(`${tiebreak}|`) ? null : apiService.tournaments.standings(id, tiebreak);
+      const { data } = await apiService.tournaments.getById(id);
+      setTournament(data);
+      const key = [tiebreak, ...(data.matches || []).filter((m: any) => m.status === "COMPLETED").map((m: any) => `${m.id}:${m.setsWon1}:${m.setsWon2}`),
+        ...(data.players || []).map((p: any) => `${p.userId}:${p.status}`)].join("|");
+      if (key !== standingsKey.current) {
+        const r = await (early ?? apiService.tournaments.standings(id, tiebreak));
+        standingsKey.current = key;
+        setStandings(r.data);
+      }
+    } catch (e) { console.error(e); }
   };
 
-  useEffect(load, [id, tiebreak]);
   // A demo visitor who opens their event from anywhere — a link, the feed, a
   // reload — makes it the one the Dashboard and the tour offer to return to.
   useEffect(() => {
@@ -49,16 +64,14 @@ export default function TournamentPage() {
   // Participants keep this page open during the event and expect it to move on its
   // own when the manager pairs a new round; without a poll it froze at whatever
   // was on screen when they opened it.
-  useEffect(() => {
-    const i = setInterval(load, 5000);
-    return () => clearInterval(i);
-  }, [id, tiebreak]);
+  usePolling(load, 5000, `${id}|${tiebreak}`);
   // GET /players carries emails and stays behind auth; it also only feeds the
-  // manager's "add players" picker, so a guest has no reason to ask for it.
+  // manager's "add players" picker — the whole player list, so it is fetched when
+  // the picker opens rather than by everyone who opens the event.
   useEffect(() => {
-    if (isGuest) return;
+    if (isGuest || !showAdd) return;
     apiService.players.getAll().then(r => setAllPlayers(r.data)).catch(console.error);
-  }, [isGuest]);
+  }, [isGuest, showAdd]);
   useEffect(() => { apiService.clubs.getAll().then(r => setClubs(r.data)).catch(console.error); }, []);
   // Participants keep this page open between rounds; when the manager pairs the
   // next one, say so (and buzz the phone) rather than let it change silently.

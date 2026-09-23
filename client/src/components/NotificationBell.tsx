@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { apiService } from "../services/api";
 import { useAuth } from "../context/AuthContext";
+import { usePolling } from "../lib/usePolling";
 import { useT } from "../i18n";
 import { AppNotification, notificationText, notificationsChanged, onNotificationsChanged } from "../lib/notifications";
 
@@ -39,14 +40,9 @@ export default function NotificationBell() {
     } catch { /* offline for a moment; the next poll will catch up */ }
   }, [user, location.pathname]);
 
-  useEffect(() => {
-    check();
-    const id = setInterval(check, POLL_MS);
-    const onFocus = () => { if (document.visibilityState === "visible") check(); };
-    document.addEventListener("visibilitychange", onFocus);
-    const off = onNotificationsChanged(check);
-    return () => { clearInterval(id); document.removeEventListener("visibilitychange", onFocus); off(); };
-  }, [check]);
+  // Paused while the app is in the background, checked at once on return.
+  usePolling(check, POLL_MS, user?.id, !!user);
+  useEffect(() => onNotificationsChanged(check), [check]);
 
   useEffect(() => {
     if (!toast) return;

@@ -1,7 +1,8 @@
 import { useParams } from "react-router-dom";
-import { useEffect, useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { apiService } from "../services/api";
 import Loader from "../components/Loader";
+import { usePolling } from "../lib/usePolling";
 import { useT } from "../i18n";
 import { playerName, setsPlayed } from "../lib/format";
 
@@ -16,8 +17,7 @@ export default function LiveScore() {
     catch (e) { console.error(e); setMatches(m => m ?? []); }
   }, [tournamentId]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
-  useEffect(() => { const i = setInterval(fetchData, 2000); return () => clearInterval(i); }, [fetchData]);
+  usePolling(fetchData, 2000, tournamentId);
 
   return (
     <div className="min-h-screen bg-[#0a1628] p-3">
