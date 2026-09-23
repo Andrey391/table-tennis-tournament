@@ -9,14 +9,14 @@ async function main() {
   const admin = await prisma.user.upsert({
     where: { email: "admin@localhost" },
     update: {},
-    create: { email: "admin@localhost", password, firstName: "Admin", lastName: "Admin", role: "ADMIN", club: "System", city: "Moscow" },
+    create: { email: "admin@localhost", password, firstName: "Admin", lastName: "Admin", role: "ADMIN", city: "Moscow" },
   });
   console.log("Admin user:", admin.email);
 
   const organizer = await prisma.user.upsert({
     where: { email: "organizer@localhost" },
     update: {},
-    create: { email: "organizer@localhost", password, firstName: "Organizer", lastName: "User", role: "ORGANIZER", club: "System", city: "Moscow" },
+    create: { email: "organizer@localhost", password, firstName: "Organizer", lastName: "User", role: "ORGANIZER", city: "Moscow" },
   });
   console.log("Organizer user:", organizer.email);
 
@@ -36,18 +36,18 @@ async function main() {
   console.log(`Club: ${club.name} (${club.city}) with 4 tables`);
 
   const playerNames = [
-    { firstName: "Ivan", lastName: "Petrov", club: "Moscow TT", city: "Moscow" },
-    { firstName: "Sergei", lastName: "Ivanov", club: "St. Petersburg TT", city: "St. Petersburg" },
-    { firstName: "Dmitry", lastName: "Sidorov", club: "Kazan TT", city: "Kazan" },
-    { firstName: "Alexei", lastName: "Smirnov", club: "Novosibirsk TT", city: "Novosibirsk" },
-    { firstName: "Nikolai", lastName: "Kuznetsov", club: "Moscow TT", city: "Moscow" },
-    { firstName: "Andrei", lastName: "Popov", club: "Samara TT", city: "Samara" },
-    { firstName: "Pavel", lastName: "Volkov", club: "Nizhny Novgorod TT", city: "Nizhny Novgorod" },
-    { firstName: "Maxim", lastName: "Novikov", club: "Yekaterinburg TT", city: "Yekaterinburg" },
-    { firstName: "Viktor", lastName: "Morozov", club: "Chelyabinsk TT", city: "Chelyabinsk" },
-    { firstName: "Alexander", lastName: "Lebedev", club: "Rostov TT", city: "Rostov" },
-    { firstName: "Mikhail", lastName: "Sokolov", club: "Krasnodar TT", city: "Krasnodar" },
-    { firstName: "Eugene", lastName: "Fedorov", club: "Voronezh TT", city: "Voronezh" },
+    { firstName: "Ivan", lastName: "Petrov", city: "Moscow" },
+    { firstName: "Sergei", lastName: "Ivanov", city: "St. Petersburg" },
+    { firstName: "Dmitry", lastName: "Sidorov", city: "Kazan" },
+    { firstName: "Alexei", lastName: "Smirnov", city: "Novosibirsk" },
+    { firstName: "Nikolai", lastName: "Kuznetsov", city: "Moscow" },
+    { firstName: "Andrei", lastName: "Popov", city: "Samara" },
+    { firstName: "Pavel", lastName: "Volkov", city: "Nizhny Novgorod" },
+    { firstName: "Maxim", lastName: "Novikov", city: "Yekaterinburg" },
+    { firstName: "Viktor", lastName: "Morozov", city: "Chelyabinsk" },
+    { firstName: "Alexander", lastName: "Lebedev", city: "Rostov" },
+    { firstName: "Mikhail", lastName: "Sokolov", city: "Krasnodar" },
+    { firstName: "Eugene", lastName: "Fedorov", city: "Voronezh" },
   ];
 
   for (const p of playerNames) {
@@ -60,12 +60,11 @@ async function main() {
         firstName: p.firstName,
         lastName: p.lastName,
         role: "PLAYER",
-        club: p.club,
         city: p.city,
         rating: Math.floor(Math.random() * 400) + 100,
       },
     });
-    console.log(`Player: ${user.firstName} ${user.lastName} (${user.club})`);
+    console.log(`Player: ${user.firstName} ${user.lastName} (${user.city})`);
   }
 
   console.log("Seed completed!");

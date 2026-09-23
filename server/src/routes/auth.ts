@@ -13,7 +13,7 @@ export const authRouter = Router();
 // know about the account — `isDemo` above all, which decides whether the demo
 // banner and the tour show up — belongs here and nowhere else.
 const meSelect = {
-  id: true, email: true, firstName: true, lastName: true, role: true, club: true, city: true,
+  id: true, email: true, firstName: true, lastName: true, role: true, city: true,
   rating: true, dateOfBirth: true, phone: true, isDemo: true, demoExpiresAt: true,
 };
 
@@ -28,7 +28,7 @@ authRouter.post("/login", async (req: AuthenticatedRequest, res: Response) => {
     const token = generateToken(user.id, user.role);
     res.json({
       token,
-      user: { id: user.id, email: user.email, role: user.role, firstName: user.firstName, lastName: user.lastName, rating: user.rating, club: user.club },
+      user: { id: user.id, email: user.email, role: user.role, firstName: user.firstName, lastName: user.lastName, rating: user.rating },
     });
   } catch (err: any) {
     res.status(400).json({ error: publicError(err) });
@@ -48,7 +48,7 @@ authRouter.post("/register", async (req: AuthenticatedRequest, res: Response) =>
     const token = generateToken(user.id, user.role);
     res.status(201).json({
       token,
-      user: { id: user.id, email: user.email, role: user.role, firstName: user.firstName, lastName: user.lastName, rating: user.rating, club: user.club },
+      user: { id: user.id, email: user.email, role: user.role, firstName: user.firstName, lastName: user.lastName, rating: user.rating },
     });
   } catch (err: any) {
     if (err.code === "P2002") { res.status(400).json({ error: "An account with this email already exists" }); return; }

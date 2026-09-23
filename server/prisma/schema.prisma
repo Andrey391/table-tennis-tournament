@@ -42,7 +42,6 @@ model User {
   firstName        String
   lastName         String
   role             Role      @default(PLAYER)
-  club             String?
   city             String?
   // FNTR rating: fractional, because a win is worth (100 - gap) / 10 * KT points.
   rating           Float     @default(100)
@@ -76,14 +75,14 @@ model User {
   byes             RoundBye[]
   notifications    Notification[]
 
-  @@index([club])
   @@index([city])
   @@index([rating])
   @@index([demoExpiresAt])
 }
 
 // A venue with tables. Clubs are what bookings, subscriptions and tournaments point at —
-// the old free-text `club` string on User is now only a display-level "home club" note.
+// A player is not "in" a club: the only link between the two is following it (Subscription).
+// The old free-text User.club column is still in the database but no longer mapped.
 model Club {
   id            String   @id @default(uuid())
   name          String

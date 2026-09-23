@@ -59,7 +59,6 @@ export default function ProfilePage() {
       firstName: user?.firstName ?? "",
       lastName: user?.lastName ?? "",
       email: user?.email ?? "",
-      club: user?.club ?? "",
       city: user?.city ?? "",
       phone: user?.phone ?? "",
       dateOfBirth: toDateInput(user?.dateOfBirth),
@@ -81,7 +80,6 @@ export default function ProfilePage() {
         firstName: edit.firstName,
         lastName: edit.lastName,
         email: edit.email,
-        club: edit.club || null,
         city: edit.city || null,
         phone: edit.phone || null,
         // A date input gives a bare day; the API takes an ISO timestamp.
@@ -139,7 +137,6 @@ export default function ProfilePage() {
         </div>
         <h1 className="text-xl font-bold">{user?.firstName} {user?.lastName}</h1>
         <p className="text-sm text-[#6b84a0] mt-1">{user?.email}</p>
-        {user?.club && <p className="text-xs text-[#4d6480] mt-0.5">{user.club}</p>}
         <button onClick={() => (edit ? cancelEdit() : openEdit())} className="text-xs text-[#ccff00] font-medium mt-2">
           {edit ? t("common.cancel") : t("profile.edit")}
         </button>
@@ -164,15 +161,9 @@ export default function ProfilePage() {
             <label className={fieldLabel}>{t("auth.email")}</label>
             <input type="email" value={edit.email} onChange={e => setEdit({ ...edit, email: e.target.value })} className={field} required />
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className={fieldLabel}>{t("auth.club")}</label>
-              <input type="text" value={edit.club} onChange={e => setEdit({ ...edit, club: e.target.value })} className={field} />
-            </div>
-            <div>
-              <label className={fieldLabel}>{t("auth.city")}</label>
-              <input type="text" value={edit.city} onChange={e => setEdit({ ...edit, city: e.target.value })} className={field} />
-            </div>
+          <div>
+            <label className={fieldLabel}>{t("auth.city")}</label>
+            <input type="text" value={edit.city} onChange={e => setEdit({ ...edit, city: e.target.value })} className={field} />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>

@@ -81,7 +81,7 @@ export async function createDemoAccount(): Promise<DemoAccount> {
   const guestId = randomUUID();
   const opponents = DEMO_OPPONENTS.map((o) => ({
     ...o, id: randomUUID(), email: demoEmail(), password, role: "PLAYER" as const, city: "Москва",
-    club: "Демо-клуб", isDemo: true, demoOwnerId: guestId, demoExpiresAt: expiresAt,
+    isDemo: true, demoOwnerId: guestId, demoExpiresAt: expiresAt,
   }));
 
   const guestData = {

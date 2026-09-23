@@ -169,7 +169,6 @@ const DICT: Record<Lang, Record<string, string>> = {
 
     "rating.title": "Рейтинг",
     "rating.empty": "Пока никого нет в рейтинге",
-    "rating.noClub": "Без клуба",
     "rating.you": "Вы",
 
     "results.title": "Результаты",
@@ -278,7 +277,6 @@ const DICT: Record<Lang, Record<string, string>> = {
     "auth.createSubtitle": "Создайте аккаунт",
     "auth.firstName": "Имя",
     "auth.lastName": "Фамилия",
-    "auth.club": "Клуб",
     "auth.city": "Город",
     "auth.optional": "Необязательно",
     "auth.createAccount": "Создать аккаунт",
@@ -728,7 +726,6 @@ const DICT: Record<Lang, Record<string, string>> = {
 
     "rating.title": "Rating",
     "rating.empty": "No rated players yet",
-    "rating.noClub": "No club",
     "rating.you": "You",
 
     "results.title": "Results",
@@ -837,7 +834,6 @@ const DICT: Record<Lang, Record<string, string>> = {
     "auth.createSubtitle": "Create your account",
     "auth.firstName": "First name",
     "auth.lastName": "Last name",
-    "auth.club": "Club",
     "auth.city": "City",
     "auth.optional": "Optional",
     "auth.createAccount": "Create account",

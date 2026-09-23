@@ -30,7 +30,7 @@ export const apiService = {
     // The owner's own profile; a new password needs the current one alongside it.
     update: (id: string, d: {
       firstName?: string; lastName?: string; email?: string;
-      club?: string | null; city?: string | null; phone?: string | null; dateOfBirth?: string | null;
+      city?: string | null; phone?: string | null; dateOfBirth?: string | null;
       currentPassword?: string; newPassword?: string;
     }) => api.put(`/players/${id}`, d),
   },
