@@ -18,6 +18,9 @@ export const apiService = {
     demo: () => api.post("/auth/demo"),
     // Redeems a demo invitation link: takes the open seat in that event as a guest.
     joinDemo: (tournamentId: string) => api.post("/auth/demo/join", { tournamentId }),
+    // Forgot password: mail a 6-digit code, then trade it for a new password.
+    forgot: (email: string) => api.post("/auth/forgot", { email }),
+    reset: (d: { email: string; code: string; newPassword: string }) => api.post("/auth/reset", d),
     claim: (d: { email: string; password: string; firstName: string; lastName: string; city?: string }) => api.post("/auth/claim", d),
   },
   players: {

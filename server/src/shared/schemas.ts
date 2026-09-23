@@ -205,6 +205,14 @@ export const SelfRegisterSchema = z.object({
 // second one, so the event they ran comes with them.
 export const ClaimDemoSchema = SelfRegisterSchema;
 
+// "Forgot password": ask for a code, then trade it for a new password.
+export const ForgotPasswordSchema = z.object({ email: z.string().trim().min(1).max(200) });
+export const ResetPasswordSchema = z.object({
+  email: z.string().trim().min(1).max(200),
+  code: z.string().trim().regex(/^\d{6}$/, "The code is 6 digits"),
+  newPassword: z.string().min(6).max(200),
+});
+
 export const DemoJoinSchema = z.object({ tournamentId: z.string().min(1).max(100) });
 
 export const RegisterSchema = z.object({

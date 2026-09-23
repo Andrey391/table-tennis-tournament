@@ -4,6 +4,7 @@ import { PollingProvider } from "./context/SocketContext";
 import { LangProvider } from "./i18n";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import ForgotPassword from "./pages/ForgotPassword";
 import Dashboard from "./pages/Dashboard";
 import TournamentPage from "./pages/TournamentPage";
 import CreateTournament from "./pages/CreateTournament";
@@ -43,6 +44,7 @@ function App() {
           {/* The invitation to a demo match: open to anyone holding the link. */}
           <Route path="/demo/join/:id" element={<DemoJoin />} />
           <Route path="/register" element={token ? <Navigate to="/" /> : <Register />} />
+          <Route path="/forgot" element={token ? <Navigate to="/" /> : <ForgotPassword />} />
           {/* Guest-readable: the feed, the rating, results, events and their matches. */}
           <Route path="/" element={<Dashboard />} />
           <Route path="/players" element={<PlayersPage />} />

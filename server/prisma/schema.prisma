@@ -75,6 +75,7 @@ model User {
   createdClubs     Club[]    @relation("clubCreator")
   byes             RoundBye[]
   notifications    Notification[]
+  passwordResets   PasswordReset[]
 
   @@index([club])
   @@index([city])
@@ -364,6 +365,22 @@ model Notification {
   @@index([userId, createdAt])
   @@index([userId, readAt])
   @@index([tournamentId])
+}
+
+// A "forgot password" code sent by email (POST /auth/forgot). Only a bcrypt hash
+// of the 6-digit code is stored; it lives 15 minutes, burns after 5 wrong tries,
+// and a user has at most one at a time (a new request replaces the old one).
+model PasswordReset {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash  String
+  expiresAt DateTime
+  attempts  Int       @default(0)
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
 }
 
 model AuditLog {

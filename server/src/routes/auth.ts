@@ -2,9 +2,11 @@ import { Router, Response } from "express";
 import { publicError } from "../shared/errors";
 import { prisma } from "../config/db";
 import { AuthenticatedRequest, authMiddleware, generateToken } from "../middleware/auth";
-import { LoginSchema, SelfRegisterSchema, ClaimDemoSchema, DemoJoinSchema } from "../shared/schemas";
+import { LoginSchema, SelfRegisterSchema, ClaimDemoSchema, DemoJoinSchema, ForgotPasswordSchema, ResetPasswordSchema } from "../shared/schemas";
 import { createDemoAccount, sweepExpiredDemos, joinDemoSeat, DemoJoinError, DEMO_TTL_HOURS } from "../shared/demo";
+import { sendMail } from "../shared/mail";
 import bcrypt from "bcryptjs";
+import { randomInt } from "crypto";
 
 export const authRouter = Router();
 
@@ -111,6 +113,87 @@ authRouter.post("/claim", authMiddleware, async (req: AuthenticatedRequest, res:
     res.json({ user });
   } catch (err: any) {
     if (err.code === "P2002") { res.status(400).json({ error: "An account with this email already exists" }); return; }
+    res.status(400).json({ error: publicError(err) });
+  }
+});
+
+// --- Forgot password -------------------------------------------------------
+// Two steps: /forgot mails a 6-digit code, /reset trades it for a new password
+// and signs the user in. Only a hash of the code is kept (PasswordReset).
+const RESET_TTL_MIN = 15;
+const RESET_MAX_ATTEMPTS = 5;
+const RESET_RESEND_SEC = 60;
+
+// Addresses are stored as typed, so look them up case-insensitively. Demo and
+// seed accounts have addresses nobody can receive mail at.
+const findResettableUser = (email: string) => prisma.user.findFirst({
+  where: { email: { equals: email, mode: "insensitive" }, isDemo: false, NOT: [{ email: { endsWith: "@demo.local" } }, { email: { endsWith: "@localhost" } }] },
+  select: { id: true, email: true, firstName: true },
+});
+
+const escapeHtml = (s: string) => s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+
+// Always answers the same 200, whether or not the address has an account: the
+// form must not be a way to find out who is registered.
+authRouter.post("/forgot", async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { email } = ForgotPasswordSchema.parse(req.body);
+    const user = await findResettableUser(email);
+    if (user) {
+      const recent = await prisma.passwordReset.findFirst({
+        where: { userId: user.id, createdAt: { gt: new Date(Date.now() - RESET_RESEND_SEC * 1000) } },
+        select: { id: true },
+      });
+      if (!recent) {
+        const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
+        const codeHash = await bcrypt.hash(code, 10);
+        await prisma.passwordReset.deleteMany({ where: { userId: user.id } });
+        await prisma.passwordReset.create({ data: { userId: user.id, codeHash, expiresAt: new Date(Date.now() + RESET_TTL_MIN * 60 * 1000) } });
+        try {
+          await sendMail({
+            to: user.email,
+            subject: `Код для смены пароля: ${code}`,
+            text: `${user.firstName}, ваш код для смены пароля: ${code}
+
+Код действует ${RESET_TTL_MIN} минут. Если вы не запрашивали смену пароля, просто проигнорируйте это письмо.`,
+            html: `<p>${escapeHtml(user.firstName)}, ваш код для смены пароля:</p><p style="font-size:28px;font-weight:bold;letter-spacing:6px">${code}</p><p>Код действует ${RESET_TTL_MIN} минут. Если вы не запрашивали смену пароля, просто проигнорируйте это письмо.</p>`,
+          });
+        } catch (err) {
+          // A code nobody received is useless; drop it so the next request is not throttled.
+          console.error("password reset mail failed", err);
+          await prisma.passwordReset.deleteMany({ where: { userId: user.id } });
+          res.status(503).json({ error: "Could not send the email, try again later" });
+          return;
+        }
+      }
+    }
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(400).json({ error: publicError(err) });
+  }
+});
+
+authRouter.post("/reset", async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { email, code, newPassword } = ResetPasswordSchema.parse(req.body);
+    const invalid = () => res.status(400).json({ error: "Invalid or expired code" });
+    const user = await findResettableUser(email);
+    if (!user) { invalid(); return; }
+    const reset = await prisma.passwordReset.findFirst({
+      where: { userId: user.id, usedAt: null, expiresAt: { gt: new Date() }, attempts: { lt: RESET_MAX_ATTEMPTS } },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!reset) { invalid(); return; }
+    if (!(await bcrypt.compare(code, reset.codeHash))) {
+      await prisma.passwordReset.update({ where: { id: reset.id }, data: { attempts: { increment: 1 } } });
+      invalid();
+      return;
+    }
+    const password = await bcrypt.hash(newPassword, 10);
+    const updated = await prisma.user.update({ where: { id: user.id }, data: { password }, select: meSelect });
+    await prisma.passwordReset.deleteMany({ where: { userId: user.id } });
+    res.json({ token: generateToken(updated.id, updated.role), user: updated });
+  } catch (err: any) {
     res.status(400).json({ error: publicError(err) });
   }
 });

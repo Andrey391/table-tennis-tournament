@@ -24,12 +24,14 @@ interface AuthContextType {
   // link, as a guest of its own; resolves to the match to open, if one is paired.
   joinDemo: (tournamentId: string) => Promise<{ tournamentId: string; matchId: string | null }>;
   claimDemo: (data: any) => Promise<void>;
+  // Sets a new password with the code from the reset email and signs in.
+  resetPassword: (data: { email: string; code: string; newPassword: string }) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
   token: null, user: null, login: async () => {}, register: async () => {}, logout: () => {},
   refreshUser: async () => {}, setUser: () => {},
-  startDemo: async () => "", joinDemo: async () => ({ tournamentId: "", matchId: null }), claimDemo: async () => {},
+  startDemo: async () => "", joinDemo: async () => ({ tournamentId: "", matchId: null }), claimDemo: async () => {}, resetPassword: async () => {},
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -80,6 +82,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return data.tournamentId as string;
   };
 
+  const resetPassword = async (d: { email: string; code: string; newPassword: string }) => {
+    const { data } = await apiService.auth.reset(d);
+    setToken(data.token); localStorage.setItem("token", data.token); setUser(data.user);
+  };
+
   const joinDemo = async (tournamentId: string) => {
     const { data } = await apiService.auth.joinDemo(tournamentId);
     setToken(data.token); localStorage.setItem("token", data.token); setUser(data.user);
@@ -96,7 +103,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = () => { setToken(null); localStorage.removeItem("token"); setUser(null); forgetDemo(); };
 
   return (
-    <AuthContext.Provider value={{ token, user, login, register, logout, refreshUser, setUser, startDemo, joinDemo, claimDemo }}>
+    <AuthContext.Provider value={{ token, user, login, register, logout, refreshUser, setUser, startDemo, joinDemo, claimDemo, resetPassword }}>
       {children}
     </AuthContext.Provider>
   );
