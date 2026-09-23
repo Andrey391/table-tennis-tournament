@@ -129,11 +129,12 @@ export async function pressStep(id: string): Promise<boolean> {
   const el = usable(anchor());
   if (!el) return false;
   el.click();
-  if (id === "finish") {
-    // Ending a match asks first, in place; the visitor's "Next" answers it too.
+  if (id === "finish" || id === "pair") {
+    // Pairing a round and ending a match both ask first, in a dialog; the
+    // visitor's "Next" answers it too.
     for (let i = 0; i < 10; i++) {
       await sleep(100);
-      const confirm = usable(find('[data-tour="confirm-end"]'));
+      const confirm = usable(find('[data-tour="confirm-dialog"]'));
       if (confirm) { confirm.click(); return true; }
     }
     return false;

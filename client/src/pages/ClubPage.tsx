@@ -6,6 +6,7 @@ import Loader from "../components/Loader";
 import EmptyState from "../components/EmptyState";
 import EventCard from "../components/EventCard";
 import ClubScheduleModal from "../components/ClubScheduleModal";
+import { useConfirm } from "../components/ConfirmDialog";
 import { useAuth } from "../context/AuthContext";
 import { useT } from "../i18n";
 import { formatEventDay, playerName } from "../lib/format";
@@ -39,6 +40,7 @@ export default function ClubPage() {
   const [editPriceId, setEditPriceId] = useState<string | null>(null);
   const [priceInput, setPriceInput] = useState("");
   const [error, setError] = useState("");
+  const [confirm, confirmDialog] = useConfirm();
   // Re-rendered each minute so "free until" does not go stale on an open screen.
   const [now, setNow] = useState(() => new Date());
   useEffect(() => { const i = setInterval(() => setNow(new Date()), 60_000); return () => clearInterval(i); }, []);
@@ -111,6 +113,8 @@ export default function ClubPage() {
   };
 
   const removeTable = async (tableId: string) => {
+    const number = club.tables?.find((x: any) => x.id === tableId)?.number;
+    if (!(await confirm({ title: t("confirm.tableTitle", { n: number ?? "" }), text: t("confirm.tableText"), confirmLabel: t("common.delete"), danger: true }))) return;
     setError("");
     try { await apiService.clubs.removeTable(club.id, tableId); loadClub(); } catch (err) { fail(err); }
   };
@@ -312,6 +316,7 @@ export default function ClubPage() {
       )}
 
       <ClubScheduleModal open={showSchedule} onClose={() => setShowSchedule(false)} clubId={club.id} />
+      {confirmDialog}
     </Layout>
   );
 }

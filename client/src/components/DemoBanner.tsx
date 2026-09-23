@@ -3,6 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import { useT } from "../i18n";
 import { btnPrimary, field, fieldLabel } from "../lib/ui";
 import { onClaimRequested } from "../lib/tour";
+import { useConfirm } from "./ConfirmDialog";
 
 // Says out loud that this account is temporary, and offers the one thing that
 // makes it permanent. Claiming updates the account the visitor is already using,
@@ -15,6 +16,7 @@ export default function DemoBanner() {
   const [form, setForm] = React.useState({ email: "", password: "", firstName: "", lastName: "" });
   const [error, setError] = React.useState("");
   const [saving, setSaving] = React.useState(false);
+  const [confirm, confirmDialog] = useConfirm();
 
   // A screen that ran into the limits of a demo account asks for the form to be
   // opened here, rather than carrying its own copy of it.
@@ -50,7 +52,7 @@ export default function DemoBanner() {
           className="bg-[#ccff00] text-[#0a1628] px-3 py-1.5 rounded-lg text-xs font-bold shrink-0">
           {t("demo.keep")}
         </button>
-        <button onClick={logout} className="text-xs text-[#6b84a0] shrink-0">{t("demo.exit")}</button>
+        <button onClick={async () => { if (await confirm({ title: t("confirm.logoutTitle"), text: t("confirm.logoutDemoText"), confirmLabel: t("demo.exit"), danger: true })) logout(); }} className="text-xs text-[#6b84a0] shrink-0">{t("demo.exit")}</button>
       </div>
       {open && (
         <form onSubmit={submit} className="mt-3 space-y-3 pb-1">
@@ -80,6 +82,7 @@ export default function DemoBanner() {
           </button>
         </form>
       )}
+      {confirmDialog}
     </div>
   );
 }

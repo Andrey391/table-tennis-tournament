@@ -5,6 +5,7 @@ import Logo from "./Logo";
 import Avatar from "./Avatar";
 import DemoBanner from "./DemoBanner";
 import NotificationBell from "./NotificationBell";
+import { useConfirm } from "./ConfirmDialog";
 
 const HOME = { to: "/", label: "nav.home", d: "M3 10.5 12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" };
 const PLAY = { to: "/bookings", label: "nav.play", d: "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2M12 14v4M10 16h4" };
@@ -28,6 +29,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const isGuest = !token;
   const NAV = isGuest ? GUEST_NAV : MEMBER_NAV;
+  const [confirm, confirmDialog] = useConfirm();
+  // Leaving a demo throws the whole evening away; leaving a real account only
+  // means signing in again. Both ask, with the stakes spelled out.
+  const askLogout = async () => {
+    const demo = !!user?.isDemo;
+    if (await confirm({ title: t("confirm.logoutTitle"), text: t(demo ? "confirm.logoutDemoText" : "confirm.logoutText"), confirmLabel: t("nav.logout"), danger: demo })) logout();
+  };
 
   return (
     <div className="min-h-screen bg-[#0a1628] text-white flex flex-col">
@@ -43,7 +51,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <Link to="/profile" className="flex items-center gap-2">
               <Avatar firstName={user?.firstName} lastName={user?.lastName} rating={user?.rating} size="sm" />
             </Link>
-            <button onClick={logout} aria-label={t("nav.logout")}
+            <button onClick={askLogout} aria-label={t("nav.logout")}
               className="w-8 h-8 flex items-center justify-center text-[#93a8c2] hover:text-white border border-[#1c3350] rounded-full text-sm">
               &#x21B0;
             </button>
@@ -77,6 +85,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           })}
         </div>
       </nav>
+      {confirmDialog}
     </div>
   );
 }
