@@ -21,6 +21,7 @@ import TournamentChatPage from "./pages/TournamentChatPage";
 import GamesPage from "./pages/GamesPage";
 import PlayerPage from "./pages/PlayerPage";
 import DemoJoin from "./pages/DemoJoin";
+import NotificationsPage from "./pages/NotificationsPage";
 import Tour from "./components/Tour";
 
 // Wraps the screens that write something. Everything else is readable by a guest:
@@ -57,6 +58,7 @@ function App() {
           {/* Signed in: anything that books, creates, joins or says something. */}
           <Route path="/bookings" element={<RequireAuth><BookingsPage /></RequireAuth>} />
           <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
+          <Route path="/notifications" element={<RequireAuth><NotificationsPage /></RequireAuth>} />
           <Route path="/tournament/new" element={<RequireAuth><CreateTournament /></RequireAuth>} />
           <Route path="/tournament/:id/chat" element={<RequireAuth><TournamentChatPage /></RequireAuth>} />
           <Route path="/public/tournament/:id" element={<PublicTournament />} />

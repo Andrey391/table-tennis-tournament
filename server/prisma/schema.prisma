@@ -74,6 +74,7 @@ model User {
   chatMessages     ChatMessage[]
   createdClubs     Club[]    @relation("clubCreator")
   byes             RoundBye[]
+  notifications    Notification[]
 
   @@index([club])
   @@index([city])
@@ -340,6 +341,29 @@ model MatchSet {
 
   @@unique([matchId, index])
   @@index([matchId])
+}
+
+// Something that happened to this user while they were not looking: a join
+// request for their event, the next round paired, a match settled. Written by
+// `notify()` (server/src/shared/notify.ts) as a side effect of the route that
+// caused it. The text is not stored — only `type` and `params` — so the client
+// renders it in the reader's language. `tournamentId` is a plain column rather
+// than a relation: deleting an event must not have to clear anyone's inbox first.
+model Notification {
+  id           String    @id @default(uuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type         String
+  params       Json?
+  // In-app path the notification opens, e.g. /tournament/<id>.
+  link         String?
+  tournamentId String?
+  readAt       DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+  @@index([tournamentId])
 }
 
 model AuditLog {

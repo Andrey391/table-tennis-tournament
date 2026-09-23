@@ -33,6 +33,7 @@ BEGIN;
 --    pointing at these tables from anything left behind.
 -- ---------------------------------------------------------------------------
 
+DROP TABLE IF EXISTS "Notification" CASCADE;
 DROP TABLE IF EXISTS "ChatMessage" CASCADE;
 DROP TABLE IF EXISTS "MatchSet" CASCADE;
 DROP TABLE IF EXISTS "Game" CASCADE;
@@ -327,6 +328,23 @@ CREATE TABLE "ChatMessage" (
 CREATE INDEX "ChatMessage_tournamentId_idx" ON "ChatMessage"("tournamentId");
 ALTER TABLE "ChatMessage" ADD CONSTRAINT "ChatMessage_tournamentId_fkey" FOREIGN KEY ("tournamentId") REFERENCES "Tournament"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "ChatMessage" ADD CONSTRAINT "ChatMessage_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+CREATE TABLE "Notification" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "type" TEXT NOT NULL,
+    "params" JSONB,
+    "link" TEXT,
+    "tournamentId" TEXT,
+    "readAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "Notification_pkey" PRIMARY KEY ("id")
+);
+CREATE INDEX "Notification_userId_createdAt_idx" ON "Notification"("userId", "createdAt");
+CREATE INDEX "Notification_userId_readAt_idx" ON "Notification"("userId", "readAt");
+CREATE INDEX "Notification_tournamentId_idx" ON "Notification"("tournamentId");
+ALTER TABLE "Notification" ADD CONSTRAINT "Notification_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 CREATE TABLE "AuditLog" (
     "id" TEXT NOT NULL,

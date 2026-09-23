@@ -140,6 +140,11 @@ export const ChatMessageSchema = z.object({
   text: z.string().trim().min(1).max(1000),
 });
 
+// No `ids` marks the whole inbox read.
+export const MarkNotificationsReadSchema = z.object({
+  ids: z.array(z.string()).max(200).optional(),
+});
+
 export const AddPlayersSchema = z.object({
   userIds: z.array(z.string()).min(1),
 });

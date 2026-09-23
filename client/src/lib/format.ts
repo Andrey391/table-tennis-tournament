@@ -28,6 +28,19 @@ export function formatTimeRange(start?: string | Date | null, end?: string | Dat
   return end ? `${from} - ${formatClock(end, lang)}` : from;
 }
 
+// "5 минут назад" / "5 minutes ago" for anything within a week, the date after that.
+export function formatAgo(date: string | Date, lang: Lang): string {
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return "";
+  const seconds = Math.round((d.getTime() - Date.now()) / 1000);
+  const rtf = new Intl.RelativeTimeFormat(LOCALE[lang], { numeric: "auto" });
+  if (seconds > -60) return rtf.format(0, "second");
+  if (seconds > -3600) return rtf.format(Math.round(seconds / 60), "minute");
+  if (seconds > -86400) return rtf.format(Math.round(seconds / 3600), "hour");
+  if (seconds > -7 * 86400) return rtf.format(Math.round(seconds / 86400), "day");
+  return formatShortDate(d, lang);
+}
+
 // Turns "14:30" + 1.5h into "14:30 - 16:00" for booking rows.
 export function formatSlot(startTime: string, durationHours: number): string {
   const [h, m] = startTime.split(":").map(Number);

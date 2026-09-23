@@ -13,6 +13,7 @@ import { playerRouter, ratingRouter } from "./routes/players";
 import { liveRouter, publicRouter } from "./routes/public";
 import { statsRouter } from "./routes/stats";
 import { setupRouter } from "./routes/setup";
+import { notificationRouter } from "./routes/notifications";
 
 // The whole HTTP API, built once and shared by both deployments: server/src/index.ts
 // listens on a port with it (Render, local), api/index.ts exports it as the Vercel
@@ -52,6 +53,7 @@ export function createApp(options: { defaultClientUrl?: string } = {}) {
   app.use("/api/subscriptions", subscriptionRouter);
   app.use("/api/profile", profileRouter);
   app.use("/api/clubs", clubRouter);
+  app.use("/api/notifications", notificationRouter);
   app.use("/api", statsRouter);
   app.use("/api/players", playerRouter);
   app.use("/api/rating", ratingRouter);
