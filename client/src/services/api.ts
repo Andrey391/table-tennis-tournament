@@ -96,7 +96,9 @@ export const apiService = {
     availability: (id: string, date: string) => api.get(`/clubs/${id}/availability`, { params: { date } }),
     create: (d: { name: string; city: string; address?: string; phone?: string }) => api.post("/clubs", d),
     update: (id: string, d: any) => api.put(`/clubs/${id}`, d),
-    addTable: (id: string, d: { number: number; indoor?: boolean }) => api.post(`/clubs/${id}/tables`, d),
+    addTable: (id: string, d: { number: number; indoor?: boolean; pricePerHour?: number }) => api.post(`/clubs/${id}/tables`, d),
+    updateTable: (id: string, tableId: string, d: { number?: number; indoor?: boolean; pricePerHour?: number | null }) =>
+      api.put(`/clubs/${id}/tables/${tableId}`, d),
     removeTable: (id: string, tableId: string) => api.delete(`/clubs/${id}/tables/${tableId}`),
   },
   bookings: {
@@ -108,6 +110,7 @@ export const apiService = {
       tablesCount?: number; isPublic?: boolean; access?: "OPEN" | "CLOSED"; maxPlayers?: number; minRating?: number; maxRating?: number; ratingWeight?: number;
     }) => api.post("/bookings", d),
     remove: (id: string) => api.delete(`/bookings/${id}`),
+    pay: (id: string) => api.post(`/bookings/${id}/pay`),
   },
   subscriptions: {
     getMine: () => api.get("/subscriptions/mine"),

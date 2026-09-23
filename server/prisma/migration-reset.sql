@@ -73,6 +73,7 @@ DROP TYPE IF EXISTS "MatchType";
 CREATE TYPE "Role" AS ENUM ('ADMIN', 'ORGANIZER', 'JUDGE', 'PLAYER', 'VIEWER');
 CREATE TYPE "PlayerStatus" AS ENUM ('PENDING', 'REGISTERED', 'WITHDRAWN', 'DISQUALIFIED');
 CREATE TYPE "MatchStatus" AS ENUM ('NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED');
+CREATE TYPE "PaymentStatus" AS ENUM ('UNPAID', 'PAID', 'REFUNDED');
 
 -- ---------------------------------------------------------------------------
 -- 3. Tables, parents first.
@@ -136,6 +137,7 @@ CREATE TABLE "ClubTable" (
     "clubId" TEXT NOT NULL,
     "number" INTEGER NOT NULL,
     "indoor" BOOLEAN NOT NULL DEFAULT true,
+    "pricePerHour" DOUBLE PRECISION,
 
     CONSTRAINT "ClubTable_pkey" PRIMARY KEY ("id")
 );
@@ -269,7 +271,8 @@ CREATE UNIQUE INDEX "MatchSet_matchId_index_key" ON "MatchSet"("matchId", "index
 CREATE INDEX "MatchSet_matchId_idx" ON "MatchSet"("matchId");
 ALTER TABLE "MatchSet" ADD CONSTRAINT "MatchSet_matchId_fkey" FOREIGN KEY ("matchId") REFERENCES "Match"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
--- A table reservation. No payment processing — this is just a record.
+-- A table reservation, optionally paid: "priceTotal" snapshots the table's
+-- pricePerHour x durationHours at booking time, null when the table is free.
 CREATE TABLE "Booking" (
     "id" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
@@ -280,6 +283,9 @@ CREATE TABLE "Booking" (
     "durationHours" DOUBLE PRECISION NOT NULL DEFAULT 1,
     "tournamentId" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "priceTotal" DOUBLE PRECISION,
+    "paymentStatus" "PaymentStatus" NOT NULL DEFAULT 'UNPAID',
+    "paymentRef" TEXT,
 
     CONSTRAINT "Booking_pkey" PRIMARY KEY ("id")
 );

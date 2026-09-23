@@ -24,6 +24,9 @@ export default function ClubsPage() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [details, setDetails] = useState<Record<string, any>>({});
   const [newTable, setNewTable] = useState("");
+  const [newTablePrice, setNewTablePrice] = useState("");
+  const [editPriceId, setEditPriceId] = useState<string | null>(null);
+  const [priceInput, setPriceInput] = useState("");
   const [editClub, setEditClub] = useState<{ name: string; city: string; address: string; phone: string } | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [newClub, setNewClub] = useState({ name: "", city: "", address: "", phone: "" });
@@ -78,8 +81,9 @@ export default function ClubsPage() {
     if (!newTable) return;
     setError("");
     try {
-      await apiService.clubs.addTable(id, { number: +newTable });
+      await apiService.clubs.addTable(id, { number: +newTable, ...(newTablePrice ? { pricePerHour: +newTablePrice } : {}) });
       setNewTable("");
+      setNewTablePrice("");
       refreshDetail(id);
       load();
     } catch (err: any) { setError(err.response?.data?.error || t("common.failed")); }
@@ -91,6 +95,15 @@ export default function ClubsPage() {
       await apiService.clubs.removeTable(clubId, tableId);
       refreshDetail(clubId);
       load();
+    } catch (err: any) { setError(err.response?.data?.error || t("common.failed")); }
+  };
+
+  const savePrice = async (clubId: string, tableId: string) => {
+    setError("");
+    try {
+      await apiService.clubs.updateTable(clubId, tableId, { pricePerHour: priceInput ? +priceInput : null });
+      setEditPriceId(null);
+      refreshDetail(clubId);
     } catch (err: any) { setError(err.response?.data?.error || t("common.failed")); }
   };
 
@@ -193,6 +206,14 @@ export default function ClubsPage() {
                               {detail.tables.map((tbl: any) => (
                                 <span key={tbl.id} className="flex items-center gap-1.5 bg-[#0a1628] border border-[#1c3350] rounded-full pl-3 pr-1.5 py-1 text-xs text-[#93a8c2]">
                                   &#8470;{tbl.number}
+                                  {isOwner ? (
+                                    <button type="button" onClick={() => { setEditPriceId(tbl.id); setPriceInput(tbl.pricePerHour != null ? String(tbl.pricePerHour) : ""); }}
+                                      className="text-[#ccff00]">
+                                      {tbl.pricePerHour != null ? `${tbl.pricePerHour} ${t("play.perHour")}` : t("play.editPrice")}
+                                    </button>
+                                  ) : tbl.pricePerHour != null ? (
+                                    <span>{tbl.pricePerHour} {t("play.perHour")}</span>
+                                  ) : null}
                                   {isOwner && (
                                     <button type="button" onClick={() => removeTable(c.id, tbl.id)} aria-label={t("play.removeTable")} className="text-[#6b84a0] px-1">&times;</button>
                                   )}
@@ -202,10 +223,20 @@ export default function ClubsPage() {
                           ) : (
                             <p className="text-xs text-[#4d6480] mb-2">{t("play.noTables")}</p>
                           )}
+                          {isOwner && editPriceId && detail.tables?.some((tbl: any) => tbl.id === editPriceId) && (
+                            <div className="flex gap-2 mb-2">
+                              <input type="number" min={0} step="0.01" placeholder={t("play.tablePrice")} value={priceInput} onChange={e => setPriceInput(e.target.value)}
+                                className={field + " flex-1"} />
+                              <button type="button" onClick={() => savePrice(c.id, editPriceId)} className={`${btnSecondary} shrink-0`}>{t("common.save")}</button>
+                              <button type="button" onClick={() => setEditPriceId(null)} className="text-xs text-[#6b84a0] px-1">{t("common.cancel")}</button>
+                            </div>
+                          )}
                           {isOwner ? (
                             <div className="flex gap-2">
                               <input type="number" min={1} placeholder={t("play.tableNumber")} value={newTable} onChange={e => setNewTable(e.target.value)}
                                 className={field + " flex-1"} />
+                              <input type="number" min={0} step="0.01" placeholder={t("play.tablePrice")} value={newTablePrice} onChange={e => setNewTablePrice(e.target.value)}
+                                className={field + " w-28 shrink-0"} />
                               <button type="button" onClick={() => addTable(c.id)} disabled={!newTable} className={`${btnSecondary} shrink-0`}>
                                 {t("play.addTable")}
                               </button>

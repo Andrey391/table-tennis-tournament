@@ -6,18 +6,22 @@ import { CreateBookingSchema } from "../shared/schemas";
 import { startOfUtcDay, bookingStartsAt, bookingEndsAt, countFreeTables, findNextFreeSlot } from "../shared/booking";
 import { findBookingConflict } from "./clubs";
 import { bookingInclude } from "../shared/queries";
+import { computeBookingPrice, initiatePayment } from "../shared/payments";
 
 export const bookingRouter = Router();
 
-// Table reservations — no payment processing, this just records who booked what/when.
+// Table reservations. A booking against a table with no pricePerHour is free,
+// exactly as it always was; one against a priced table records priceTotal and
+// starts out UNPAID (see shared/payments.ts for how it gets marked PAID).
 bookingRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const data = CreateBookingSchema.parse(req.body);
     const club = await prisma.club.findUnique({ where: { id: data.clubId } });
     if (!club) { res.status(404).json({ error: "Club not found" }); return; }
 
+    let table = null as Awaited<ReturnType<typeof prisma.clubTable.findUnique>>;
     if (data.tableId) {
-      const table = await prisma.clubTable.findUnique({ where: { id: data.tableId } });
+      table = await prisma.clubTable.findUnique({ where: { id: data.tableId } });
       if (!table || table.clubId !== club.id) { res.status(400).json({ error: "This table doesn't belong to the club" }); return; }
     }
 
@@ -77,10 +81,13 @@ bookingRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, res: R
       // The organiser is a participant of their own event from the start.
       await tx.tournamentUser.create({ data: { tournamentId: event.id, userId, status: "REGISTERED" } });
 
+      const priceTotal = computeBookingPrice(table, data.durationHours);
+
       return tx.booking.create({
         data: {
           clubId: club.id, tableId: data.tableId, date, startTime: data.startTime,
           durationHours: data.durationHours, userId, tournamentId: event.id,
+          priceTotal, paymentStatus: priceTotal ? "UNPAID" : "PAID",
         },
         include: bookingInclude,
       });
@@ -99,6 +106,32 @@ bookingRouter.get("/mine", authMiddleware, async (req: AuthenticatedRequest, res
     orderBy: [{ date: "asc" }, { startTime: "asc" }],
   });
   res.json(bookings);
+});
+
+// Starts (and, under the mock provider, immediately completes) payment for an
+// UNPAID booking. Only the booking's own owner can pay for it — nobody should
+// be able to trigger a charge against someone else's reservation.
+bookingRouter.post("/:id/pay", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const booking = await prisma.booking.findUnique({ where: { id: req.params.id } });
+    if (!booking) { res.status(404).json({ error: "Not found" }); return; }
+    if (booking.userId !== req.user!.userId) { res.status(403).json({ error: "Not your booking" }); return; }
+    if (booking.paymentStatus !== "UNPAID") { res.status(400).json({ error: `Booking is already ${booking.paymentStatus.toLowerCase()}` }); return; }
+    if (!booking.priceTotal) { res.status(400).json({ error: "This booking has no price to pay" }); return; }
+
+    const intent = await initiatePayment(booking);
+    // A real provider confirms asynchronously via its own webhook, which would
+    // call this same update after verifying the charge — never on a client's
+    // say-so. The mock provider has no async leg, so it confirms right here.
+    const updated = await prisma.booking.update({
+      where: { id: booking.id },
+      data: { paymentRef: intent.paymentRef, ...(intent.redirectUrl ? {} : { paymentStatus: "PAID" }) },
+      include: bookingInclude,
+    });
+    res.json({ booking: updated, redirectUrl: intent.redirectUrl });
+  } catch (err: any) {
+    res.status(400).json({ error: publicError(err) });
+  }
 });
 
 bookingRouter.delete("/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {

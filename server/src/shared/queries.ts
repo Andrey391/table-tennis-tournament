@@ -35,7 +35,7 @@ export const feedInclude = {
 
 export const bookingInclude = {
   club: { select: clubSelect },
-  table: { select: { id: true, number: true, indoor: true } },
+  table: { select: { id: true, number: true, indoor: true, pricePerHour: true } },
   tournament: { select: { id: true, kind: true, name: true, status: true } },
 };
 

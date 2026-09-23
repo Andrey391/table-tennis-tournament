@@ -29,6 +29,12 @@ enum MatchStatus {
   CANCELLED
 }
 
+enum PaymentStatus {
+  UNPAID
+  PAID
+  REFUNDED
+}
+
 model User {
   id               String    @id @default(uuid())
   email            String    @unique
@@ -102,6 +108,10 @@ model ClubTable {
   club     Club      @relation(fields: [clubId], references: [id], onDelete: Cascade)
   number   Int
   indoor   Boolean   @default(true)
+  // Optional — a table with no price is booked for free, same as before this
+  // field existed. Set by the club manager; a booking snapshots it into
+  // Booking.priceTotal so a later price change doesn't reshape past bookings.
+  pricePerHour Float?
   bookings Booking[]
 
   @@unique([clubId, number])
@@ -182,6 +192,13 @@ model Booking {
   tournamentId  String?
   tournament    Tournament? @relation(fields: [tournamentId], references: [id])
   createdAt     DateTime   @default(now())
+  // Snapshot of tableId's pricePerHour x durationHours at booking time — null
+  // when the table (or club) has no price set, which keeps every booking made
+  // before pricing existed, and every free table, exactly as free as they were.
+  priceTotal    Float?
+  paymentStatus PaymentStatus @default(UNPAID)
+  // Opaque id handed back by whichever payment provider confirmed this booking.
+  paymentRef    String?
 
   @@index([userId])
   @@index([clubId, date])

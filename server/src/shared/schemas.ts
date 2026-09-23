@@ -67,6 +67,15 @@ export const UpdateClubSchema = CreateClubSchema.partial();
 export const CreateClubTableSchema = z.object({
   number: z.number().int().min(1).max(200),
   indoor: z.boolean().default(true),
+  // Per-hour price, in the club's local currency. Omitted/null means the
+  // table is free to book, same as before this field existed.
+  pricePerHour: z.number().min(0).max(100000).optional(),
+});
+
+export const UpdateClubTableSchema = z.object({
+  number: z.number().int().min(1).max(200).optional(),
+  indoor: z.boolean().optional(),
+  pricePerHour: z.number().min(0).max(100000).nullable().optional(),
 });
 
 // Booking a table always books it *for* something: either a casual game or a
