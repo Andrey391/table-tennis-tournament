@@ -430,5 +430,21 @@ ALTER TABLE "TournamentUser" ADD COLUMN IF NOT EXISTS "ratingStart" DOUBLE PRECI
 -- should do behind your back. Remove them by hand once you have checked they
 -- hold nothing you want.
 
+-- ---------------------------------------------------------------------------
+-- 18. Paid table bookings. A ClubTable with no "pricePerHour" is booked for
+-- free exactly as before this section existed. A booking snapshots the price
+-- into "priceTotal" at creation time so a later price change never reshapes a
+-- past booking, and tracks whether it has actually been paid for.
+-- ---------------------------------------------------------------------------
+
+DO $$ BEGIN
+  CREATE TYPE "PaymentStatus" AS ENUM ('UNPAID', 'PAID', 'REFUNDED');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+ALTER TABLE "ClubTable" ADD COLUMN IF NOT EXISTS "pricePerHour" DOUBLE PRECISION;
+ALTER TABLE "Booking" ADD COLUMN IF NOT EXISTS "priceTotal" DOUBLE PRECISION;
+ALTER TABLE "Booking" ADD COLUMN IF NOT EXISTS "paymentStatus" "PaymentStatus" NOT NULL DEFAULT 'UNPAID';
+ALTER TABLE "Booking" ADD COLUMN IF NOT EXISTS "paymentRef" TEXT;
+
 
 COMMIT;

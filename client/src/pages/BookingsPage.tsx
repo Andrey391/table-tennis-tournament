@@ -46,6 +46,15 @@ export default function BookingsPage() {
     try { await apiService.bookings.remove(id); load(); } catch (err: any) { setError(err.response?.data?.error || t("common.failed")); }
   };
 
+  const [payingId, setPayingId] = useState<string | null>(null);
+  const payBooking = async (id: string) => {
+    setPayingId(id);
+    setError("");
+    try { await apiService.bookings.pay(id); load(); }
+    catch (err: any) { setError(err.response?.data?.error || t("play.payFailed")); }
+    finally { setPayingId(null); }
+  };
+
   const subscribe = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!subClubId) return;
@@ -93,8 +102,21 @@ export default function BookingsPage() {
                       {t(b.tournament.kind === "GAME" ? "play.opensGame" : "play.opensTournament")}: {b.tournament.name}
                     </Link>
                   )}
+                  {b.priceTotal != null && (
+                    <p className="text-xs mt-1">
+                      <span className="text-[#93a8c2]">{t("play.bookingPrice")}: {b.priceTotal} {t("play.currency")}</span>{" "}
+                      {b.paymentStatus === "PAID" && <span className="text-[#ccff00]">&middot; {t("play.paid")}</span>}
+                    </p>
+                  )}
                 </div>
-                <button onClick={() => removeBooking(b.id)} className="text-red-400 text-xs px-2 py-1 shrink-0">{t("common.cancel")}</button>
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  {b.priceTotal != null && b.paymentStatus === "UNPAID" && (
+                    <button onClick={() => payBooking(b.id)} disabled={payingId === b.id} className="text-[#ccff00] text-xs px-2 py-1 font-bold disabled:opacity-50">
+                      {payingId === b.id ? t("play.paying") : t("play.pay")}
+                    </button>
+                  )}
+                  <button onClick={() => removeBooking(b.id)} className="text-red-400 text-xs px-2 py-1">{t("common.cancel")}</button>
+                </div>
               </div>
             ))}
           </div>

@@ -2,7 +2,7 @@ import { Router, Response } from "express";
 import { publicError } from "../shared/errors";
 import { prisma } from "../config/db";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
-import { CreateClubSchema, UpdateClubSchema, CreateClubTableSchema } from "../shared/schemas";
+import { CreateClubSchema, UpdateClubSchema, CreateClubTableSchema, UpdateClubTableSchema } from "../shared/schemas";
 import { bookingsOverlap, startOfUtcDay } from "../shared/booking";
 import { queryString, cityIs, playerSelect } from "../shared/queries";
 import { normalizeCity, cityKey } from "../shared/city";
@@ -106,6 +106,21 @@ clubRouter.post("/:id/tables", authMiddleware, async (req: AuthenticatedRequest,
     const data = CreateClubTableSchema.parse(req.body);
     const table = await prisma.clubTable.create({ data: { ...data, clubId: club.id } });
     res.status(201).json(table);
+  } catch (err: any) {
+    if (err.code === "P2002") { res.status(400).json({ error: "This table number already exists at the club" }); return; }
+    res.status(400).json({ error: publicError(err) });
+  }
+});
+
+clubRouter.put("/:id/tables/:tableId", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const club = await loadOwnedClub(res, req.params.id, req.user!.userId);
+    if (!club) return;
+    const table = await prisma.clubTable.findUnique({ where: { id: req.params.tableId } });
+    if (!table || table.clubId !== club.id) { res.status(404).json({ error: "Not found" }); return; }
+    const data = UpdateClubTableSchema.parse(req.body);
+    const updated = await prisma.clubTable.update({ where: { id: table.id }, data });
+    res.json(updated);
   } catch (err: any) {
     if (err.code === "P2002") { res.status(400).json({ error: "This table number already exists at the club" }); return; }
     res.status(400).json({ error: publicError(err) });
