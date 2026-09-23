@@ -5,6 +5,7 @@ import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
 import { MatchSettingsSchema, SetResultSchema, ForfeitSchema } from "../shared/schemas";
 import { computeFntrMatchDelta, DEFAULT_RATING_WEIGHT, checkSetScore, checkCanEnd } from "../shared/scoring";
 import { playerSelect, matchInclude } from "../shared/queries";
+import { notify, eventAudience, shortName, NotificationType } from "../shared/notify";
 import AuditLog from "../models/AuditLog";
 
 export const matchRouter = Router();
@@ -41,10 +42,47 @@ const reload = (id: string) => prisma.match.findUnique({ where: { id }, include:
 
 // A tournament with no unresolved matches left is done — but the manager can always
 // start another round later, which flips it back to ACTIVE (see tournaments.ts /pair).
-async function maybeCompleteTournament(tournamentId: string) {
+async function maybeCompleteTournament(tournamentId: string, actorId?: string) {
   const unresolved = await prisma.match.count({ where: { tournamentId, status: { in: ["NOT_STARTED", "IN_PROGRESS"] } } });
   if (unresolved === 0) {
-    await prisma.tournament.updateMany({ where: { id: tournamentId, status: "ACTIVE" }, data: { status: "COMPLETED" } });
+    const { count } = await prisma.tournament.updateMany({ where: { id: tournamentId, status: "ACTIVE" }, data: { status: "COMPLETED" } });
+    // The final table is worth telling the room about for a tournament; a game's
+    // players already heard their result from the match itself.
+    const t = count ? await prisma.tournament.findUnique({ where: { id: tournamentId }, select: { name: true, kind: true } }) : null;
+    if (t?.kind === "TOURNAMENT") {
+      const audience = await eventAudience(tournamentId);
+      await notify(audience.map((userId) => ({ userId, type: "EVENT_COMPLETED" as const, tournamentId, link: `/tournament/${tournamentId}`, params: { event: t.name } })), actorId);
+    }
+  }
+}
+
+// Tells both players how their match was settled, from their own side of the
+// table: their score first and their own rating change. The one who pressed
+// "end" already knows and is skipped.
+async function notifyMatchResult(matchId: string, actorId: string | undefined, walkover: boolean) {
+  try {
+    const m = await prisma.match.findUnique({
+      where: { id: matchId },
+      include: { player1: { select: playerSelect }, player2: { select: playerSelect }, tournament: { select: { name: true } } },
+    });
+    if (!m || !m.player1Id || !m.player2Id || m.setsWon1 === m.setsWon2) return;
+    const p1Won = m.setsWon1 > m.setsWon2;
+    const forSide = (side: 1 | 2) => {
+      const won = (side === 1) === p1Won;
+      const type = walkover ? (won ? "WALKOVER_WON" : "WALKOVER_LOST") : (won ? "MATCH_WON" : "MATCH_LOST");
+      return {
+        userId: side === 1 ? m.player1Id! : m.player2Id!, type: type as NotificationType, tournamentId: m.tournamentId,
+        link: `/tournament/${m.tournamentId}/match/${m.id}`,
+        params: {
+          event: m.tournament?.name ?? "", opponent: shortName(side === 1 ? m.player2 : m.player1),
+          score: side === 1 ? `${m.setsWon1}:${m.setsWon2}` : `${m.setsWon2}:${m.setsWon1}`,
+          delta: won ? m.eloDelta : m.eloDeltaLoser,
+        },
+      };
+    };
+    await notify([forSide(1), forSide(2)], actorId);
+  } catch (err: any) {
+    console.error("[NOTIFY result]", err?.message);
   }
 }
 
@@ -123,7 +161,7 @@ export async function revertRatingUpdate(match: { player1Id: string | null; play
 // its points, or it is still open and the judge can press "end" again. (Marking it
 // COMPLETED first and moving the rating afterwards did exactly that: the request failed,
 // the screen never left the match, and the table showed no points.)
-async function finishMatch(match: { id: string; tournamentId: string; player1Id: string | null; player2Id: string | null; setsWon1: number; setsWon2: number; startedAt: Date | null; tournament: { kind: string; ratingWeight: number } | null }, rated = true) {
+async function finishMatch(match: { id: string; tournamentId: string; player1Id: string | null; player2Id: string | null; setsWon1: number; setsWon2: number; startedAt: Date | null; tournament: { kind: string; ratingWeight: number } | null }, rated = true, actorId?: string) {
   const tournament = { id: match.tournamentId, kind: match.tournament?.kind ?? "TOURNAMENT", ratingWeight: match.tournament?.ratingWeight ?? DEFAULT_RATING_WEIGHT };
   // Snapshot both ratings before the match moves them: the statistics judge a win by the
   // opponent's rating at the time, not by wherever it has drifted since.
@@ -157,7 +195,9 @@ async function finishMatch(match: { id: string; tournamentId: string; player1Id:
       where: { matchId: match.id, status: { not: "COMPLETED" } },
       data: { status: "CANCELLED", endedAt: new Date() },
     });
-    await maybeCompleteTournament(match.tournamentId);
+    // Only a walkover is unrated.
+    await notifyMatchResult(match.id, actorId, !rated);
+    await maybeCompleteTournament(match.tournamentId, actorId);
   } catch (err: any) {
     console.error("[FINISH]", err?.message);
   }
@@ -291,6 +331,11 @@ matchRouter.post("/:id/undo", authMiddleware, async (req: AuthenticatedRequest, 
       await prisma.match.update({ where: { id: match.id }, data: { status: "IN_PROGRESS", endedAt: null, eloDelta: null, eloDeltaLoser: null } });
       // The event was flipped to COMPLETED by this match; it is live again.
       await prisma.tournament.updateMany({ where: { id: match.tournamentId, status: "COMPLETED" }, data: { status: "ACTIVE" } });
+      // Both players were told the result, and the rating it moved is going back.
+      const t = await prisma.tournament.findUnique({ where: { id: match.tournamentId }, select: { name: true } });
+      await notify([match.player1Id, match.player2Id].filter((id): id is string => !!id).map((userId) => ({
+        userId, type: "MATCH_REOPENED" as const, tournamentId: match.tournamentId, link: `/tournament/${match.tournamentId}/match/${match.id}`, params: { event: t?.name ?? "" },
+      })), req.user!.userId);
     }
 
     await prisma.$transaction([
@@ -313,7 +358,7 @@ matchRouter.post("/:id/end", authMiddleware, async (req: AuthenticatedRequest, r
     if (match.status === "COMPLETED") { res.status(400).json({ error: "Match is already completed" }); return; }
     const endError = checkCanEnd(match.setsWon1, match.setsWon2);
     if (endError) { res.status(400).json({ error: endError }); return; }
-    await finishMatch(match);
+    await finishMatch(match, true, req.user!.userId);
     await AuditLog.create({ userId: req.user!.userId, action: "MATCH_END", entity: "Match", entityId: match.id, newValue: { setsWon1: match.setsWon1, setsWon2: match.setsWon2 } });
     res.json(await reload(match.id));
   } catch (err: any) {
@@ -353,8 +398,8 @@ matchRouter.post("/:id/forfeit", authMiddleware, async (req: AuthenticatedReques
       where: { id: match.id },
       include: { tournament: { select: { kind: true, ratingWeight: true } } },
     });
-    if (settled) await finishMatch({ ...settled, tournament: settled.tournament }, false);
-    else await maybeCompleteTournament(match.tournamentId);
+    if (settled) await finishMatch({ ...settled, tournament: settled.tournament }, false, req.user!.userId);
+    else await maybeCompleteTournament(match.tournamentId, req.user!.userId);
     await AuditLog.create({ userId: req.user!.userId, action: "MATCH_FORFEIT", entity: "Match", entityId: match.id, newValue: { loserSide } });
     res.json(await reload(match.id));
   } catch (err: any) {

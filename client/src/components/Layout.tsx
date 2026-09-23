@@ -4,6 +4,7 @@ import { useT } from "../i18n";
 import Logo from "./Logo";
 import Avatar from "./Avatar";
 import DemoBanner from "./DemoBanner";
+import NotificationBell from "./NotificationBell";
 
 const HOME = { to: "/", label: "nav.home", d: "M3 10.5 12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" };
 const PLAY = { to: "/bookings", label: "nav.play", d: "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2M12 14v4M10 16h4" };
@@ -38,6 +39,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </Link>
         ) : (
           <div className="flex items-center gap-2">
+            <NotificationBell />
             <Link to="/profile" className="flex items-center gap-2">
               <Avatar firstName={user?.firstName} lastName={user?.lastName} rating={user?.rating} size="sm" />
             </Link>

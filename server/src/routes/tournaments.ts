@@ -8,6 +8,7 @@ import { checkCanEnd } from "../shared/scoring";
 import { generateRoundPairings } from "../shared/scheduler";
 import { playerSelect, clubSelect, matchInclude, feedInclude, FEED_PLAYERS, standingsInclude, inCity, queryString } from "../shared/queries";
 import { hasOpenDemoSeat, resetDemoRound1 } from "../shared/demo";
+import { notify, notifyClubFollowers, eventAudience, shortName } from "../shared/notify";
 import AuditLog from "../models/AuditLog";
 
 export const tournamentRouter = Router();
@@ -41,6 +42,7 @@ tournamentRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, res
     // The organiser takes part in their own event.
     await prisma.tournamentUser.create({ data: { tournamentId: tournament.id, userId: req.user!.userId, status: "REGISTERED" } });
     await AuditLog.create({ userId: req.user!.userId, action: "TOURNAMENT_CREATE", entity: "Tournament", entityId: tournament.id, newValue: data });
+    await notifyClubFollowers(tournament, req.user!.userId);
     res.status(201).json(tournament);
   } catch (err: any) {
     res.status(400).json({ error: publicError(err) });
@@ -61,7 +63,7 @@ tournamentRouter.post("/quick-game", authMiddleware, async (req: AuthenticatedRe
     const endError = checkCanEnd(data.setsWon1, data.setsWon2);
     if (endError) { res.status(400).json({ error: endError }); return; }
     const [self, opponent] = await Promise.all([
-      prisma.user.findUnique({ where: { id: me }, select: { firstName: true } }),
+      prisma.user.findUnique({ where: { id: me }, select: { firstName: true, lastName: true } }),
       prisma.user.findUnique({ where: { id: data.opponentId }, select: { firstName: true } }),
     ]);
     if (!self || !opponent) { res.status(404).json({ error: "Player not found" }); return; }
@@ -92,6 +94,10 @@ tournamentRouter.post("/quick-game", authMiddleware, async (req: AuthenticatedRe
       return t;
     });
     await AuditLog.create({ userId: me, action: "QUICK_GAME", entity: "Tournament", entityId: game.id, newValue: data });
+    // It lands in the opponent's history and stats without them doing anything,
+    // so they should hear about it — and see the score from their side.
+    await notify([{ userId: data.opponentId, type: "QUICK_GAME", tournamentId: game.id, link: `/tournament/${game.id}`,
+      params: { name: shortName(self), score: `${data.setsWon2}:${data.setsWon1}` } }], me);
     res.status(201).json(game);
   } catch (err: any) {
     res.status(400).json({ error: publicError(err) });
@@ -258,6 +264,7 @@ tournamentRouter.delete("/:id", authMiddleware, async (req: AuthenticatedRequest
     const tournament = await loadOwnedTournament(res, req.params.id, req.user!.userId);
     if (!tournament) return;
     if (tournament.status === "COMPLETED") { res.status(400).json({ error: "Completed tournaments cannot be deleted — archive them instead" }); return; }
+    const audience = await eventAudience(tournament.id, true);
     await prisma.$transaction([
       prisma.booking.updateMany({ where: { tournamentId: tournament.id }, data: { tournamentId: null } }),
       prisma.chatMessage.deleteMany({ where: { tournamentId: tournament.id } }),
@@ -268,6 +275,10 @@ tournamentRouter.delete("/:id", authMiddleware, async (req: AuthenticatedRequest
       prisma.tournament.delete({ where: { id: tournament.id } }),
     ]);
     await AuditLog.create({ userId: req.user!.userId, action: "TOURNAMENT_DELETE", entity: "Tournament", entityId: tournament.id, oldValue: { name: tournament.name, kind: tournament.kind } });
+    // Everything the inbox said about the event now links to nothing; replace it
+    // with the one thing still true about it.
+    await prisma.notification.deleteMany({ where: { tournamentId: tournament.id } }).catch(() => {});
+    await notify(audience.map((userId) => ({ userId, type: "EVENT_DELETED" as const, tournamentId: tournament.id, params: { event: tournament.name, kind: tournament.kind } })), req.user!.userId);
     res.json({ ok: true });
   } catch (err: any) {
     res.status(400).json({ error: publicError(err) });
@@ -302,6 +313,7 @@ tournamentRouter.post("/:id/players", authMiddleware, async (req: AuthenticatedR
         })
       )
     );
+    await notify(affected.map((userId) => ({ userId, type: "ADDED_TO_EVENT" as const, tournamentId: tournament.id, link: `/tournament/${tournament.id}`, params: { event: tournament.name } })), req.user!.userId);
     res.status(201).json(created);
   } catch (err: any) {
     res.status(400).json({ error: publicError(err) });
@@ -337,18 +349,20 @@ tournamentRouter.post("/:id/join", authMiddleware, async (req: AuthenticatedRequ
       }
     }
 
-    if (previous) {
-      // Withdrawn (or rejected) earlier — turn the existing row back into a request.
-      const entry = await prisma.tournamentUser.update({
+    // Withdrawn (or rejected) earlier — turn the existing row back into a request.
+    const entry = previous
+      ? await prisma.tournamentUser.update({
         where: { tournamentId_userId: { tournamentId: tournament.id, userId: req.user!.userId } },
         data: { status: "PENDING" },
+      })
+      : await prisma.tournamentUser.create({
+        data: { tournamentId: req.params.id, userId: req.user!.userId, status: "PENDING" },
       });
-      res.status(201).json(entry);
-      return;
-    }
-    const entry = await prisma.tournamentUser.create({
-      data: { tournamentId: req.params.id, userId: req.user!.userId, status: "PENDING" },
-    });
+    // The request sits in the roster until the manager acts on it, and they will
+    // not open the event page on the off chance someone asked.
+    const requester = await prisma.user.findUnique({ where: { id: req.user!.userId }, select: { firstName: true, lastName: true } });
+    await notify([{ userId: tournament.organizerId, type: "JOIN_REQUEST", tournamentId: tournament.id, link: `/tournament/${tournament.id}`,
+      params: { event: tournament.name, name: shortName(requester) } }], req.user!.userId);
     res.status(201).json(entry);
   } catch (err: any) {
     if (err.code === "P2002") { res.status(400).json({ error: "Already requested to join" }); return; }
@@ -369,6 +383,7 @@ tournamentRouter.post("/:id/players/:userId/approve", authMiddleware, async (req
       where: { tournamentId_userId: { tournamentId: req.params.id, userId: req.params.userId } },
       data: { status: "REGISTERED" },
     });
+    await notify([{ userId: req.params.userId, type: "JOIN_APPROVED", tournamentId: tournament.id, link: `/tournament/${tournament.id}`, params: { event: tournament.name } }], req.user!.userId);
     res.json(updated);
   } catch (err: any) {
     res.status(400).json({ error: publicError(err) });
@@ -383,6 +398,7 @@ tournamentRouter.delete("/:id/players/:userId", authMiddleware, async (req: Auth
   try {
     const tournament = await loadOwnedTournament(res, req.params.id, req.user!.userId);
     if (!tournament) return;
+    const row = await prisma.tournamentUser.findUnique({ where: { tournamentId_userId: { tournamentId: tournament.id, userId: req.params.userId } }, select: { status: true } });
     const played = await prisma.match.count({
       where: { tournamentId: tournament.id, OR: [{ player1Id: req.params.userId }, { player2Id: req.params.userId }] },
     });
@@ -391,11 +407,15 @@ tournamentRouter.delete("/:id/players/:userId", authMiddleware, async (req: Auth
         where: { tournamentId_userId: { tournamentId: req.params.id, userId: req.params.userId } },
         data: { status: "WITHDRAWN" },
       });
-      res.json({ ok: true, withdrawn: true });
-      return;
+    } else {
+      await prisma.tournamentUser.delete({ where: { tournamentId_userId: { tournamentId: req.params.id, userId: req.params.userId } } });
     }
-    await prisma.tournamentUser.delete({ where: { tournamentId_userId: { tournamentId: req.params.id, userId: req.params.userId } } });
-    res.json({ ok: true, withdrawn: false });
+    // A turned-down request and a dropped player read differently.
+    if (row && row.status !== "WITHDRAWN") {
+      await notify([{ userId: req.params.userId, type: row.status === "PENDING" ? "JOIN_DECLINED" : "REMOVED_FROM_EVENT", tournamentId: tournament.id,
+        link: `/tournament/${tournament.id}`, params: { event: tournament.name } }], req.user!.userId);
+    }
+    res.json({ ok: true, withdrawn: played > 0 });
   } catch (err: any) {
     res.status(400).json({ error: publicError(err) });
   }
@@ -440,7 +460,7 @@ tournamentRouter.post("/:id/pair", authMiddleware, async (req: AuthenticatedRequ
     }
 
     const [players, allMatches] = await Promise.all([
-      prisma.tournamentUser.findMany({ where: { tournamentId: tournament.id, status: "REGISTERED" }, select: { userId: true, seed: true, user: { select: { id: true, rating: true } } } }),
+      prisma.tournamentUser.findMany({ where: { tournamentId: tournament.id, status: "REGISTERED" }, select: { userId: true, seed: true, user: { select: { id: true, rating: true, firstName: true, lastName: true } } } }),
       prisma.match.findMany({ where: { tournamentId: tournament.id }, select: { round: true, player1Id: true, player2Id: true, setsWon1: true, setsWon2: true } }),
     ]);
     if (players.length < 2) { res.status(400).json({ error: "Need at least 2 approved players" }); return; }
@@ -481,7 +501,7 @@ tournamentRouter.post("/:id/pair", authMiddleware, async (req: AuthenticatedRequ
     if (pairs.length === 0) { res.status(400).json({ error: "Need at least 2 approved players" }); return; }
 
     const tablesCount = tournament.tablesCount || 1;
-    await prisma.$transaction([
+    const written = await prisma.$transaction([
       ...pairs.map((p, idx) =>
         prisma.match.create({
           data: {
@@ -506,6 +526,18 @@ tournamentRouter.post("/:id/pair", authMiddleware, async (req: AuthenticatedRequ
     ]);
 
     await AuditLog.create({ userId: req.user!.userId, action: "TOURNAMENT_PAIR", entity: "Tournament", entityId: tournament.id, newValue: { round: newRound, pairs: pairs.length, bye: byeUserId } });
+
+    // Tell everyone who they play and where: at a club night the players are
+    // spread around the room, not watching the manager's screen.
+    const nameOf = new Map(players.map((p) => [p.userId, shortName(p.user)]));
+    const created = written.slice(0, pairs.length) as { id: string; player1Id: string | null; player2Id: string | null; tableNumber: number | null }[];
+    await notify([
+      ...created.flatMap((m) => [[m.player1Id, m.player2Id], [m.player2Id, m.player1Id]].map(([me, them]) => ({
+        userId: me!, type: "ROUND_PAIRED" as const, tournamentId: tournament.id, link: `/tournament/${tournament.id}/match/${m.id}`,
+        params: { event: tournament.name, round: newRound, opponent: nameOf.get(them!) ?? "", table: m.tableNumber },
+      }))),
+      ...(byeUserId ? [{ userId: byeUserId, type: "ROUND_BYE" as const, tournamentId: tournament.id, link: `/tournament/${tournament.id}`, params: { event: tournament.name, round: newRound } }] : []),
+    ], req.user!.userId);
     res.json({ message: "Paired", round: newRound, matches: pairs.length, bye: byeUserId });
   } catch (err: any) {
     res.status(400).json({ error: publicError(err) });
@@ -543,6 +575,18 @@ tournamentRouter.post("/:id/chat", authMiddleware, async (req: AuthenticatedRequ
       data: { tournamentId: req.params.id, userId: req.user!.userId, text },
       include: { user: { select: { id: true, firstName: true, lastName: true } } },
     });
+    // One unread chat notification per event is enough: a busy chat would
+    // otherwise bury everything else in the inbox. Whoever already has one
+    // waiting is skipped until they read it.
+    const audience = await eventAudience(tournament.id);
+    const waiting = await prisma.notification.findMany({
+      where: { tournamentId: tournament.id, type: "CHAT_MESSAGE", readAt: null, userId: { in: audience } }, select: { userId: true },
+    });
+    const skip = new Set(waiting.map((w) => w.userId));
+    await notify(audience.filter((userId) => !skip.has(userId)).map((userId) => ({
+      userId, type: "CHAT_MESSAGE" as const, tournamentId: tournament.id, link: `/tournament/${tournament.id}/chat`,
+      params: { event: tournament.name, name: shortName(message.user), text: text.length > 80 ? `${text.slice(0, 80)}...` : text },
+    })), req.user!.userId);
     res.status(201).json(message);
   } catch (err: any) {
     res.status(400).json({ error: publicError(err) });

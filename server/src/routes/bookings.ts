@@ -7,6 +7,7 @@ import { startOfUtcDay, bookingStartsAt, bookingEndsAt, countFreeTables, findNex
 import { findBookingConflict } from "./clubs";
 import { bookingInclude } from "../shared/queries";
 import { computeBookingPrice, initiatePayment } from "../shared/payments";
+import { notifyClubFollowers } from "../shared/notify";
 
 export const bookingRouter = Router();
 
@@ -92,6 +93,10 @@ bookingRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, res: R
         include: bookingInclude,
       });
     });
+
+    // Every booking creates an event; a public one is news to the club's followers.
+    const event = booking.tournamentId ? await prisma.tournament.findUnique({ where: { id: booking.tournamentId } }) : null;
+    if (event) await notifyClubFollowers(event, userId);
 
     res.status(201).json(booking);
   } catch (err: any) {

@@ -120,6 +120,13 @@ export const apiService = {
   profile: {
     stats: () => api.get("/profile/stats"),
   },
+  // The caller's inbox. `unread` is what the header bell polls; `markRead` with
+  // no ids marks everything read.
+  notifications: {
+    list: () => api.get("/notifications"),
+    unread: () => api.get("/notifications/unread"),
+    markRead: (ids?: string[]) => api.post("/notifications/read", ids ? { ids } : {}),
+  },
   // Results feed with podiums, per-player statistics, head-to-head and leaderboards.
   stats: {
     results: (params?: { kind?: string; city?: string; clubId?: string; userId?: string; q?: string }) => api.get("/results", { params }),
