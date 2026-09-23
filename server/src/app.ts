@@ -14,6 +14,7 @@ import { liveRouter, publicRouter } from "./routes/public";
 import { statsRouter } from "./routes/stats";
 import { setupRouter } from "./routes/setup";
 import { notificationRouter } from "./routes/notifications";
+import { maskHiddenPlayers } from "./shared/privacy";
 
 // The whole HTTP API, built once and shared by both deployments: server/src/index.ts
 // listens on a port with it (Render, local), api/index.ts exports it as the Vercel
@@ -45,6 +46,10 @@ export function createApp(options: { defaultClientUrl?: string } = {}) {
   // narrower limit than the general one keeps a single account from flooding a
   // tournament's pending list.
   app.use("/api/tournaments/:id/join", rateLimit({ windowMs: 15 * 60 * 1000, max: 10, message: { error: "Too many join requests, try again later" } }));
+
+  // A player who has not agreed to their name being public is masked in every
+  // response to a visitor who is not signed in (152-FZ art. 10.1).
+  app.use("/api", maskHiddenPlayers);
 
   app.use("/api/auth", authRouter);
   app.use("/api/tournaments", tournamentRouter);
