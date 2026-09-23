@@ -27,6 +27,7 @@ export default function EventCard({ tr }: { tr: any }) {
         <h3 className="font-bold text-lg leading-tight min-w-0 truncate">{tr.name}</h3>
         <div className="shrink-0 flex flex-col items-end gap-1">
           <span className={`px-2 py-0.5 rounded text-[11px] font-medium whitespace-nowrap ${badge}`}>{t(`status.${tr.status}`)}</span>
+          {tr.access === "CLOSED" && <span className="text-[10px] text-[#93a8c2]">{t("tournament.access.closedBadge")}</span>}
           {tr.myStatus === "PENDING" && <span className="text-[10px] text-yellow-400">{t("tournament.requested")}</span>}
           {tr.isOrganizer && <span className="text-[10px] text-[#6b84a0]">{t("tournament.manager")}</span>}
         </div>

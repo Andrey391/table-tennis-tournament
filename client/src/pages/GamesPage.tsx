@@ -37,19 +37,22 @@ export default function GamesPage() {
   const [oppSearch, setOppSearch] = useState("");
   const [quick, setQuick] = useState({ opponentId: "", setsWon1: 3, setsWon2: 0 });
 
+  const mine = scope === "mine" && !isGuest;
   const fetchGames = () => (
     // "Mine" needs an account; a guest only ever sees the open feed.
-    scope === "mine" && !isGuest
+    mine
       ? apiService.tournaments.getMine({ kind: "GAME", status: ACTIVE_STATUSES })
       : apiService.tournaments.getAll({ kind: "GAME", status: ACTIVE_STATUSES })
   );
+  // getAll (public feed) returns { items, nextCursor }; getMine still returns a plain array.
+  const unwrap = (data: any) => (mine ? data : data.items);
   // A refresh after creating a game keeps the list on screen; only a change of scope
   // goes back to the loader, so the old scope's rows are never shown as the new one's.
-  const load = () => { fetchGames().then(r => setGames(r.data)).catch(console.error); };
+  const load = () => { fetchGames().then(r => setGames(unwrap(r.data))).catch(console.error); };
   useEffect(() => {
     let stale = false;
     setGames(null);
-    fetchGames().then(r => { if (!stale) setGames(r.data); }).catch(e => { console.error(e); if (!stale) setGames([]); });
+    fetchGames().then(r => { if (!stale) setGames(unwrap(r.data)); }).catch(e => { console.error(e); if (!stale) setGames([]); });
     return () => { stale = true; };
   }, [scope, isGuest]);
   useEffect(() => { apiService.clubs.getAll().then(r => setClubs(r.data)).catch(console.error); }, []);

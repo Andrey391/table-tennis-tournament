@@ -100,24 +100,39 @@ tournamentRouter.post("/quick-game", authMiddleware, async (req: AuthenticatedRe
 
 // Event feed. Every filter is optional; with none of them this is the plain
 // "all tournaments" list the dashboard used to show.
+//
+// Keyset pagination via `?limit=&cursor=`: `limit` defaults to 30 (max 100).
+// The response is always `{ items, nextCursor }` (nextCursor null on the last
+// page) rather than a bare array sometimes and an object other times — a shape
+// that depends on how many rows happen to match would silently break the first
+// time a feed grew past one page. Every consumer reads `.items`.
 tournamentRouter.get("/", async (req, res: Response) => {
-  const { kind, city, clubId, status, from, to, q } = req.query as Record<string, string | undefined>;
+  const { kind, city, clubId, status, from, to, q, cursor } = req.query as Record<string, string | undefined>;
+  const limit = Math.min(Math.max(parseInt(queryString(req.query.limit) ?? "", 10) || 30, 1), 100);
+  const where = {
+    // Events marked private are visible on their own page and under /mine,
+    // never in this feed. Archived (completed and put away by their manager)
+    // events are likewise kept out of the general feed, but stay visible on
+    // their own page and under /mine.
+    isPublic: true,
+    archivedAt: null,
+    ...(kind ? { kind } : {}),
+    ...(clubId ? { clubId } : {}),
+    ...(city ? inCity(city) : {}),
+    ...(status ? { status: { in: status.split(",") } } : {}),
+    ...(from || to ? { startTime: { ...(from ? { gte: new Date(from) } : {}), ...(to ? { lte: new Date(to) } : {}) } } : {}),
+    ...(q ? { name: { contains: q, mode: "insensitive" as const } } : {}),
+  };
   const tournaments = await prisma.tournament.findMany({
-    where: {
-      // Events marked private are visible on their own page and under /mine,
-      // never in this feed.
-      isPublic: true,
-      ...(kind ? { kind } : {}),
-      ...(clubId ? { clubId } : {}),
-      ...(city ? inCity(city) : {}),
-      ...(status ? { status: { in: status.split(",") } } : {}),
-      ...(from || to ? { startTime: { ...(from ? { gte: new Date(from) } : {}), ...(to ? { lte: new Date(to) } : {}) } } : {}),
-      ...(q ? { name: { contains: q, mode: "insensitive" as const } } : {}),
-    },
+    where,
     include: feedInclude,
-    orderBy: [{ startTime: "asc" }, { createdAt: "desc" }],
+    orderBy: [{ startTime: "asc" }, { createdAt: "desc" }, { id: "asc" }],
+    take: limit + 1,
+    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
   });
-  res.json(tournaments);
+  const hasMore = tournaments.length > limit;
+  const items = hasMore ? tournaments.slice(0, limit) : tournaments;
+  res.json({ items, nextCursor: hasMore ? items[items.length - 1].id : null });
 });
 
 // "My tournaments": everything the caller organises or takes part in, with the
@@ -196,15 +211,53 @@ tournamentRouter.put("/:id", authMiddleware, async (req: AuthenticatedRequest, r
   }
 });
 
+// Puts a finished event away without touching a single row it produced: its
+// matches, sets and the rating changes they already applied to its players all
+// stay exactly as they are. This exists because a COMPLETED tournament can no
+// longer be deleted (see below) — archiving is the only way to get it out of
+// the general feed.
+tournamentRouter.post("/:id/archive", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const tournament = await loadOwnedTournament(res, req.params.id, req.user!.userId);
+    if (!tournament) return;
+    if (tournament.status !== "COMPLETED") { res.status(400).json({ error: "Only completed tournaments can be archived" }); return; }
+    const updated = await prisma.tournament.update({ where: { id: tournament.id }, data: { archivedAt: new Date() } });
+    await AuditLog.create({ userId: req.user!.userId, action: "TOURNAMENT_ARCHIVE", entity: "Tournament", entityId: tournament.id });
+    res.json(updated);
+  } catch (err: any) {
+    res.status(400).json({ error: publicError(err) });
+  }
+});
+
+// Undoes an archive made by mistake. Same owner guard, no status restriction —
+// once it's un-archived it is just a completed tournament again.
+tournamentRouter.post("/:id/unarchive", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const tournament = await loadOwnedTournament(res, req.params.id, req.user!.userId);
+    if (!tournament) return;
+    const updated = await prisma.tournament.update({ where: { id: tournament.id }, data: { archivedAt: null } });
+    await AuditLog.create({ userId: req.user!.userId, action: "TOURNAMENT_UNARCHIVE", entity: "Tournament", entityId: tournament.id });
+    res.json(updated);
+  } catch (err: any) {
+    res.status(400).json({ error: publicError(err) });
+  }
+});
+
 // Deletes the event for good. Without this a mistyped tournament (or the event
 // that every table booking creates) stayed in the public feed forever, since
 // cancelling the booking deliberately leaves its event alone. Nothing here
 // cascades on its own, so the rows that point at the tournament are cleared in
 // the same transaction: a booking keeps existing and just loses its event.
+//
+// A COMPLETED tournament can never be deleted this way — it has already moved
+// its players' ratings, and deleting it would erase that history with no way
+// to tell it happened. Archiving (above) is the only path out of the feed for
+// a finished event.
 tournamentRouter.delete("/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const tournament = await loadOwnedTournament(res, req.params.id, req.user!.userId);
     if (!tournament) return;
+    if (tournament.status === "COMPLETED") { res.status(400).json({ error: "Completed tournaments cannot be deleted — archive them instead" }); return; }
     await prisma.$transaction([
       prisma.booking.updateMany({ where: { tournamentId: tournament.id }, data: { tournamentId: null } }),
       prisma.chatMessage.deleteMany({ where: { tournamentId: tournament.id } }),
@@ -503,7 +556,11 @@ tournamentRouter.get("/:id/standings", async (req, res: Response) => {
       include: standingsInclude,
     });
     if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
-    res.json(computeStandings(tournament.players, tournament.matches));
+    // Buchholz stays the default (unchanged sort/values for any existing caller);
+    // ?tiebreak=sonnebornberger switches the secondary sort key without touching
+    // the primary "wins" or the tertiary "set difference" ranking.
+    const tiebreak = queryString(req.query.tiebreak) === "sonnebornberger" ? "sonnebornberger" : "buchholz";
+    res.json(computeStandings(tournament.players, tournament.matches, tiebreak));
   } catch (err: any) {
     res.status(400).json({ error: publicError(err) });
   }

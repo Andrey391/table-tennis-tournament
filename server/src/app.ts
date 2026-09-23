@@ -40,6 +40,10 @@ export function createApp(options: { defaultClientUrl?: string } = {}) {
   // needs no credentials at all — so it gets a limit of its own, tighter than the
   // overall one and looser than sign-in (one visitor may legitimately restart it).
   app.use("/api/auth/demo", rateLimit({ windowMs: 60 * 60 * 1000, max: 5, message: { error: "Too many demo sessions, try again later" } }));
+  // Self-join requests are unmoderated until the manager approves them, so a
+  // narrower limit than the general one keeps a single account from flooding a
+  // tournament's pending list.
+  app.use("/api/tournaments/:id/join", rateLimit({ windowMs: 15 * 60 * 1000, max: 10, message: { error: "Too many join requests, try again later" } }));
 
   app.use("/api/auth", authRouter);
   app.use("/api/tournaments", tournamentRouter);

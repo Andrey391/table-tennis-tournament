@@ -25,17 +25,26 @@ export type StandingsPlayer = {
 export type StandingsRow = {
   userId: string; firstName: string; lastName: string; club?: string | null; rating: number;
   wins: number; losses: number; setsWon: number; setsLost: number; buchholz: number;
+  // Sonneborn-Berger: sum of the wins of every opponent this player actually beat
+  // (a loss credits nothing, unlike Buchholz which counts every opponent played).
+  // A secondary Swiss tiebreak — rewards beating strong opponents specifically,
+  // rather than just having played a strong schedule.
+  sonnebornBerger: number;
   // Net rating movement across this event's matches.
   ratingChange: number;
 };
 
-export function computeStandings(players: StandingsPlayer[], matches: StandingsMatch[]): StandingsRow[] {
+export type StandingsTiebreak = "buchholz" | "sonnebornberger";
+
+export function computeStandings(players: StandingsPlayer[], matches: StandingsMatch[], tiebreak: StandingsTiebreak = "buchholz"): StandingsRow[] {
   const stats = new Map<string, StandingsRow>();
   const opponents = new Map<string, string[]>();
+  const beatenOpponents = new Map<string, string[]>();
   for (const p of players) {
     if (!p.user) continue;
-    stats.set(p.userId, { userId: p.userId, firstName: p.user.firstName, lastName: p.user.lastName, club: p.user.club, rating: p.user.rating, wins: 0, losses: 0, setsWon: 0, setsLost: 0, buchholz: 0, ratingChange: 0 });
+    stats.set(p.userId, { userId: p.userId, firstName: p.user.firstName, lastName: p.user.lastName, club: p.user.club, rating: p.user.rating, wins: 0, losses: 0, setsWon: 0, setsLost: 0, buchholz: 0, sonnebornBerger: 0, ratingChange: 0 });
     opponents.set(p.userId, []);
+    beatenOpponents.set(p.userId, []);
   }
   for (const m of matches) {
     if (!m.player1Id || !m.player2Id) continue;
@@ -45,15 +54,17 @@ export function computeStandings(players: StandingsPlayer[], matches: StandingsM
     s1.setsWon += m.setsWon1; s1.setsLost += m.setsWon2;
     s2.setsWon += m.setsWon2; s2.setsLost += m.setsWon1;
     const gain = m.eloDelta ?? 0, loss = m.eloDeltaLoser ?? 0;
-    if (m.setsWon1 > m.setsWon2) { s1.wins++; s2.losses++; s1.ratingChange += gain; s2.ratingChange += loss; }
-    else if (m.setsWon2 > m.setsWon1) { s2.wins++; s1.losses++; s2.ratingChange += gain; s1.ratingChange += loss; }
+    if (m.setsWon1 > m.setsWon2) { s1.wins++; s2.losses++; s1.ratingChange += gain; s2.ratingChange += loss; beatenOpponents.get(m.player1Id)!.push(m.player2Id); }
+    else if (m.setsWon2 > m.setsWon1) { s2.wins++; s1.losses++; s2.ratingChange += gain; s1.ratingChange += loss; beatenOpponents.get(m.player2Id)!.push(m.player1Id); }
     opponents.get(m.player1Id)!.push(m.player2Id);
     opponents.get(m.player2Id)!.push(m.player1Id);
   }
   for (const row of stats.values()) {
     row.ratingChange = Math.round(row.ratingChange * 100) / 100;
     row.buchholz = (opponents.get(row.userId) || []).reduce((sum, id) => sum + (stats.get(id)?.wins || 0), 0);
+    row.sonnebornBerger = (beatenOpponents.get(row.userId) || []).reduce((sum, id) => sum + (stats.get(id)?.wins || 0), 0);
   }
+  const tiebreakValue = (row: StandingsRow) => (tiebreak === "sonnebornberger" ? row.sonnebornBerger : row.buchholz);
   return Array.from(stats.values()).sort((a, b) =>
-    b.wins - a.wins || b.buchholz - a.buchholz || (b.setsWon - b.setsLost) - (a.setsWon - a.setsLost));
+    b.wins - a.wins || tiebreakValue(b) - tiebreakValue(a) || (b.setsWon - b.setsLost) - (a.setsWon - a.setsLost));
 }

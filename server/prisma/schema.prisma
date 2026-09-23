@@ -136,6 +136,16 @@ model Tournament {
   // to a club tournament — so a booking can keep its event to itself. Its own
   // participants and its organiser always see it.
   isPublic    Boolean   @default(true)
+  // "OPEN" (default) vs "CLOSED". Joining always creates a PENDING request that the
+  // manager must approve either way (self-join never grants REGISTERED directly) —
+  // this flag only controls whether the client invites strangers to request a seat
+  // at all, or hides that door behind an explicit invite/link.
+  access      String    @default("OPEN")
+  // Set once a COMPLETED tournament is put away by its manager. A completed
+  // tournament can never be deleted (that would silently erase rating changes
+  // already applied to its players) — archiving is the only way to get it out of
+  // the general feed while keeping every match, set and rating change intact.
+  archivedAt  DateTime?
   clubId      String?
   club        Club?     @relation(fields: [clubId], references: [id])
   organizerId String

@@ -68,7 +68,7 @@ export default function EventForm({
       clubId: "", tableId: "", date: toDateStr(startDate), startTime: toTimeStr(startDate), endTime: addHour(toTimeStr(startDate)),
       eventType: defaultEventType, eventTitle: "", description: "",
       setsToWin: 3, tablesCount: 4, maxPlayers: "", minRating: "", maxRating: "", ratingWeight: "0.5",
-      isPublic: true,
+      isPublic: true, access: "OPEN" as "OPEN" | "CLOSED",
     };
   });
   // Whether the user has touched "end" directly, so the start-time auto-fill
@@ -165,6 +165,7 @@ export default function EventForm({
             minRating: form.minRating ? +form.minRating : undefined,
             maxRating: form.maxRating ? +form.maxRating : undefined,
             ratingWeight: form.ratingWeight ? +form.ratingWeight : undefined,
+            access: form.access,
           } : {}),
         });
       } else {
@@ -341,6 +342,21 @@ export default function EventForm({
             <label className={fieldLabel}>{t("create.ratingWeight")}</label>
             <input type="number" min={0.1} max={1} step={0.1} value={form.ratingWeight} onChange={e => set("ratingWeight", e.target.value)} className={field} />
             <p className="text-xs text-[#4d6480] mt-1.5">{t("create.ratingWeightHint")}</p>
+          </div>
+
+          <div>
+            <label className={fieldLabel}>{t("tournament.access.label")}</label>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => set("access", "OPEN")}
+                className={`flex-1 py-2 rounded-lg text-sm border ${form.access === "OPEN" ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00] font-bold" : "border-[#1c3350] text-[#93a8c2]"}`}>
+                {t("tournament.access.open")}
+              </button>
+              <button type="button" onClick={() => set("access", "CLOSED")}
+                className={`flex-1 py-2 rounded-lg text-sm border ${form.access === "CLOSED" ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00] font-bold" : "border-[#1c3350] text-[#93a8c2]"}`}>
+                {t("tournament.access.closed")}
+              </button>
+            </div>
+            <p className="text-xs text-[#4d6480] mt-1.5">{t("tournament.access.hint")}</p>
           </div>
         </>
       )}
