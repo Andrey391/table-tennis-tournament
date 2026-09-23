@@ -27,18 +27,20 @@ export default function TournamentPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmArchive, setConfirmArchive] = useState(false);
   const [edit, setEdit] = useState<any>(null);
   const [clubs, setClubs] = useState<any[]>([]);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [tiebreak, setTiebreak] = useState<"buchholz" | "sonnebornberger">("buchholz");
 
   const load = () => {
     if (!id) return;
     apiService.tournaments.getById(id).then(r => setTournament(r.data)).catch(console.error);
-    apiService.tournaments.standings(id).then(r => setStandings(r.data)).catch(console.error);
+    apiService.tournaments.standings(id, tiebreak).then(r => setStandings(r.data)).catch(console.error);
   };
 
-  useEffect(load, [id]);
+  useEffect(load, [id, tiebreak]);
   // A demo visitor who opens their event from anywhere — a link, the feed, a
   // reload — makes it the one the Dashboard and the tour offer to return to.
   useEffect(() => {
@@ -50,7 +52,7 @@ export default function TournamentPage() {
   useEffect(() => {
     const i = setInterval(load, 5000);
     return () => clearInterval(i);
-  }, [id]);
+  }, [id, tiebreak]);
   // GET /players carries emails and stays behind auth; it also only feeds the
   // manager's "add players" picker, so a guest has no reason to ask for it.
   useEffect(() => {
@@ -165,6 +167,7 @@ export default function TournamentPage() {
     setsToWin: tournament.setsToWin ?? 3,
     ratingWeight: tournament.ratingWeight ?? 0.5,
     isPublic: tournament.isPublic !== false,
+    access: tournament.access === "CLOSED" ? "CLOSED" : "OPEN",
   });
 
   const saveEdit = async (e: React.FormEvent) => {
@@ -185,6 +188,7 @@ export default function TournamentPage() {
         setsToWin: edit.setsToWin,
         ratingWeight: edit.ratingWeight === "" ? undefined : +edit.ratingWeight,
         isPublic: edit.isPublic,
+        access: edit.access,
       });
       setEdit(null);
       setNotice(t("tournament.saved"));
@@ -220,6 +224,24 @@ export default function TournamentPage() {
     setBusy(true); setError("");
     try { await apiService.tournaments.remove(id); navigate("/"); }
     catch (e: any) { setError(e.response?.data?.error || t("common.failed")); setBusy(false); }
+  };
+
+  // A completed tournament can't be deleted (see the server side note) — putting
+  // it away keeps every match, set and rating change it already produced intact.
+  const archiveTournament = async () => {
+    if (!id) return;
+    setBusy(true); setError("");
+    try { await apiService.tournaments.archive(id); setConfirmArchive(false); load(); }
+    catch (e: any) { setError(e.response?.data?.error || t("common.failed")); }
+    finally { setBusy(false); }
+  };
+
+  const unarchiveTournament = async () => {
+    if (!id) return;
+    setBusy(true); setError("");
+    try { await apiService.tournaments.unarchive(id); load(); }
+    catch (e: any) { setError(e.response?.data?.error || t("common.failed")); }
+    finally { setBusy(false); }
   };
 
   const toggleSelect = (userId: string) => {
@@ -280,6 +302,12 @@ export default function TournamentPage() {
           <span className="text-xs text-[#4d6480]">{t("tournament.tables", { n: tournament.tablesCount })}</span>
           {tournament.isPublic === false && (
             <span className="text-xs text-[#6b84a0] border border-[#1c3350] rounded-md px-1.5 py-0.5">{t("tournament.privateBadge")}</span>
+          )}
+          {tournament.access === "CLOSED" && (
+            <span className="text-xs text-[#6b84a0] border border-[#1c3350] rounded-md px-1.5 py-0.5">{t("tournament.access.closedBadge")}</span>
+          )}
+          {tournament.archivedAt && (
+            <span className="text-xs text-[#93a8c2] border border-[#1c3350] rounded-md px-1.5 py-0.5">{t("tournament.archivedBadge")}</span>
           )}
           {hasRatingGate && (
             <span className="text-xs text-[#ccff00]">{t("profile.rating")} {tournament.minRating ?? 0}&ndash;{tournament.maxRating ?? "∞"}</span>
@@ -352,6 +380,20 @@ export default function TournamentPage() {
             <input type="checkbox" checked={!edit.isPublic} onChange={e => setEdit({ ...edit, isPublic: !e.target.checked })} className="w-4 h-4" />
             {t("tournament.private")}
           </label>
+          <div>
+            <label className={fieldLabel}>{t("tournament.access.label")}</label>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setEdit({ ...edit, access: "OPEN" })}
+                className={`flex-1 py-2 rounded-lg text-sm border ${edit.access === "OPEN" ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00] font-bold" : "border-[#1c3350] text-[#93a8c2]"}`}>
+                {t("tournament.access.open")}
+              </button>
+              <button type="button" onClick={() => setEdit({ ...edit, access: "CLOSED" })}
+                className={`flex-1 py-2 rounded-lg text-sm border ${edit.access === "CLOSED" ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00] font-bold" : "border-[#1c3350] text-[#93a8c2]"}`}>
+                {t("tournament.access.closed")}
+              </button>
+            </div>
+            <p className="text-xs text-[#4d6480] mt-1.5">{t("tournament.access.hint")}</p>
+          </div>
           <button type="submit" disabled={busy} className={`${btnPrimary} w-full`}>
             {busy ? t("common.creating") : t("common.save")}
           </button>
@@ -589,7 +631,16 @@ export default function TournamentPage() {
 
       {standings.length > 0 && matches.length > 0 && (
         <section className="mt-6" data-tour="standings">
-          <h2 className={`${sectionLabel} mb-2`}>{t("tournament.standings")}</h2>
+          <div className="flex items-center justify-between mb-2">
+            <h2 className={sectionLabel}>{t("tournament.standings")}</h2>
+            {standings.length > 2 && (
+              <select value={tiebreak} onChange={e => setTiebreak(e.target.value as "buchholz" | "sonnebornberger")}
+                className="bg-transparent text-xs text-[#93a8c2] border border-[#1c3350] rounded-lg px-2 py-1 focus:outline-none">
+                <option value="buchholz" className="bg-[#101f36]">{t("tournament.tiebreak.buchholz")}</option>
+                <option value="sonnebornberger" className="bg-[#101f36]">{t("tournament.tiebreak.sonnebornberger")}</option>
+              </select>
+            )}
+          </div>
           <div className={`${card} divide-y divide-[#1c3350]/50`}>
             {standings.map((s: any, i: number) => (
               <div key={s.userId} className="flex items-center justify-between px-3 py-2 text-sm">
@@ -601,17 +652,43 @@ export default function TournamentPage() {
                 <span className="flex items-center gap-3 shrink-0 text-xs">
                   <span className="text-green-400">{s.wins}{t("tournament.winShort")}</span>
                   <span className="text-red-400">{s.losses}{t("tournament.lossShort")}</span>
-                  <span className="text-[#93a8c2]">{s.buchholz ?? 0}{t("tournament.buchholzShort")}</span>
+                  <span className="text-[#93a8c2]">{(tiebreak === "sonnebornberger" ? s.sonnebornBerger : s.buchholz) ?? 0}{tiebreak === "sonnebornberger" ? t("tournament.sbShort") : t("tournament.buchholzShort")}</span>
                   <span className="font-mono text-[#93a8c2]">{s.setsWon}:{s.setsLost}</span>
                   {tournament.kind === "TOURNAMENT" && <span className={`font-mono w-9 text-right ${deltaTone(s.ratingChange)}`}>{formatDelta(s.ratingChange)}</span>}
                 </span>
               </div>
             ))}
           </div>
-          <p className="text-[11px] text-[#4d6480] mt-1.5">{t("tournament.buchholzHint")}</p>
+          <p className="text-[11px] text-[#4d6480] mt-1.5">{t(tiebreak === "sonnebornberger" ? "tournament.sbHint" : "tournament.buchholzHint")}</p>
         </section>
       )}
-      {isManager && (
+      {isManager && tournament.status === "COMPLETED" && !tournament.archivedAt && (
+        <section className="mt-8">
+          {confirmArchive ? (
+            <div className="bg-[#101f36] border border-[#1c3350] rounded-lg p-3 text-center space-y-2">
+              <p className="text-sm text-[#93a8c2]">{t("tournament.archiveConfirm")}</p>
+              <div className="flex gap-2">
+                <button onClick={() => setConfirmArchive(false)} className={`${btnSecondary} flex-1`}>{t("common.cancel")}</button>
+                <button onClick={archiveTournament} disabled={busy} className={`${btnPrimary} flex-1`}>
+                  {busy ? t("tournament.archiving") : t("tournament.archive")}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button onClick={() => setConfirmArchive(true)} className="w-full text-[#93a8c2] py-3 rounded-lg text-sm border border-[#1c3350] bg-[#101f36]">
+              {t("tournament.archive")}
+            </button>
+          )}
+        </section>
+      )}
+      {isManager && tournament.archivedAt && (
+        <section className="mt-8">
+          <button onClick={unarchiveTournament} disabled={busy} className="w-full text-[#93a8c2] py-3 rounded-lg text-sm border border-[#1c3350] bg-[#101f36]">
+            {busy ? t("tournament.archiving") : t("tournament.unarchive")}
+          </button>
+        </section>
+      )}
+      {isManager && tournament.status !== "COMPLETED" && (
         <section className="mt-8">
           {confirmDelete ? (
             <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 text-center space-y-2">

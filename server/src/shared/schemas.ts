@@ -25,6 +25,10 @@ export const CreateTournamentSchema = z.object({
   setsToWin: z.number().int().min(1).optional(),
   // False keeps the event out of the public feed; its participants still see it.
   isPublic: z.boolean().optional(),
+  // OPEN (default) invites anyone to request a seat; CLOSED hides that invite in
+  // the client. Either way a self-join still lands as PENDING until the manager
+  // approves it — this only controls who is shown the door.
+  access: z.enum(["OPEN", "CLOSED"]).optional(),
   clubId: z.string().optional(),
   startTime: z.string().datetime(),
   endTime: z.string().datetime().optional(),
@@ -41,6 +45,7 @@ export const UpdateTournamentSchema = z.object({
   maxPlayers: z.number().int().min(2).max(500).nullable().optional(),
   setsToWin: z.number().int().min(1).optional(),
   isPublic: z.boolean().optional(),
+  access: z.enum(["OPEN", "CLOSED"]).optional(),
   clubId: z.string().nullable().optional(),
   status: z.enum(["DRAFT", "ACTIVE", "COMPLETED", "CANCELLED"]).optional(),
   startTime: z.string().datetime().nullable().optional(),
@@ -89,6 +94,8 @@ export const CreateBookingSchema = z.object({
   tablesCount: z.number().int().min(1).max(50).optional(),
   // A table held for a private knockabout doesn't belong in the city feed.
   isPublic: z.boolean().optional(),
+  // OPEN (default) or CLOSED — see CreateTournamentSchema. Ignored for a GAME.
+  access: z.enum(["OPEN", "CLOSED"]).optional(),
   // Tournament-only settings, same as CreateTournamentSchema — a booking for a
   // TOURNAMENT is how a tournament is created at all now, so it carries the
   // same knobs the old bookingless form used to.

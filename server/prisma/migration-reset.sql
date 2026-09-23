@@ -161,6 +161,8 @@ CREATE TABLE "Tournament" (
     "maxRating" INTEGER,
     "ratingWeight" DOUBLE PRECISION NOT NULL DEFAULT 0.5,
     "isPublic" BOOLEAN NOT NULL DEFAULT true,
+    "access" TEXT NOT NULL DEFAULT 'OPEN',
+    "archivedAt" TIMESTAMP(3),
     "clubId" TEXT,
     "organizerId" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,

@@ -36,13 +36,20 @@ export const apiService = {
   },
   tournaments: {
     // `kind` picks rated tournaments ("TOURNAMENT") or unrated games ("GAME").
-    getAll: (params?: { kind?: string; city?: string; clubId?: string; status?: string; from?: string; to?: string; q?: string }) => api.get("/tournaments", { params }),
+    // Response is always `{ items, nextCursor }`; pass the previous `nextCursor`
+    // back as `cursor` for the next page (a club-night-scale feed rarely needs one).
+    getAll: (params?: { kind?: string; city?: string; clubId?: string; status?: string; from?: string; to?: string; q?: string; limit?: number; cursor?: string }) => api.get("/tournaments", { params }),
     getMine: (params?: { kind?: string; status?: string }) => api.get("/tournaments/mine", { params }),
     getById: (id: string) => api.get(`/tournaments/${id}`),
     create: (d: any) => api.post("/tournaments", d),
     update: (id: string, d: any) => api.put(`/tournaments/${id}`, d),
     // Deletes the event and its matches. A booking that created it keeps existing.
+    // Refused (400) for a COMPLETED tournament — archive it instead.
     remove: (id: string) => api.delete(`/tournaments/${id}`),
+    // Puts a completed tournament away (out of the general feed, still visible on
+    // its own page and under "mine") without touching any of its data.
+    archive: (id: string) => api.post(`/tournaments/${id}/archive`),
+    unarchive: (id: string) => api.post(`/tournaments/${id}/unarchive`),
     addPlayers: (id: string, d: { userIds: string[] }) => api.post(`/tournaments/${id}/players`, d),
     removePlayer: (id: string, userId: string) => api.delete(`/tournaments/${id}/players/${userId}`),
     join: (id: string) => api.post(`/tournaments/${id}/join`),
@@ -52,7 +59,7 @@ export const apiService = {
     setSeeding: (id: string, d: { userIds: string[] }) => api.put(`/tournaments/${id}/seeding`, d),
     // A friendly game already played, written down in one step (unrated, private).
     quickGame: (d: { opponentId: string; setsWon1: number; setsWon2: number; clubId?: string; name?: string }) => api.post("/tournaments/quick-game", d),
-    standings: (id: string) => api.get(`/tournaments/${id}/standings`),
+    standings: (id: string, tiebreak?: "buchholz" | "sonnebornberger") => api.get(`/tournaments/${id}/standings`, { params: tiebreak ? { tiebreak } : undefined }),
     // Wipes round 1 of the caller's own demo event (sets, tally, rating) back to
     // freshly-paired once the guided tour that scored it is done.
     resetDemoRound1: (id: string) => api.post(`/tournaments/${id}/demo-reset-round1`),
@@ -98,7 +105,7 @@ export const apiService = {
       clubId: string; tableId?: string; date: string; startTime: string; durationHours: number;
       eventStartTime?: string; eventEndTime?: string;
       eventType: "GAME" | "TOURNAMENT"; eventTitle?: string; description?: string; setsToWin?: number;
-      tablesCount?: number; isPublic?: boolean; maxPlayers?: number; minRating?: number; maxRating?: number; ratingWeight?: number;
+      tablesCount?: number; isPublic?: boolean; access?: "OPEN" | "CLOSED"; maxPlayers?: number; minRating?: number; maxRating?: number; ratingWeight?: number;
     }) => api.post("/bookings", d),
     remove: (id: string) => api.delete(`/bookings/${id}`),
   },

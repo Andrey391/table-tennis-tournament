@@ -431,4 +431,20 @@ ALTER TABLE "TournamentUser" ADD COLUMN IF NOT EXISTS "ratingStart" DOUBLE PRECI
 -- hold nothing you want.
 
 
+-- 18. Archiving replaces deletion for a COMPLETED tournament: deleting one would
+-- silently erase the rating changes it already applied to its players, so the
+-- server now refuses to delete a COMPLETED tournament at all and offers archiving
+-- instead. archivedAt is null until a manager archives it; archived tournaments
+-- drop out of the public feed but stay visible on their own page, on "mine", and
+-- in standings/results, same as isPublic already does.
+ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "archivedAt" TIMESTAMP(3);
+
+-- 19. Open vs closed tournaments. Joining already always creates a PENDING request
+-- that the manager must approve (self-join never grants REGISTERED directly), so
+-- "access" does not change that server-side approval flow. It only controls
+-- whether the client offers a "request to join" door to strangers in the public
+-- feed, or hides it behind an explicit invite/link for a closed event.
+ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "access" TEXT NOT NULL DEFAULT 'OPEN';
+
+
 COMMIT;

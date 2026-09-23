@@ -52,19 +52,21 @@ export default function Dashboard() {
     // /tournaments/mine needs an account; a guest only ever sees the open feed.
     // The home screen is for what is still going on: events that are being filled or
     // played. Finished and cancelled ones live under Results.
-    const fetchTournaments = scope === "mine" && !isGuest
+    const mine = scope === "mine" && !isGuest;
+    const fetchTournaments = mine
       ? apiService.tournaments.getMine({ kind: "TOURNAMENT", status: ACTIVE_STATUSES })
       : apiService.tournaments.getAll({ kind: "TOURNAMENT", status: ACTIVE_STATUSES, ...(city ? { city } : {}) });
-    const fetchGames = scope === "mine" && !isGuest
+    const fetchGames = mine
       ? apiService.tournaments.getMine({ kind: "GAME", status: ACTIVE_STATUSES })
       : apiService.tournaments.getAll({ kind: "GAME", status: ACTIVE_STATUSES, ...(city ? { city } : {}) });
     // Switching city or scope must not leave the previous list on screen as if it were
     // the answer, and a slow earlier response must not overwrite a newer one.
+    // getAll (public feed) returns { items, nextCursor }; getMine still returns a plain array.
     let stale = false;
     setTournaments(null);
     setGames(null);
-    fetchTournaments.then(r => { if (!stale) setTournaments(r.data); }).catch(e => { console.error(e); if (!stale) setTournaments([]); });
-    fetchGames.then(r => { if (!stale) setGames(r.data); }).catch(e => { console.error(e); if (!stale) setGames([]); });
+    fetchTournaments.then(r => { if (!stale) setTournaments(mine ? r.data : r.data.items); }).catch(e => { console.error(e); if (!stale) setTournaments([]); });
+    fetchGames.then(r => { if (!stale) setGames(mine ? r.data : r.data.items); }).catch(e => { console.error(e); if (!stale) setGames([]); });
     if (cityTouched) { try { localStorage.setItem("city", city); } catch { /* choice just won't persist */ } }
     return () => { stale = true; };
   }, [city, scope, cityTouched, isGuest]);
