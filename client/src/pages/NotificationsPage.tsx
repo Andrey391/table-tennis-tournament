@@ -4,6 +4,7 @@ import { apiService } from "../services/api";
 import Layout from "../components/Layout";
 import Loader from "../components/Loader";
 import EmptyState from "../components/EmptyState";
+import PushCard from "../components/PushCard";
 import { useT } from "../i18n";
 import { formatAgo } from "../lib/format";
 import { AppNotification, notificationText, notificationsChanged } from "../lib/notifications";
@@ -28,6 +29,7 @@ export default function NotificationsPage() {
   return (
     <Layout>
       <h1 className={`${pageTitle} mb-4`}>{t("notif.title")}</h1>
+      <PushCard />
       {items === null ? <Loader /> : items.length === 0 ? <EmptyState text={t("notif.empty")} /> : (
         <div className={`${card} divide-y divide-[#1c3350]`}>
           {items.map(n => {

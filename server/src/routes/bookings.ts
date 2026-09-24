@@ -72,6 +72,7 @@ bookingRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, res: R
           ...(data.tablesCount ? { tablesCount: data.tablesCount } : {}),
           ...(data.isPublic === undefined ? {} : { isPublic: data.isPublic }),
           ...(data.access ? { access: data.access } : {}),
+          ...(data.format ? { format: data.format } : {}),
           ...(data.description ? { description: data.description } : {}),
           ...(data.maxPlayers ? { maxPlayers: data.maxPlayers } : {}),
           ...(data.minRating !== undefined ? { minRating: data.minRating } : {}),

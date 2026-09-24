@@ -1,4 +1,4 @@
-import type { Lang } from "../i18n";
+import type { Lang } from "../i18n/dict";
 import { formatDelta, formatEventDay, formatClock } from "./format";
 
 // A notification as the server stores it: a type and its parameters, never the

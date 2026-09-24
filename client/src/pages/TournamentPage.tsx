@@ -11,6 +11,9 @@ import { btnPrimary, btnPrimaryLg, btnSmall, card, errorBox, field, fieldLabel, 
 import { tourDone, requestClaim, rememberDemoTournament } from "../lib/tour";
 import { formatEventDay, formatTimeRange, playerName, matchScoreLine, formatDelta, deltaTone, formatRating } from "../lib/format";
 import EmptyState from "../components/EmptyState";
+import PushCard from "../components/PushCard";
+import FormatPicker from "../components/FormatPicker";
+import BracketView, { type Bracket } from "../components/BracketView";
 import { useConfirm } from "../components/ConfirmDialog";
 import { usePolling } from "../lib/usePolling";
 
@@ -204,6 +207,7 @@ export default function TournamentPage() {
     ratingWeight: tournament.ratingWeight ?? 0.5,
     isPublic: tournament.isPublic !== false,
     access: tournament.access === "CLOSED" ? "CLOSED" : "OPEN",
+    format: tournament.format ?? "SWISS",
   });
 
   const saveEdit = async (e: React.FormEvent) => {
@@ -225,6 +229,8 @@ export default function TournamentPage() {
         ratingWeight: edit.ratingWeight === "" ? undefined : +edit.ratingWeight,
         isPublic: edit.isPublic,
         access: edit.access,
+        // The server refuses a format change after round 1; only send it before.
+        ...(tournament.status === "DRAFT" ? { format: edit.format } : {}),
       });
       setEdit(null);
       setNotice(t("tournament.saved"));
@@ -291,7 +297,11 @@ export default function TournamentPage() {
   const matches: any[] = tournament.matches || [];
   const currentRound = matches.reduce((max: number, m: any) => Math.max(max, m.round), 0);
   const roundUnresolved = matches.filter((m: any) => m.round === currentRound && m.status !== "COMPLETED").length;
-  const canStartNextRound = !isDraft && roundUnresolved === 0;
+  // A bracket (KNOCKOUT/PLACEMENT) comes drawn from the server; its roster is fixed
+  // once round 1 is, and it has a last round after which there is nothing to pair.
+  const bracket: Bracket | null = tournament.bracket ?? null;
+  const rosterFixed = !!bracket;
+  const canStartNextRound = !isDraft && roundUnresolved === 0 && !bracket?.complete;
   const rounds = Array.from(new Set(matches.map((m: any) => m.round))).sort((a, b) => b - a);
   // With an odd headcount one player sits each round out. `/pair` records who, so
   // this is read rather than guessed from "has no match in this round" — that guess
@@ -304,7 +314,12 @@ export default function TournamentPage() {
   const myCurrent = user && currentRound > 0
     ? matches.find((m: any) => m.round === currentRound && (m.player1Id === user.id || m.player2Id === user.id)) || null
     : null;
-  const mySittingOut = !!user && currentRound > 0 && byeOf(currentRound)?.userId === user.id;
+  const mySittingOut = !!user && currentRound > 0 && (bracket
+    ? bracket.slots.some(s => s.round === currentRound && !s.matchId && ((s.p1 === user.id && s.p2 === null) || (s.p2 === user.id && s.p1 === null)))
+    : byeOf(currentRound)?.userId === user.id);
+  // Out of a knockout: on the roster, but in nothing this round.
+  const myKnockedOut = !!user && bracket?.format === "KNOCKOUT" && myEntry?.status === "REGISTERED" && !mySittingOut &&
+    !bracket.slots.some(s => s.round === currentRound && (s.p1 === user.id || s.p2 === user.id));
   const waitingOn = matches.filter((m: any) => m.round === currentRound && m.status !== "COMPLETED");
 
   // Round-1 seeding the manager can reorder: manual seeds first, then rating.
@@ -340,6 +355,9 @@ export default function TournamentPage() {
           <span className="text-xs text-[#4d6480]">{t("tournament.tables", { n: tournament.tablesCount })}</span>
           {tournament.isPublic === false && (
             <span className="text-xs text-[#6b84a0] border border-[#1c3350] rounded-md px-1.5 py-0.5">{t("tournament.privateBadge")}</span>
+          )}
+          {tournament.format && tournament.format !== "SWISS" && (
+            <span className="text-xs text-[#ccff00] border border-[#ccff00]/30 rounded-md px-1.5 py-0.5">{t(`format.${tournament.format}`)}</span>
           )}
           {tournament.access === "CLOSED" && (
             <span className="text-xs text-[#6b84a0] border border-[#1c3350] rounded-md px-1.5 py-0.5">{t("tournament.access.closedBadge")}</span>
@@ -407,6 +425,12 @@ export default function TournamentPage() {
             <SetsToWinPicker value={edit.setsToWin} onChange={n => setEdit({ ...edit, setsToWin: n })} />
             <p className="text-xs text-[#4d6480] mt-1.5">{t("create.setsToWinHint")}</p>
           </div>
+          {isDraft && (
+            <div>
+              <label className={fieldLabel}>{t("format.label")}</label>
+              <FormatPicker value={edit.format} onChange={format => setEdit({ ...edit, format })} />
+            </div>
+          )}
           {tournament.kind === "TOURNAMENT" && (
             <div>
               <label className={fieldLabel}>{t("create.ratingWeight")}</label>
@@ -438,6 +462,9 @@ export default function TournamentPage() {
         </form>
       )}
 
+      {!isDraft && !myCurrent && myKnockedOut && (
+        <div className="rounded-lg p-4 mb-4 border border-dashed border-[#1c3350] bg-[#101f36]/60 text-sm text-[#93a8c2] text-center">{t("bracket.knockedOut")}</div>
+      )}
       {!isDraft && (myCurrent || mySittingOut) && (
         myCurrent ? (
           <Link to={`/tournament/${id}/match/${myCurrent.id}`} data-tour="my-match" onClick={() => tourDone("openMatch")}
@@ -458,6 +485,10 @@ export default function TournamentPage() {
           <div className="rounded-lg p-4 mb-4 border border-dashed border-[#1c3350] bg-[#101f36]/60 text-sm text-[#93a8c2] text-center">{t("tournament.myBye")}</div>
         )
       )}
+
+      {/* A player on the roster of a running event, with push off: the next pairing
+          is exactly what they would want on their phone. */}
+      {!user?.isDemo && myEntry?.status === "REGISTERED" && tournament.status !== "COMPLETED" && tournament.status !== "CANCELLED" && <PushCard nudge />}
 
       {/* The chat is how people agree when to meet, so it is there from the start;
           the scoreboards only mean something once a round exists. */}
@@ -486,7 +517,7 @@ export default function TournamentPage() {
           {/* Adding players means adding *real* ones, and a demo account has no
               business putting a throwaway event on someone's record — so there the
               button offers a real account instead of the roster picker. */}
-          {isManager && (
+          {isManager && !rosterFixed && (
             <button onClick={() => (isDemo ? (setDemoAddPrompt(true), requestClaim()) : setShowAdd(s => !s))} className="text-xs text-[#ccff00] font-medium">{showAdd ? t("tournament.close") : `+ ${t("tournament.add")}`}</button>
           )}
         </div>
@@ -576,7 +607,7 @@ export default function TournamentPage() {
               {withdrawn.map((p: any) => (
                 <div key={p.id} className="flex justify-between items-center bg-[#101f36]/60 p-2.5 rounded-lg border border-[#1c3350] text-[#6b84a0]">
                   <span className="text-sm truncate line-through">{p.user?.firstName} {p.user?.lastName}</span>
-                  {isManager && <button onClick={() => addSelectedOne(p.userId)} className="text-xs text-[#ccff00] font-medium shrink-0">{t("tournament.add")}</button>}
+                  {isManager && !rosterFixed && <button onClick={() => addSelectedOne(p.userId)} className="text-xs text-[#ccff00] font-medium shrink-0">{t("tournament.add")}</button>}
                 </div>
               ))}
             </div>
@@ -610,6 +641,8 @@ export default function TournamentPage() {
               <p className="text-[#93a8c2]">{t("tournament.ratingGate", { min: tournament.minRating ?? 0, max: tournament.maxRating ?? "∞" })}</p>
               <p className="text-red-400 font-medium mt-1">{t("tournament.yourRating", { rating: formatRating(user?.rating ?? 0) })}</p>
             </div>
+          ) : rosterFixed ? (
+            <p className={`${card} text-center py-3 mt-3 text-sm text-[#93a8c2]`}>{t("bracket.rosterFixed")}</p>
           ) : isFull ? (
             <p className={`${card} text-center py-3 mt-3 text-sm text-[#93a8c2]`}>{t("tournament.full")}</p>
           ) : (
@@ -636,7 +669,7 @@ export default function TournamentPage() {
           {isManager && (
             <button onClick={pair} disabled={!canStartNextRound || busy} data-tour="next-round"
               className={`${btnPrimaryLg} w-full`}>
-              {busy ? t("tournament.pairing") : canStartNextRound ? t("tournament.startRound", { n: currentRound + 1 }) : t("tournament.finishRoundFirst")}
+              {busy ? t("tournament.pairing") : bracket?.complete ? t("bracket.done") : canStartNextRound ? t("tournament.startRound", { n: currentRound + 1 }) : t("tournament.finishRoundFirst")}
             </button>
           )}
           {/* The round waits for its slowest table; say which one, so the manager
@@ -652,7 +685,8 @@ export default function TournamentPage() {
               ))}
             </div>
           )}
-          {rounds.map((round) => (
+          {bracket && <BracketView bracket={bracket} players={tournament.players} matches={matches} renderMatch={m => <MatchRow m={m} tournamentId={id!} tableLabel={t("tournament.table")} />} />}
+          {!bracket && rounds.map((round) => (
             <div key={round}>
               <h2 className={`${sectionLabel} mb-2`}>{t("tournament.round", { n: round })}</h2>
               {matches.filter((m: any) => m.round === round).map((m: any) => <MatchRow key={m.id} m={m} tournamentId={id!} tableLabel={t("tournament.table")} />)}
@@ -671,7 +705,7 @@ export default function TournamentPage() {
         <section className="mt-6" data-tour="standings">
           <div className="flex items-center justify-between mb-2">
             <h2 className={sectionLabel}>{t("tournament.standings")}</h2>
-            {standings.length > 2 && (
+            {standings.length > 2 && !bracket && (
               <select value={tiebreak} onChange={e => setTiebreak(e.target.value as "buchholz" | "sonnebornberger")}
                 className="bg-transparent text-xs text-[#93a8c2] border border-[#1c3350] rounded-lg px-2 py-1 focus:outline-none">
                 <option value="buchholz" className="bg-[#101f36]">{t("tournament.tiebreak.buchholz")}</option>
@@ -683,7 +717,7 @@ export default function TournamentPage() {
             {standings.map((s: any, i: number) => (
               <div key={s.userId} className="flex items-center justify-between px-3 py-2 text-sm">
                 <Link to={`/player/${s.userId}`} className="flex items-center gap-2 min-w-0">
-                  <span className="text-[#4d6480] text-xs w-4 shrink-0">{i + 1}</span>
+                  <span className="text-[#4d6480] text-xs w-4 shrink-0">{s.place ?? i + 1}</span>
                   <Avatar firstName={s.firstName} lastName={s.lastName} size="sm" />
                   <span className="truncate">{playerName(s)}</span>
                 </Link>
@@ -697,7 +731,7 @@ export default function TournamentPage() {
               </div>
             ))}
           </div>
-          <p className="text-[11px] text-[#4d6480] mt-1.5">{t(tiebreak === "sonnebornberger" ? "tournament.sbHint" : "tournament.buchholzHint")}</p>
+          <p className="text-[11px] text-[#4d6480] mt-1.5">{bracket ? t("bracket.standingsHint") : t(tiebreak === "sonnebornberger" ? "tournament.sbHint" : "tournament.buchholzHint")}</p>
         </section>
       )}
       {isManager && tournament.status === "COMPLETED" && !tournament.archivedAt && (

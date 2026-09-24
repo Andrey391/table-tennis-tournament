@@ -2,7 +2,7 @@ import { Router, Response } from "express";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../config/db";
 import { publicError } from "../shared/errors";
-import { computeStandings } from "../shared/standings";
+import { eventStandings } from "../shared/standings";
 import { standingsInclude, inCity, PLAYED_STATUSES } from "../shared/queries";
 import { notDemo } from "../shared/demo";
 import { listed } from "../shared/privacy";
@@ -50,7 +50,7 @@ statsRouter.get("/results", async (req, res: Response) => {
       players: e.players.filter(p => p.status === "REGISTERED").length,
       matchesPlayed: e.matches.length,
       live: e._count.matches,
-      podium: e.matches.length ? computeStandings(e.players, e.matches).slice(0, 3) : [],
+      podium: e.matches.length ? eventStandings(e).slice(0, 3) : [],
     })));
   } catch (err: any) { res.status(400).json({ error: publicError(err) }); }
 });
@@ -73,7 +73,7 @@ statsRouter.get("/players/:id/stats", async (req, res: Response) => {
     if (!user) { res.status(404).json({ error: "Not found" }); return; }
     const placings = finished
       .filter(e => e.players.length >= 3)
-      .map(e => computeStandings(e.players, e.matches).findIndex(r => r.userId === userId) + 1)
+      .map(e => { const rows = eventStandings(e); const row = rows.find(r => r.userId === userId); return row ? row.place ?? rows.indexOf(row) + 1 : 0; })
       .filter(p => p > 0);
     res.json(computePlayerStats(userId, user.rating, matches, placings));
   } catch (err: any) { res.status(400).json({ error: publicError(err) }); }

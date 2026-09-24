@@ -7,7 +7,7 @@ import { summariseMatches } from "../shared/stats";
 import { notDemo } from "../shared/demo";
 import { listed } from "../shared/privacy";
 import { startOfUtcDay } from "../shared/booking";
-import { playerSelect } from "../shared/queries";
+import { PLAYED_STATUSES, cityIs, playerSelect, queryString } from "../shared/queries";
 import bcrypt from "bcryptjs";
 
 export const playerRouter = Router();
@@ -128,12 +128,26 @@ playerRouter.put("/:id", authMiddleware, async (req: AuthenticatedRequest, res: 
 export const ratingRouter = Router();
 
 // The public ladder: only players who agreed to their name being shown to anyone.
-ratingRouter.get("/", async (_req, res: Response) => {
-  const players = await prisma.user.findMany({
-    where: listed,
-    select: { id: true, firstName: true, lastName: true, city: true, rating: true },
-    orderBy: { rating: "desc" },
-    take: 100,
-  });
-  res.json(players);
+// It can be narrowed to a city (`User.city`) or a club: a club's ladder is whoever
+// follows it or has played an event there. The rating is one number app-wide, but
+// a ladder is only worth reading among people who actually meet at the table, so
+// the rating screen opens on the viewer's own city rather than on everyone.
+ratingRouter.get("/", async (req, res: Response) => {
+  const city = queryString(req.query.city);
+  const clubId = queryString(req.query.clubId);
+  try {
+    const players = await prisma.user.findMany({
+      where: {
+        ...listed,
+        ...(city ? { city: cityIs(city) } : {}),
+        ...(clubId ? { OR: [{ subscriptions: { some: { clubId } } }, { tournaments: { some: { status: PLAYED_STATUSES, tournament: { clubId } } } }] } : {}),
+      },
+      select: { id: true, firstName: true, lastName: true, city: true, rating: true },
+      orderBy: { rating: "desc" },
+      take: 100,
+    });
+    res.json(players);
+  } catch (err: any) {
+    res.status(500).json({ error: publicError(err) });
+  }
 });

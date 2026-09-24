@@ -7,6 +7,7 @@ import { computeFntrMatchDelta, DEFAULT_RATING_WEIGHT, checkSetScore, checkCanEn
 import { playerSelect, matchInclude } from "../shared/queries";
 import { notify, eventAudience, shortName, NotificationType } from "../shared/notify";
 import AuditLog from "../models/AuditLog";
+import { isBracket, bracketOf } from "../shared/bracket";
 
 export const matchRouter = Router();
 
@@ -42,9 +43,20 @@ const reload = (id: string) => prisma.match.findUnique({ where: { id }, include:
 
 // A tournament with no unresolved matches left is done — but the manager can always
 // start another round later, which flips it back to ACTIVE (see tournaments.ts /pair).
+// A bracket is the exception: it is done when its last round is, not whenever a
+// round is, since the rounds after the current one are already decided in advance.
 async function maybeCompleteTournament(tournamentId: string, actorId?: string) {
   const unresolved = await prisma.match.count({ where: { tournamentId, status: { in: ["NOT_STARTED", "IN_PROGRESS"] } } });
   if (unresolved === 0) {
+    const shape = await prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      select: {
+        format: true,
+        players: { select: { userId: true, seed: true, status: true } },
+        matches: { select: { id: true, round: true, matchIndex: true, player1Id: true, player2Id: true, status: true, setsWon1: true, setsWon2: true } },
+      },
+    });
+    if (shape && isBracket(shape.format) && !bracketOf(shape)?.complete) return;
     const { count } = await prisma.tournament.updateMany({ where: { id: tournamentId, status: "ACTIVE" }, data: { status: "COMPLETED" } });
     // The final table is worth telling the room about for a tournament; a game's
     // players already heard their result from the match itself.
@@ -339,6 +351,12 @@ matchRouter.post("/:id/undo", authMiddleware, async (req: AuthenticatedRequest, 
     if (match.status === "COMPLETED") {
       // Reopening a settled result is the manager's call, not the players'.
       if (!match.isManager) { res.status(403).json({ error: "Only the tournament manager can reopen a finished match" }); return; }
+      // In a bracket the next round was drawn from this result; reopening it would
+      // leave a winner playing on who may no longer be the winner.
+      const event = await prisma.tournament.findUnique({ where: { id: match.tournamentId }, select: { format: true } });
+      if (isBracket(event?.format) && await prisma.match.count({ where: { tournamentId: match.tournamentId, round: { gt: match.round } } })) {
+        res.status(400).json({ error: "The next round of the bracket is already drawn from this result" }); return;
+      }
       await revertRatingUpdate(match);
       // The event was flipped to COMPLETED by this match; it is live again.
       const [, , t] = await Promise.all([

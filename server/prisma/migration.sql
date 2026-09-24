@@ -523,4 +523,32 @@ CREATE INDEX IF NOT EXISTS "Match_status_endedAt_idx" ON "Match"("status", "ende
 CREATE INDEX IF NOT EXISTS "ChatMessage_tournamentId_createdAt_idx" ON "ChatMessage"("tournamentId", "createdAt");
 
 
+
+-- 23. Web Push subscriptions (see PushSubscription in schema.prisma): one row per
+-- device that asked for notifications while the app is closed. Deleting a user
+-- takes their devices with them.
+CREATE TABLE IF NOT EXISTS "PushSubscription" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "endpoint" TEXT NOT NULL,
+    "p256dh" TEXT NOT NULL,
+    "auth" TEXT NOT NULL,
+    "lang" TEXT NOT NULL DEFAULT 'ru',
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "PushSubscription_pkey" PRIMARY KEY ("id")
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "PushSubscription_endpoint_key" ON "PushSubscription"("endpoint");
+CREATE INDEX IF NOT EXISTS "PushSubscription_userId_idx" ON "PushSubscription"("userId");
+DO $$ BEGIN
+  ALTER TABLE "PushSubscription" ADD CONSTRAINT "PushSubscription_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+
+
+-- 24. Tournament format (see Tournament.format in schema.prisma): SWISS, the only
+-- behaviour before this column, stays the default for every existing event.
+ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "format" TEXT NOT NULL DEFAULT 'SWISS';
+
+
 COMMIT;

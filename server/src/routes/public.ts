@@ -2,7 +2,8 @@ import { Router, Response } from "express";
 import { prisma } from "../config/db";
 import { publicError } from "../shared/errors";
 import { matchInclude, clubSelect, standingsInclude } from "../shared/queries";
-import { computeStandings } from "../shared/standings";
+import { computeStandings, eventStandings } from "../shared/standings";
+import { isBracket } from "../shared/bracket";
 
 // Unauthenticated read-only views: the courtside live board and the shareable
 // tournament page. Mounted at /api/live and /api/public.
@@ -40,7 +41,8 @@ publicRouter.get("/tournament/:id/standings", async (req, res: Response) => {
   try {
     const tournament = await prisma.tournament.findUnique({ where: { id: req.params.id }, include: standingsInclude });
     if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
-    res.json(computeStandings(tournament.players, tournament.matches).sort((a, b) =>
+    // A bracket is ranked by its places, not by this board's order.
+    res.json(isBracket(tournament.format) ? eventStandings(tournament) : computeStandings(tournament.players, tournament.matches).sort((a, b) =>
       b.wins - a.wins || (b.setsWon - b.setsLost) - (a.setsWon - a.setsLost)));
   } catch (err: any) {
     res.status(400).json({ error: publicError(err) });

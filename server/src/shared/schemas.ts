@@ -7,6 +7,9 @@ const TimeOfDay = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Expected HH:MM"
 // Cities are typed by hand; store them tidy so they compare and list as one.
 const City = z.string().max(120).transform(normalizeCity);
 
+// SWISS (default), KNOCKOUT or PLACEMENT — see shared/bracket.ts.
+const TournamentFormatSchema = z.enum(["SWISS", "KNOCKOUT", "PLACEMENT"]);
+
 // A "game" is a tournament that isn't rated — same roster, rounds and pairing.
 // `name` is optional (falls back to the club's name, or a generic one for the
 // kind — see the create route) but `startTime` is required: a club night without
@@ -14,6 +17,7 @@ const City = z.string().max(120).transform(normalizeCity);
 // label. This mirrors POST /bookings, which has required exactly this the same way.
 export const CreateTournamentSchema = z.object({
   kind: z.enum(["TOURNAMENT", "GAME"]).default("TOURNAMENT"),
+  format: TournamentFormatSchema.optional(),
   name: z.string().min(1).max(200).optional(),
   description: z.string().max(2000).optional(),
   tablesCount: z.number().int().min(1).max(50).default(4),
@@ -40,6 +44,8 @@ export const CreateTournamentSchema = z.object({
 
 export const UpdateTournamentSchema = z.object({
   name: z.string().min(1).max(200).optional(),
+  // Only while DRAFT (checked in PUT /tournaments/:id).
+  format: TournamentFormatSchema.optional(),
   description: z.string().max(2000).nullable().optional(),
   tablesCount: z.number().int().min(1).max(50).optional(),
   maxPlayers: z.number().int().min(2).max(500).nullable().optional(),
@@ -105,6 +111,7 @@ export const CreateBookingSchema = z.object({
   isPublic: z.boolean().optional(),
   // OPEN (default) or CLOSED — see CreateTournamentSchema. Ignored for a GAME.
   access: z.enum(["OPEN", "CLOSED"]).optional(),
+  format: TournamentFormatSchema.optional(),
   // Tournament-only settings, same as CreateTournamentSchema — a booking for a
   // TOURNAMENT is how a tournament is created at all now, so it carries the
   // same knobs the old bookingless form used to.
@@ -144,6 +151,32 @@ export const ChatMessageSchema = z.object({
 // No `ids` marks the whole inbox read.
 export const MarkNotificationsReadSchema = z.object({
   ids: z.array(z.string()).max(200).optional(),
+});
+
+// The server POSTs to whatever endpoint a subscription names, so it must be a real
+// browser push service and never an address of the caller's choosing (an internal
+// host, a metadata IP). These are the services the major browsers use: Chrome and
+// most Chromium browsers go through FCM, Firefox through Mozilla, Safari through
+// Apple, Edge on Windows through WNS. A browser with a push service of its own
+// gets a 400 on subscribe and simply stays on the in-app inbox; add its host here.
+const PUSH_HOSTS = [".googleapis.com", ".mozilla.com", ".push.apple.com", ".notify.windows.com"];
+const isPushEndpoint = (u: string) => {
+  try {
+    const url = new URL(u);
+    return url.protocol === "https:" && PUSH_HOSTS.some((h) => ("." + url.hostname).endsWith(h));
+  } catch {
+    return false;
+  }
+};
+
+export const PushSubscribeSchema = z.object({
+  endpoint: z.string().max(2000).refine(isPushEndpoint, "Unsupported push service"),
+  keys: z.object({ p256dh: z.string().min(1).max(200), auth: z.string().min(1).max(100) }),
+  lang: z.enum(["ru", "en"]).optional(),
+});
+
+export const PushUnsubscribeSchema = z.object({
+  endpoint: z.string().max(2000),
 });
 
 export const AddPlayersSchema = z.object({

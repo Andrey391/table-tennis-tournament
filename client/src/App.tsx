@@ -1,7 +1,9 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { PollingProvider } from "./context/SocketContext";
-import { LangProvider } from "./i18n";
+import { LangProvider, useT } from "./i18n";
+import { useEffect } from "react";
+import { syncPush } from "./lib/push";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import ForgotPassword from "./pages/ForgotPassword";
@@ -36,7 +38,12 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 }
 
 function App() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+  const { lang } = useT();
+  // A device with push on is re-registered to whoever is signed in, in the
+  // language they use, so a phone that changed hands or languages gets the right
+  // notifications. Never prompts.
+  useEffect(() => { if (token && user?.id) void syncPush(lang); }, [token, user?.id, lang]);
   return (
     <BrowserRouter>
       <PollingProvider>

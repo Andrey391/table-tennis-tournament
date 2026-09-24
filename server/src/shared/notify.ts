@@ -1,4 +1,5 @@
 import { prisma } from "../config/db";
+import { sendPush } from "./push";
 
 // Every kind of notification the app writes. The client turns `type` + `params`
 // into text (`notif.<type>` in client/src/i18n), so adding a type means adding
@@ -47,7 +48,8 @@ export const shortName = (p?: { firstName?: string | null; lastName?: string | n
 // throws: the route that calls it has already done its real work (settled a
 // match, paired a round), and a failed inbox write must not turn that into an
 // error on the judge's screen. `actorId` is left out of the recipients — nobody
-// needs telling about what they have just done themselves.
+// needs telling about what they have just done themselves. Each one also goes to
+// the recipient's phones as a push (shared/push.ts), which is off unless configured.
 export async function notify(items: NewNotification[], actorId?: string | null): Promise<void> {
   const rows = items.filter((n) => n.userId && n.userId !== actorId);
   if (!rows.length) return;
@@ -58,6 +60,7 @@ export async function notify(items: NewNotification[], actorId?: string | null):
   } catch (err: any) {
     console.error("[NOTIFY]", err?.message);
   }
+  await sendPush(rows);
 }
 
 // Everyone taking part in an event (plus its manager), for notifications that

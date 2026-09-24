@@ -1,3 +1,5 @@
+import { bracketOf, BracketMatchInput } from "./bracket";
+
 // Tournament standings, computed straight from completed matches.
 //
 // Ranking: matches won, then Buchholz (the sum of every opponent's wins), then set
@@ -67,4 +69,22 @@ export function computeStandings(players: StandingsPlayer[], matches: StandingsM
   const tiebreakValue = (row: StandingsRow) => (tiebreak === "sonnebornberger" ? row.sonnebornBerger : row.buchholz);
   return Array.from(stats.values()).sort((a, b) =>
     b.wins - a.wins || tiebreakValue(b) - tiebreakValue(a) || (b.setsWon - b.setsLost) - (a.setsWon - a.setsLost));
+}
+
+// The standings of one event, in the order its format ranks by: a Swiss event by
+// the table above, a bracket by the places played for (shared/bracket.ts), with
+// the table only ordering players tied on a place (the 5-8 group of a knockout).
+// Bracket rows carry `place`, shared by ties. Every list of an event's standings
+// (its page, the public board, the results podium, a player's placings) goes
+// through here so they all agree.
+export function eventStandings(
+  event: { format: string; players: (StandingsPlayer & { seed: number | null; status: string })[]; matches: (StandingsMatch & BracketMatchInput)[] },
+  tiebreak: StandingsTiebreak = "buchholz",
+): (StandingsRow & { place?: number })[] {
+  const rows = computeStandings(event.players, event.matches, tiebreak);
+  const bracket = event.matches.length ? bracketOf(event) : null;
+  if (!bracket) return rows;
+  const key = (id: string) => bracket.place.get(id) ?? Infinity;
+  rows.sort((a, b) => key(a.userId) - key(b.userId));
+  return rows.map((r) => ({ ...r, place: 1 + rows.filter((o) => key(o.userId) < key(r.userId)).length }));
 }
