@@ -1,4 +1,4 @@
-import type { Lang } from "../i18n";
+import type { Lang } from "../i18n/dict";
 
 const LOCALE: Record<Lang, string> = { ru: "ru-RU", en: "en-GB" };
 

@@ -97,7 +97,7 @@ export const apiService = {
     standings: (id: string) => api.get(`/public/tournament/${id}/standings`),
   },
   rating: {
-    getAll: () => api.get("/rating"),
+    getAll: (params?: { city?: string; clubId?: string }) => api.get("/rating", { params }),
   },
   clubs: {
     getAll: (params?: { city?: string; q?: string }) => api.get("/clubs", { params }),
@@ -117,7 +117,7 @@ export const apiService = {
       clubId: string; tableId?: string; date: string; startTime: string; durationHours: number;
       eventStartTime?: string; eventEndTime?: string;
       eventType: "GAME" | "TOURNAMENT"; eventTitle?: string; description?: string; setsToWin?: number;
-      tablesCount?: number; isPublic?: boolean; access?: "OPEN" | "CLOSED"; maxPlayers?: number; minRating?: number; maxRating?: number; ratingWeight?: number;
+      tablesCount?: number; isPublic?: boolean; access?: "OPEN" | "CLOSED"; format?: "SWISS" | "KNOCKOUT" | "PLACEMENT"; maxPlayers?: number; minRating?: number; maxRating?: number; ratingWeight?: number;
     }) => api.post("/bookings", d),
     remove: (id: string) => api.delete(`/bookings/${id}`),
     pay: (id: string) => api.post(`/bookings/${id}/pay`),
@@ -138,6 +138,11 @@ export const apiService = {
     list: () => api.get("/notifications"),
     unread: () => api.get("/notifications/unread"),
     markRead: (ids?: string[]) => api.post("/notifications/read", ids ? { ids } : {}),
+    // Web Push (lib/push.ts). `token` is for log out, which has already dropped it.
+    pushKey: () => api.get("/notifications/push/key"),
+    pushSubscribe: (d: { endpoint: string; keys: { p256dh: string; auth: string }; lang: string }) => api.post("/notifications/push/subscribe", d),
+    pushUnsubscribe: (endpoint: string, token?: string) =>
+      api.post("/notifications/push/unsubscribe", { endpoint }, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined),
   },
   // Results feed with podiums, per-player statistics, head-to-head and leaderboards.
   stats: {

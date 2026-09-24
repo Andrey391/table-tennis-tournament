@@ -8,6 +8,8 @@ import SetsToWinPicker from "./SetsToWinPicker";
 import ClubScheduleModal from "./ClubScheduleModal";
 import Loader from "./Loader";
 import EmptyState from "./EmptyState";
+import FormatPicker, { type TournamentFormat } from "./FormatPicker";
+import HelpTip from "./HelpTip";
 
 // "HH:MM" -> minutes since midnight, for turning a start/end pair into a duration.
 const parseHM = (s: string) => { const [h, m] = s.split(":").map(Number); return h * 60 + m; };
@@ -71,7 +73,7 @@ export default function EventForm({
       clubId: initialClubId, tableId: "", date: toDateStr(startDate), startTime: toTimeStr(startDate), endTime: addHour(toTimeStr(startDate)),
       eventType: defaultEventType, eventTitle: "", description: "",
       setsToWin: 3, tablesCount: 4, maxPlayers: "", minRating: "", maxRating: "", ratingWeight: "0.5",
-      isPublic: true, access: "OPEN" as "OPEN" | "CLOSED",
+      isPublic: true, access: "OPEN" as "OPEN" | "CLOSED", format: "SWISS" as TournamentFormat,
     };
   });
   // Whether the user has touched "end" directly, so the start-time auto-fill
@@ -169,6 +171,7 @@ export default function EventForm({
             maxRating: form.maxRating ? +form.maxRating : undefined,
             ratingWeight: form.ratingWeight ? +form.ratingWeight : undefined,
             access: form.access,
+            format: form.format,
           } : {}),
         });
       } else {
@@ -222,7 +225,7 @@ export default function EventForm({
 
       <div>
         <div className="flex items-center justify-between mb-1">
-          <label className={fieldLabel}>{t("create.club")}</label>
+          <label className={fieldLabel}>{t("create.club")} <HelpTip text={t("help.club")} /></label>
           <Link to="/clubs" className="text-xs text-[#ccff00] font-medium">{t("play.manageClubs")}</Link>
         </div>
         {clubs.length === 0 ? (
@@ -235,6 +238,7 @@ export default function EventForm({
         )}
       </div>
 
+      <label className={fieldLabel}>{t("common.date")} <HelpTip text={t("help.date")} /></label>
       <input type="date" min={toDateStr(new Date())} value={form.date} onChange={e => set("date", e.target.value)} className={field} required />
 
       <div className="grid grid-cols-2 gap-3">
@@ -252,7 +256,7 @@ export default function EventForm({
       {form.clubId && availability.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-1">
-            <label className={fieldLabel}>{t("common.table")}</label>
+            <label className={fieldLabel}>{t("common.table")} <HelpTip text={t("help.table")} /></label>
             <button type="button" onClick={() => setShowSchedule(true)} className="text-xs text-[#ccff00] font-medium">
               {t("play.schedule")}
             </button>
@@ -284,7 +288,7 @@ export default function EventForm({
       )}
 
       <div>
-        <label className={fieldLabel}>{t("play.bookingFor")}</label>
+        <label className={fieldLabel}>{t("play.bookingFor")} <HelpTip text={t("help.bookingFor")} /></label>
         {form.clubId ? (
           <div className="flex gap-2">
             {(["GAME", "TOURNAMENT"] as const).map(kind => (
@@ -304,7 +308,7 @@ export default function EventForm({
           {availability.length > 0 && (
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className={fieldLabel}>{t("create.tables")}</label>
+                <label className={fieldLabel}>{t("create.tables")} <HelpTip text={t("help.tables")} /></label>
                 <input type="number" min={1} max={Math.max(1, freeTablesCount)} value={form.tablesCount}
                   onChange={e => set("tablesCount", Math.max(1, +e.target.value))} className={field} />
                 <p className="text-xs text-[#4d6480] mt-1.5">
@@ -312,43 +316,44 @@ export default function EventForm({
                 </p>
               </div>
               <div>
-                <label className={fieldLabel}>{t("create.maxPlayers")}</label>
+                <label className={fieldLabel}>{t("create.maxPlayers")} <HelpTip text={t("help.maxPlayers")} /></label>
                 <input type="number" min={2} placeholder="—" value={form.maxPlayers} onChange={e => set("maxPlayers", e.target.value)} className={field} />
-                <p className="text-xs text-[#4d6480] mt-1.5">{t("create.maxPlayersHint")}</p>
               </div>
             </div>
           )}
 
           {availability.length === 0 && (
             <div>
-              <label className={fieldLabel}>{t("create.maxPlayers")}</label>
+              <label className={fieldLabel}>{t("create.maxPlayers")} <HelpTip text={t("help.maxPlayers")} /></label>
               <input type="number" min={2} placeholder="—" value={form.maxPlayers} onChange={e => set("maxPlayers", e.target.value)} className={field} />
-              <p className="text-xs text-[#4d6480] mt-1.5">{t("create.maxPlayersHint")}</p>
             </div>
           )}
 
           <div>
-            <label className={fieldLabel}>{t("create.description")} <span className="normal-case text-[#4d6480]">({t("common.optional")})</span></label>
+            <label className={fieldLabel}>{t("format.label")} <HelpTip text={t("help.format")} /></label>
+            <FormatPicker value={form.format} onChange={f => set("format", f)} />
+          </div>
+
+          <div>
+            <label className={fieldLabel}>{t("create.description")} <span className="normal-case text-[#4d6480]">({t("common.optional")})</span> <HelpTip text={t("help.description")} /></label>
             <textarea rows={3} placeholder={t("create.descriptionPlaceholder")} value={form.description} onChange={e => set("description", e.target.value)} className={field} />
           </div>
 
           <div>
-            <label className={fieldLabel}>{t("create.ratingRange")} <span className="normal-case text-[#4d6480]">({t("common.optional")})</span></label>
+            <label className={fieldLabel}>{t("create.ratingRange")} <span className="normal-case text-[#4d6480]">({t("common.optional")})</span> <HelpTip text={t("help.ratingRange")} /></label>
             <div className="grid grid-cols-2 gap-3">
               <input type="number" placeholder={t("create.min")} value={form.minRating} onChange={e => set("minRating", e.target.value)} className={field} />
               <input type="number" placeholder={t("create.max")} value={form.maxRating} onChange={e => set("maxRating", e.target.value)} className={field} />
             </div>
-            <p className="text-xs text-[#4d6480] mt-1.5">{t("create.ratingHint")}</p>
           </div>
 
           <div>
-            <label className={fieldLabel}>{t("create.ratingWeight")}</label>
+            <label className={fieldLabel}>{t("create.ratingWeight")} <HelpTip text={t("help.ratingWeight")} /></label>
             <input type="number" min={0.1} max={1} step={0.1} value={form.ratingWeight} onChange={e => set("ratingWeight", e.target.value)} className={field} />
-            <p className="text-xs text-[#4d6480] mt-1.5">{t("create.ratingWeightHint")}</p>
           </div>
 
           <div>
-            <label className={fieldLabel}>{t("tournament.access.label")}</label>
+            <label className={fieldLabel}>{t("tournament.access.label")} <HelpTip text={t("help.access")} /></label>
             <div className="flex gap-2">
               <button type="button" onClick={() => set("access", "OPEN")}
                 className={`flex-1 py-2 rounded-lg text-sm border ${form.access === "OPEN" ? "bg-[#ccff00] text-[#0a1628] border-[#ccff00] font-bold" : "border-[#1c3350] text-[#93a8c2]"}`}>
@@ -359,19 +364,18 @@ export default function EventForm({
                 {t("tournament.access.closed")}
               </button>
             </div>
-            <p className="text-xs text-[#4d6480] mt-1.5">{t("tournament.access.hint")}</p>
           </div>
         </>
       )}
 
       <div>
-        <input type="text" placeholder={t("play.eventTitle")} value={form.eventTitle}
+        <label className={fieldLabel}>{t("play.eventTitle")} <HelpTip text={t("help.eventTitle")} /></label>
+        <input type="text" placeholder={t("play.eventTitleHint")} value={form.eventTitle}
           onChange={e => set("eventTitle", e.target.value)} className={field} />
-        <p className="text-xs text-[#4d6480] mt-1.5">{t("play.eventTitleHint")}</p>
       </div>
 
       <div>
-        <label className={fieldLabel}>{t("create.setsToWin")}</label>
+        <label className={fieldLabel}>{t("create.setsToWin")} <HelpTip text={t("help.setsToWin")} /></label>
         <SetsToWinPicker value={form.setsToWin} onChange={n => set("setsToWin", n)} />
       </div>
 
@@ -379,7 +383,7 @@ export default function EventForm({
           feed while its participants still see it. */}
       <label className="flex items-center gap-2 text-sm text-[#93a8c2]">
         <input type="checkbox" checked={!form.isPublic} onChange={e => set("isPublic", !e.target.checked)} className="w-4 h-4" />
-        {t("tournament.private")}
+        {t("tournament.private")} <HelpTip text={t("help.private")} />
       </label>
 
       <button type="submit" disabled={busy} className={`${btnPrimary} w-full`}>

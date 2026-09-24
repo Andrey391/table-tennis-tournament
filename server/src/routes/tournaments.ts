@@ -3,15 +3,22 @@ import { publicError } from "../shared/errors";
 import { prisma } from "../config/db";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
 import { CreateTournamentSchema, UpdateTournamentSchema, AddPlayersSchema, ChatMessageSchema, SeedingSchema, QuickGameSchema } from "../shared/schemas";
-import { computeStandings } from "../shared/standings";
+import { eventStandings } from "../shared/standings";
 import { checkCanEnd } from "../shared/scoring";
 import { generateRoundPairings } from "../shared/scheduler";
+import { isBracket, bracketOf, bracketView } from "../shared/bracket";
 import { playerSelect, clubSelect, matchInclude, tournamentDetailInclude, feedInclude, FEED_PLAYERS, standingsInclude, inCity, queryString } from "../shared/queries";
 import { hasOpenDemoSeat, resetDemoRound1 } from "../shared/demo";
 import { notify, notifyClubFollowers, eventAudience, shortName } from "../shared/notify";
 import AuditLog from "../models/AuditLog";
 
 export const tournamentRouter = Router();
+
+// A bracket is drawn once, at round 1, from the players on the roster then: after
+// that nobody can join, be added or be let in (they would have no seat), and a
+// dropped player keeps their seat as WITHDRAWN so the tree does not shift.
+const ROSTER_FIXED = "The bracket is drawn; the roster is fixed";
+const rosterFixed = (t: { format: string; status: string }) => isBracket(t.format) && t.status !== "DRAFT";
 
 // Loads the tournament and confirms the caller is the one managing it (its creator).
 // Sends the appropriate error response and returns null when the caller can't proceed.
@@ -170,10 +177,17 @@ async function withDemoSeat<T extends { id: string; organizer: { isDemo: boolean
   return { ...tournament, organizer, demoSeatOpen: isDemo ? await hasOpenDemoSeat(tournament.id) : false };
 }
 
+// The drawn bracket of a KNOCKOUT/PLACEMENT event, for the client to draw; null
+// for a Swiss event or before round 1.
+const bracketFor = (t: Parameters<typeof bracketOf>[0] & { status: string }) => {
+  const b = t.status === "DRAFT" ? null : bracketOf(t);
+  return b ? bracketView(b) : null;
+};
+
 tournamentRouter.get("/:id", async (req, res: Response) => {
   const tournament = await prisma.tournament.findUnique({ where: { id: req.params.id }, include: tournamentDetailInclude });
   if (!tournament) { res.status(404).json({ error: "Not found" }); return; }
-  res.json(await withDemoSeat(tournament));
+  res.json({ ...(await withDemoSeat(tournament)), bracket: bracketFor(tournament) });
 });
 
 // Wipes round 1 of the caller's own demo event back to freshly-paired (no sets,
@@ -197,6 +211,10 @@ tournamentRouter.put("/:id", authMiddleware, async (req: AuthenticatedRequest, r
     const tournament = await loadOwnedTournament(res, req.params.id, req.user!.userId);
     if (!tournament) return;
     const data = UpdateTournamentSchema.parse(req.body);
+    // The format decides how round 1 is drawn and everything after it.
+    if (data.format && data.format !== tournament.format && tournament.status !== "DRAFT") {
+      res.status(400).json({ error: "The format can only be changed before round 1" }); return;
+    }
     const updated = await prisma.tournament.update({ where: { id: tournament.id }, data });
     await AuditLog.create({ userId: req.user!.userId, action: "TOURNAMENT_UPDATE", entity: "Tournament", entityId: tournament.id, newValue: data });
     res.json(updated);
@@ -278,6 +296,7 @@ tournamentRouter.post("/:id/players", authMiddleware, async (req: AuthenticatedR
   try {
     const tournament = await loadOwnedTournament(res, req.params.id, req.user!.userId);
     if (!tournament) return;
+    if (rosterFixed(tournament)) { res.status(400).json({ error: ROSTER_FIXED }); return; }
 
     const { userIds } = AddPlayersSchema.parse(req.body);
     const existing = await prisma.tournamentUser.findMany({ where: { tournamentId: req.params.id }, select: { userId: true, status: true } });
@@ -318,6 +337,7 @@ tournamentRouter.post("/:id/join", authMiddleware, async (req: AuthenticatedRequ
     // still be let in between rounds: they simply enter the next pairing with no
     // wins yet. Only a cancelled event is closed for good.
     if (tournament.status === "CANCELLED") { res.status(400).json({ error: "This tournament was cancelled" }); return; }
+    if (rosterFixed(tournament)) { res.status(400).json({ error: ROSTER_FIXED }); return; }
     const previous = await prisma.tournamentUser.findUnique({
       where: { tournamentId_userId: { tournamentId: tournament.id, userId: req.user!.userId } },
     });
@@ -363,6 +383,7 @@ tournamentRouter.post("/:id/players/:userId/approve", authMiddleware, async (req
   try {
     const tournament = await loadOwnedTournament(res, req.params.id, req.user!.userId);
     if (!tournament) return;
+    if (rosterFixed(tournament)) { res.status(400).json({ error: ROSTER_FIXED }); return; }
     if (tournament.maxPlayers != null) {
       const taken = await prisma.tournamentUser.count({ where: { tournamentId: tournament.id, status: "REGISTERED" } });
       if (taken >= tournament.maxPlayers) { res.status(400).json({ error: "This tournament is full" }); return; }
@@ -390,7 +411,10 @@ tournamentRouter.delete("/:id/players/:userId", authMiddleware, async (req: Auth
     const played = await prisma.match.count({
       where: { tournamentId: tournament.id, OR: [{ player1Id: req.params.userId }, { player2Id: req.params.userId }] },
     });
-    if (played > 0) {
+    // In a drawn bracket a player holds a seat even before playing (a round-1
+    // bye), and deleting the row would shift every seat after it.
+    const keepSeat = rosterFixed(tournament) && row?.status === "REGISTERED";
+    if (played > 0 || keepSeat) {
       await prisma.tournamentUser.update({
         where: { tournamentId_userId: { tournamentId: req.params.id, userId: req.params.userId } },
         data: { status: "WITHDRAWN" },
@@ -403,7 +427,7 @@ tournamentRouter.delete("/:id/players/:userId", authMiddleware, async (req: Auth
       await notify([{ userId: req.params.userId, type: row.status === "PENDING" ? "JOIN_DECLINED" : "REMOVED_FROM_EVENT", tournamentId: tournament.id,
         link: `/tournament/${tournament.id}`, params: { event: tournament.name } }], req.user!.userId);
     }
-    res.json({ ok: true, withdrawn: played > 0 });
+    res.json({ ok: true, withdrawn: played > 0 || keepSeat });
   } catch (err: any) {
     res.status(400).json({ error: publicError(err) });
   }
@@ -432,6 +456,51 @@ tournamentRouter.put("/:id/seeding", authMiddleware, async (req: AuthenticatedRe
   }
 });
 
+// POST /pair for a bracket event (shared/bracket.ts). Round 1 fixes the seeding
+// exactly as the Swiss round 1 does (manual seeds first, then rating); every later
+// round is whatever the bracket says comes next. A player facing an empty seat
+// goes through without a match and is told they sit the round out.
+async function pairBracketRound(tournament: { id: string; name: string; format: string; status: string; tablesCount: number; setsToWin: number }, actorId: string, res: Response) {
+  if (tournament.status === "DRAFT") {
+    const roster = await prisma.tournamentUser.findMany({ where: { tournamentId: tournament.id, status: "REGISTERED" }, select: { userId: true, seed: true, user: { select: { rating: true } } } });
+    if (roster.length < 2) { res.status(400).json({ error: "Need at least 2 approved players" }); return; }
+    const sorted = [...roster].sort((a, b) => (a.seed ?? Infinity) - (b.seed ?? Infinity) || (b.user?.rating ?? 0) - (a.user?.rating ?? 0));
+    await prisma.$transaction(sorted.map((c, idx) =>
+      prisma.tournamentUser.update({ where: { tournamentId_userId: { tournamentId: tournament.id, userId: c.userId } }, data: { seed: idx + 1 } })));
+  }
+  const [players, matches] = await Promise.all([
+    prisma.tournamentUser.findMany({ where: { tournamentId: tournament.id }, select: { userId: true, seed: true, status: true, user: { select: { firstName: true, lastName: true } } } }),
+    prisma.match.findMany({ where: { tournamentId: tournament.id }, select: { id: true, round: true, matchIndex: true, player1Id: true, player2Id: true, status: true, setsWon1: true, setsWon2: true } }),
+  ]);
+  const next = bracketOf({ format: tournament.format, players, matches })?.next;
+  if (!next) { res.status(400).json({ error: "The bracket is complete" }); return; }
+
+  const tablesCount = tournament.tablesCount || 1;
+  const written = await prisma.$transaction([
+    ...next.pairs.map((p, idx) => prisma.match.create({
+      data: {
+        tournamentId: tournament.id, round: next.round, player1Id: p.p1, player2Id: p.p2,
+        // The position in the bracket, which is how the tree is rebuilt.
+        matchIndex: p.index,
+        setsToWin: tournament.setsToWin, tableNumber: (idx % tablesCount) + 1,
+      },
+    })),
+    prisma.tournament.update({ where: { id: tournament.id }, data: { status: "ACTIVE" } }),
+  ]);
+  await AuditLog.create({ userId: actorId, action: "TOURNAMENT_PAIR", entity: "Tournament", entityId: tournament.id, newValue: { round: next.round, pairs: next.pairs.length, byes: next.byes } });
+
+  const nameOf = new Map(players.map((p) => [p.userId, shortName(p.user)]));
+  const created = written.slice(0, next.pairs.length) as { id: string; player1Id: string | null; player2Id: string | null; tableNumber: number | null }[];
+  await notify([
+    ...created.flatMap((m) => [[m.player1Id, m.player2Id], [m.player2Id, m.player1Id]].map(([me, them]) => ({
+      userId: me!, type: "ROUND_PAIRED" as const, tournamentId: tournament.id, link: `/tournament/${tournament.id}/match/${m.id}`,
+      params: { event: tournament.name, round: next.round, opponent: nameOf.get(them!) ?? "", table: m.tableNumber },
+    }))),
+    ...next.byes.map((userId) => ({ userId, type: "ROUND_BYE" as const, tournamentId: tournament.id, link: `/tournament/${tournament.id}`, params: { event: tournament.name, round: next.round } })),
+  ], actorId);
+  res.json({ message: "Paired", round: next.round, matches: next.pairs.length, byes: next.byes });
+}
+
 // Generates a new round of pairs: round 1 (DRAFT -> ACTIVE) seeds by rating; every
 // later round is Swiss-style, ranked by wins so far. Nobody is eliminated between
 // rounds. Can be called again after a tournament auto-completed to keep playing.
@@ -446,6 +515,7 @@ tournamentRouter.post("/:id/pair", authMiddleware, async (req: AuthenticatedRequ
       const unresolved = await prisma.match.count({ where: { tournamentId: tournament.id, status: { in: ["NOT_STARTED", "IN_PROGRESS"] } } });
       if (unresolved > 0) { res.status(400).json({ error: "Finish every match in the current round before starting a new one" }); return; }
     }
+    if (isBracket(tournament.format)) { await pairBracketRound(tournament, req.user!.userId, res); return; }
 
     const [players, allMatches] = await Promise.all([
       prisma.tournamentUser.findMany({ where: { tournamentId: tournament.id, status: "REGISTERED" }, select: { userId: true, seed: true, user: { select: { id: true, rating: true, firstName: true, lastName: true } } } }),
@@ -606,7 +676,7 @@ tournamentRouter.get("/:id/standings", async (req, res: Response) => {
     // ?tiebreak=sonnebornberger switches the secondary sort key without touching
     // the primary "wins" or the tertiary "set difference" ranking.
     const tiebreak = queryString(req.query.tiebreak) === "sonnebornberger" ? "sonnebornberger" : "buchholz";
-    res.json(computeStandings(tournament.players, tournament.matches, tiebreak));
+    res.json(eventStandings(tournament, tiebreak));
   } catch (err: any) {
     res.status(400).json({ error: publicError(err) });
   }

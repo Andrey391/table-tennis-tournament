@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { apiService } from "../services/api";
 import { forgetDemo } from "../lib/tour";
+import { releasePush } from "../lib/push";
 
 interface User { id: string; email: string; role: string; firstName: string; lastName: string; rating: number; city?: string | null; phone?: string | null; dateOfBirth?: string | null; isDemo?: boolean; demoExpiresAt?: string | null; publicProfile?: boolean; }
 
@@ -100,7 +101,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // The way back into a demo is per device, so it goes when the account does —
   // otherwise the next visitor on this phone is offered someone else's evening.
-  const logout = () => { setToken(null); localStorage.removeItem("token"); setUser(null); forgetDemo(); };
+  // Push goes too: the phone must stop getting this account's notifications.
+  const logout = () => { if (token) void releasePush(token); setToken(null); localStorage.removeItem("token"); setUser(null); forgetDemo(); };
 
   return (
     <AuthContext.Provider value={{ token, user, login, register, logout, refreshUser, setUser, startDemo, joinDemo, claimDemo, resetPassword }}>

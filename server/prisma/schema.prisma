@@ -90,6 +90,7 @@ model User {
   createdClubs     Club[]    @relation("clubCreator")
   byes             RoundBye[]
   notifications    Notification[]
+  pushSubscriptions PushSubscription[]
   passwordResets   PasswordReset[]
 
   @@index([city])
@@ -168,6 +169,12 @@ model Tournament {
   // this flag only controls whether the client invites strangers to request a seat
   // at all, or hides that door behind an explicit invite/link.
   access      String    @default("OPEN")
+  // How rounds are paired: SWISS (default; nobody eliminated, re-paired by wins),
+  // KNOCKOUT (lose once and you are out, plus a 3rd-place match) or PLACEMENT
+  // (winners play winners, losers play losers, every place is played for). The
+  // two brackets are rebuilt from the seeds and matches in shared/bracket.ts.
+  // Only changeable while DRAFT; a bracket's roster is fixed once round 1 is drawn.
+  format      String    @default("SWISS")
   // Set once a COMPLETED tournament is put away by its manager. A completed
   // tournament can never be deleted (that would silently erase rating changes
   // already applied to its players) — archiving is the only way to get it out of
@@ -391,6 +398,24 @@ model Notification {
   @@index([userId, createdAt])
   @@index([userId, readAt])
   @@index([tournamentId])
+}
+
+// A phone (or browser) that asked to get notifications while the app is closed:
+// the Web Push endpoint and its keys, one row per device. `lang` is the language
+// the device renders the text in (the text itself is never stored, same as
+// Notification). A dead endpoint (404/410 from the push service) is deleted the
+// first time a send finds it gone.
+model PushSubscription {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  lang      String   @default("ru")
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 // A "forgot password" code sent by email (POST /auth/forgot). Only a bcrypt hash
