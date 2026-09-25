@@ -1,4 +1,5 @@
-import { Router, Response } from "express";
+import { Response } from "express";
+import { Router } from "../shared/router";
 import { publicError } from "../shared/errors";
 import { prisma } from "../config/db";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
@@ -7,7 +8,7 @@ import { eventStandings } from "../shared/standings";
 import { checkCanEnd } from "../shared/scoring";
 import { generateRoundPairings } from "../shared/scheduler";
 import { isBracket, bracketOf, bracketView } from "../shared/bracket";
-import { playerSelect, clubSelect, matchInclude, tournamentDetailInclude, feedInclude, FEED_PLAYERS, standingsInclude, inCity, queryString } from "../shared/queries";
+import { playerSelect, clubSelect, matchInclude, tournamentDetailInclude, feedInclude, FEED_PLAYERS, standingsInclude, inCity, queryString, queryDate } from "../shared/queries";
 import { hasOpenDemoSeat, resetDemoRound1 } from "../shared/demo";
 import { notify, notifyClubFollowers, eventAudience, shortName } from "../shared/notify";
 import AuditLog from "../models/AuditLog";
@@ -120,7 +121,9 @@ tournamentRouter.post("/quick-game", authMiddleware, async (req: AuthenticatedRe
 // that depends on how many rows happen to match would silently break the first
 // time a feed grew past one page. Every consumer reads `.items`.
 tournamentRouter.get("/", async (req, res: Response) => {
-  const { kind, city, clubId, status, from, to, q, cursor } = req.query as Record<string, string | undefined>;
+  const [kind, city, clubId, status, q, cursor] = ["kind", "city", "clubId", "status", "q", "cursor"].map((k) => queryString(req.query[k]));
+  const from = queryDate(req.query.from), to = queryDate(req.query.to);
+  if (from === null || to === null) { res.status(400).json({ error: "from/to must be dates" }); return; }
   const limit = Math.min(Math.max(parseInt(queryString(req.query.limit) ?? "", 10) || 30, 1), 100);
   const where = {
     // Events marked private are visible on their own page and under /mine,
@@ -133,7 +136,7 @@ tournamentRouter.get("/", async (req, res: Response) => {
     ...(clubId ? { clubId } : {}),
     ...(city ? inCity(city) : {}),
     ...(status ? { status: { in: status.split(",") } } : {}),
-    ...(from || to ? { startTime: { ...(from ? { gte: new Date(from) } : {}), ...(to ? { lte: new Date(to) } : {}) } } : {}),
+    ...(from || to ? { startTime: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } : {}),
     ...(q ? { name: { contains: q, mode: "insensitive" as const } } : {}),
   };
   const tournaments = await prisma.tournament.findMany({

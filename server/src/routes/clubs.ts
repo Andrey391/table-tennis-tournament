@@ -1,20 +1,29 @@
-import { Router, Response } from "express";
+import { Response } from "express";
+import { Router } from "../shared/router";
 import { publicError } from "../shared/errors";
 import { prisma } from "../config/db";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
 import { CreateClubSchema, UpdateClubSchema, CreateClubTableSchema, UpdateClubTableSchema } from "../shared/schemas";
 import { bookingsOverlap, startOfUtcDay } from "../shared/booking";
-import { queryString, cityIs, playerSelect } from "../shared/queries";
+import { queryString, queryDate, cityIs, playerSelect } from "../shared/queries";
 import { normalizeCity, cityKey } from "../shared/city";
 
 export const clubRouter = Router();
 
 // Same ownership rule as tournaments: whoever created the club manages it.
+// A club with no manager (carried over from the old free-text bookings, or left
+// behind by a deleted or expired account) is not open to everyone: only an ADMIN
+// may edit it, and the role is read from the database, not from the token.
 async function loadOwnedClub(res: Response, clubId: string, userId: string) {
   const club = await prisma.club.findUnique({ where: { id: clubId } });
   if (!club) { res.status(404).json({ error: "Not found" }); return null; }
-  if (club.createdById && club.createdById !== userId) { res.status(403).json({ error: "Only the club's manager can do this" }); return null; }
-  return club;
+  if (club.createdById === userId) return club;
+  if (!club.createdById) {
+    const me = await prisma.user.findUnique({ where: { id: userId }, select: { role: true, deletedAt: true } });
+    if (me?.role === "ADMIN" && !me.deletedAt) return club;
+  }
+  res.status(403).json({ error: "Only the club's manager can do this" });
+  return null;
 }
 
 clubRouter.get("/", async (req, res: Response) => {
@@ -71,7 +80,7 @@ clubRouter.get("/:id", async (req, res: Response) => {
 // Which tables are free on a given day, and what's already taken — the booking screen
 // uses this to grey out slots instead of letting the user submit a clashing booking.
 clubRouter.get("/:id/availability", async (req, res: Response) => {
-  const date = typeof req.query.date === "string" ? req.query.date : undefined;
+  const date = queryDate(req.query.date);
   if (!date) { res.status(400).json({ error: "date is required" }); return; }
   const day = startOfUtcDay(date);
   const [tables, bookings] = await Promise.all([

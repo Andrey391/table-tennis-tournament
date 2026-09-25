@@ -96,6 +96,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const claimDemo = async (data: any) => {
     const { data: d } = await apiService.auth.claim(data);
+    // The demo token does not count as a real account (hidden names stay hidden
+    // to it), so the claimed account comes with a new one.
+    if (d.token) { setToken(d.token); localStorage.setItem("token", d.token); }
     setUser(d.user);
   };
 

@@ -28,8 +28,10 @@ function isSignedIn(req: Request): boolean {
   try {
     const secret = process.env.JWT_SECRET;
     if (!secret) return false;
-    jwt.verify(header.split(" ")[1], secret);
-    return true;
+    // A demo token is a guest's: it comes with one tap, no signup and no consent
+    // to the terms, so it must not be a way around the mask.
+    const decoded = jwt.verify(header.split(" ")[1], secret) as { demo?: boolean };
+    return !decoded.demo;
   } catch { return false; }
 }
 

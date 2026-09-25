@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router } from "../shared/router";
 import { prisma } from "../config/db";
 
 // Substitute for running the SQL migration on a deployment that cannot (Vercel).

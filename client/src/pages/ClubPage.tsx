@@ -65,7 +65,8 @@ export default function ClubPage() {
   if (notFound) return <Layout><EmptyState text={t("clubs.notFound")} /></Layout>;
   if (!club) return <Layout><Loader className="py-20" /></Layout>;
 
-  const isOwner = !!user && (club.createdById === user.id || !club.createdById);
+  // Mirrors loadOwnedClub on the server: a club with no manager is an admin's to edit.
+  const isOwner = !!user && (club.createdById === user.id || (!club.createdById && user.role === "ADMIN"));
   const fail = (err: any) => setError(err.response?.data?.error || t("common.failed"));
   const mapsUrl = `${lang === "ru" ? "https://yandex.ru/maps/?text=" : "https://www.google.com/maps/search/?api=1&query="}${encodeURIComponent(`${club.city}, ${club.address || club.name}`)}`;
 

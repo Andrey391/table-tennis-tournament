@@ -1,4 +1,5 @@
-import { Router, Response } from "express";
+import { Response } from "express";
+import { Router } from "../shared/router";
 import { publicError } from "../shared/errors";
 import { prisma } from "../config/db";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
@@ -7,7 +8,7 @@ import { summariseMatches } from "../shared/stats";
 import { notDemo } from "../shared/demo";
 import { listed } from "../shared/privacy";
 import { startOfUtcDay } from "../shared/booking";
-import { PLAYED_STATUSES, cityIs, playerSelect, queryString } from "../shared/queries";
+import { PLAYED_STATUSES, cityIs, playerSelect, queryString, queryDate } from "../shared/queries";
 import bcrypt from "bcryptjs";
 
 export const playerRouter = Router();
@@ -62,7 +63,7 @@ playerRouter.get("/:id", async (req: AuthenticatedRequest, res: Response) => {
 // the only "when" there is. Unauthenticated for the same reason GET /players/:id
 // is: a guest tapping through the rating table can look at anyone's day.
 playerRouter.get("/:id/schedule", async (req, res: Response) => {
-  const date = typeof req.query.date === "string" ? req.query.date : undefined;
+  const date = queryDate(req.query.date);
   if (!date) { res.status(400).json({ error: "date is required" }); return; }
   const dayStart = startOfUtcDay(date);
   const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
@@ -104,18 +105,18 @@ playerRouter.put("/:id", authMiddleware, async (req: AuthenticatedRequest, res: 
     const data: Record<string, unknown> = { ...rest };
     if (dateOfBirth !== undefined) data.dateOfBirth = dateOfBirth ? new Date(dateOfBirth) : null;
 
-    if (newPassword) {
-      const current = await prisma.user.findUnique({ where: { id: req.params.id }, select: { password: true } });
-      if (!current) { res.status(404).json({ error: "Not found" }); return; }
-      // An admin editing someone else has no current password to offer; the owner does.
-      if (req.params.id === req.user!.userId) {
-        if (!currentPassword || !(await bcrypt.compare(currentPassword, current.password))) {
-          res.status(400).json({ error: "Current password is wrong" });
-          return;
-        }
-      }
-      data.password = await bcrypt.hash(newPassword, 10);
+    // The email is where a reset code goes, so changing it is as good as changing
+    // the password: both need the current one, or a borrowed unlocked phone could
+    // point the email elsewhere and then reset the password from there.
+    const current = await prisma.user.findUnique({ where: { id: req.params.id }, select: { password: true, email: true } });
+    if (!current) { res.status(404).json({ error: "Not found" }); return; }
+    const emailChanged = rest.email !== undefined && rest.email !== current.email;
+    // An admin editing someone else has no current password to offer; the owner does.
+    if ((newPassword || emailChanged) && req.params.id === req.user!.userId) {
+      if (!currentPassword) { res.status(400).json({ error: "Enter your current password to change the email or the password" }); return; }
+      if (!(await bcrypt.compare(currentPassword, current.password))) { res.status(400).json({ error: "Current password is wrong" }); return; }
     }
+    if (newPassword) data.password = await bcrypt.hash(newPassword, 10);
 
     const user = await prisma.user.update({ where: { id: req.params.id }, data, select: selfSelect });
     res.json(user);

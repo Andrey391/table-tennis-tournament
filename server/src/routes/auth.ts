@@ -1,4 +1,5 @@
-import { Router, Response } from "express";
+import { Response } from "express";
+import { Router } from "../shared/router";
 import { publicError } from "../shared/errors";
 import { prisma } from "../config/db";
 import { AuthenticatedRequest, authMiddleware, generateToken } from "../middleware/auth";
@@ -71,7 +72,7 @@ authRouter.post("/demo", async (_req: AuthenticatedRequest, res: Response) => {
     await sweepExpiredDemos().catch(() => {});
     const demo = await createDemoAccount();
     const user = await prisma.user.findUnique({ where: { id: demo.userId }, select: meSelect });
-    res.status(201).json({ token: generateToken(demo.userId, demo.role), user, tournamentId: demo.tournamentId });
+    res.status(201).json({ token: generateToken(demo.userId, demo.role, { demo: true }), user, tournamentId: demo.tournamentId });
   } catch (err: any) {
     res.status(400).json({ error: publicError(err) });
   }
@@ -85,7 +86,7 @@ authRouter.post("/demo/join", async (req: AuthenticatedRequest, res: Response) =
     const { tournamentId } = DemoJoinSchema.parse(req.body);
     const joined = await joinDemoSeat(tournamentId);
     const user = await prisma.user.findUnique({ where: { id: joined.userId }, select: meSelect });
-    res.status(201).json({ token: generateToken(joined.userId, joined.role), user, tournamentId, matchId: joined.matchId });
+    res.status(201).json({ token: generateToken(joined.userId, joined.role, { demo: true }), user, tournamentId, matchId: joined.matchId });
   } catch (err: any) {
     if (err instanceof DemoJoinError) { res.status(err.status).json({ error: err.message }); return; }
     res.status(400).json({ error: publicError(err) });
@@ -112,7 +113,8 @@ authRouter.post("/claim", authMiddleware, async (req: AuthenticatedRequest, res:
       }),
       prisma.user.updateMany({ where: { demoOwnerId: current.id }, data: { demoExpiresAt: null } }),
     ]);
-    res.json({ user });
+    // A fresh token: the demo one does not count as a signed-in account.
+    res.json({ user, token: generateToken(user.id, user.role) });
   } catch (err: any) {
     if (err.code === "P2002") { res.status(400).json({ error: "An account with this email already exists" }); return; }
     res.status(400).json({ error: publicError(err) });
@@ -187,11 +189,14 @@ authRouter.post("/reset", async (req: AuthenticatedRequest, res: Response) => {
       orderBy: { createdAt: "desc" },
     });
     if (!reset) { invalid(); return; }
-    if (!(await bcrypt.compare(code, reset.codeHash))) {
-      await prisma.passwordReset.update({ where: { id: reset.id }, data: { attempts: { increment: 1 } } });
-      invalid();
-      return;
-    }
+    // The try is spent before the code is compared, by a write that only succeeds
+    // while tries are left: counting after the compare let a burst of parallel
+    // guesses all see "0 tries used" and get far more than five.
+    const { count } = await prisma.passwordReset.updateMany({
+      where: { id: reset.id, attempts: { lt: RESET_MAX_ATTEMPTS } },
+      data: { attempts: { increment: 1 } },
+    });
+    if (!count || !(await bcrypt.compare(code, reset.codeHash))) { invalid(); return; }
     const password = await bcrypt.hash(newPassword, 10);
     const updated = await prisma.user.update({ where: { id: user.id }, data: { password }, select: meSelect });
     await prisma.passwordReset.deleteMany({ where: { userId: user.id } });

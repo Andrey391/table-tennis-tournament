@@ -1,9 +1,10 @@
-import { Router, Response } from "express";
+import { Response } from "express";
+import { Router } from "../shared/router";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../config/db";
 import { publicError } from "../shared/errors";
 import { eventStandings } from "../shared/standings";
-import { standingsInclude, inCity, PLAYED_STATUSES } from "../shared/queries";
+import { standingsInclude, inCity, PLAYED_STATUSES, queryString } from "../shared/queries";
 import { notDemo } from "../shared/demo";
 import { listed } from "../shared/privacy";
 import { computePlayerStats, computeHeadToHead, computeLeaders, periodStart, LeaderMetric } from "../shared/stats";
@@ -26,7 +27,7 @@ const statMatchSelect = {
 // (quick games), which their profile history already shows anyway.
 statsRouter.get("/results", async (req, res: Response) => {
   try {
-    const { kind, city, clubId, userId, q } = req.query as Record<string, string | undefined>;
+    const [kind, city, clubId, userId, q] = ["kind", "city", "clubId", "userId", "q"].map((k) => queryString(req.query[k]));
     const events = await prisma.tournament.findMany({
       where: {
         status: { in: ["ACTIVE", "COMPLETED"] },
@@ -93,7 +94,7 @@ statsRouter.get("/players/:id/h2h/:otherId", async (req, res: Response) => {
 // ?metric=rating|wins|played&period=month|year|all&city=
 statsRouter.get("/leaders", async (req, res: Response) => {
   try {
-    const { metric = "rating", period = "month", city } = req.query as Record<string, string | undefined>;
+    const metric = queryString(req.query.metric) ?? "rating", period = queryString(req.query.period) ?? "month", city = queryString(req.query.city);
     if (!["rating", "wins", "played"].includes(metric)) { res.status(400).json({ error: "Unknown metric" }); return; }
     const since = periodStart(period);
     const matches = await prisma.match.findMany({

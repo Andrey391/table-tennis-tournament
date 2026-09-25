@@ -1,4 +1,5 @@
-import { Router, Response } from "express";
+import { Response } from "express";
+import { Router } from "../shared/router";
 import { prisma } from "../config/db";
 import { publicError } from "../shared/errors";
 import { matchInclude, clubSelect, standingsInclude } from "../shared/queries";
