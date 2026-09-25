@@ -261,6 +261,7 @@ export const DICT: Record<Lang, Record<string, string>> = {
     "profile.currentPassword": "Текущий пароль",
     "profile.newPassword": "Новый пароль",
     "profile.passwordHint": "Заполните оба поля, чтобы сменить пароль. Оставьте пустыми, если менять не нужно.",
+    "profile.emailNeedsPassword": "Чтобы сменить почту, введите ниже текущий пароль.",
     "profile.ratingReadOnly": "Считается по сыгранным матчам, вручную не меняется",
 
     "players.title": "Игроки",
@@ -929,6 +930,7 @@ export const DICT: Record<Lang, Record<string, string>> = {
     "profile.currentPassword": "Current password",
     "profile.newPassword": "New password",
     "profile.passwordHint": "Fill both fields to change your password. Leave them blank to keep it.",
+    "profile.emailNeedsPassword": "Enter your current password below to change the email.",
     "profile.ratingReadOnly": "Computed from played matches, not editable",
 
     "players.title": "Players",

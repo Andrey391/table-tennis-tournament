@@ -69,4 +69,14 @@ export const cityIs = (city: string) => ({ equals: normalizeCity(city), mode: "i
 export const inCity = (city: string) => ({ OR: [{ club: { city: cityIs(city) } }, { clubId: null, organizer: { city: cityIs(city) } }] });
 
 // Optional string query parameter: absent, repeated or empty all mean "not given".
+// Always go through it: Express parses `?userId[not]=x` into an object, and an
+// object handed to a Prisma `where` is an operator, not a value.
 export const queryString = (v: unknown): string | undefined => (typeof v === "string" && v ? v : undefined);
+
+// Optional date query parameter: undefined when absent, null when it is not a date.
+export const queryDate = (v: unknown): Date | null | undefined => {
+  const s = queryString(v);
+  if (!s) return undefined;
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+};

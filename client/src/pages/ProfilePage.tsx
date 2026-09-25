@@ -75,6 +75,7 @@ export default function ProfilePage() {
   const saveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user?.id || !edit) return;
+    const emailChanged = edit.email !== user.email;
     setBusy(true); setError("");
     try {
       const r = await apiService.players.update(user.id, {
@@ -85,7 +86,9 @@ export default function ProfilePage() {
         phone: edit.phone || null,
         // A date input gives a bare day; the API takes an ISO timestamp.
         dateOfBirth: edit.dateOfBirth ? new Date(edit.dateOfBirth).toISOString() : null,
-        ...(edit.newPassword ? { currentPassword: edit.currentPassword, newPassword: edit.newPassword } : {}),
+        // The server asks for the current password to change the email too.
+        ...(edit.newPassword || emailChanged ? { currentPassword: edit.currentPassword } : {}),
+        ...(edit.newPassword ? { newPassword: edit.newPassword } : {}),
       });
       // The response is the same shape as /auth/me, so the header avatar and the
       // rating tile update without another round trip.
@@ -179,6 +182,7 @@ export default function ProfilePage() {
           <div>
             <label className={fieldLabel}>{t("auth.email")}</label>
             <input type="email" value={edit.email} onChange={e => setEdit({ ...edit, email: e.target.value })} className={field} required />
+            {edit.email !== user?.email && <p className="text-[11px] text-[#93a8c2] mt-1">{t("profile.emailNeedsPassword")}</p>}
           </div>
           <div>
             <label className={fieldLabel}>{t("auth.city")}</label>

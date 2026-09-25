@@ -1,4 +1,5 @@
-import { Router, Response } from "express";
+import { Response } from "express";
+import { Router } from "../shared/router";
 import { publicError } from "../shared/errors";
 import { prisma } from "../config/db";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
@@ -180,6 +181,28 @@ export async function revertRatingUpdate(match: { player1Id: string | null; play
 // its points, or it is still open and the judge can press "end" again. (Marking it
 // COMPLETED first and moving the rating afterwards did exactly that: the request failed,
 // the screen never left the match, and the table showed no points.)
+// Only one request may settle a match. Checking "not COMPLETED" and then moving
+// the rating is not enough on its own: two "end" taps that arrive together both
+// pass the check, and the second one moves the rating again on top of the first.
+// So whoever settles a match first claims it with one conditional write, and
+// `endedAt` on a match that is not COMPLETED is that claim (nothing else sets it
+// before the match is settled). A claim older than a minute belongs to a request
+// that died on the way and can be taken over.
+const CLAIM_TTL_MS = 60_000;
+const MATCH_BUSY = "This match is being settled right now";
+
+async function claimMatch(matchId: string): Promise<boolean> {
+  const { count } = await prisma.match.updateMany({
+    where: { id: matchId, status: { not: "COMPLETED" }, OR: [{ endedAt: null }, { endedAt: { lt: new Date(Date.now() - CLAIM_TTL_MS) } }] },
+    data: { endedAt: new Date() },
+  });
+  return count === 1;
+}
+
+const releaseMatch = (matchId: string) =>
+  prisma.match.updateMany({ where: { id: matchId, status: { not: "COMPLETED" } }, data: { endedAt: null } });
+
+// Called with the match claimed (claimMatch).
 async function finishMatch(match: { id: string; tournamentId: string; player1Id: string | null; player2Id: string | null; setsWon1: number; setsWon2: number; startedAt: Date | null; tournament: { kind: string; ratingWeight: number } | null }, rated = true, actorId?: string) {
   const tournament = { id: match.tournamentId, kind: match.tournament?.kind ?? "TOURNAMENT", ratingWeight: match.tournament?.ratingWeight ?? DEFAULT_RATING_WEIGHT };
   // Snapshot both ratings before the match moves them: the statistics judge a win by the
@@ -357,10 +380,20 @@ matchRouter.post("/:id/undo", authMiddleware, async (req: AuthenticatedRequest, 
       if (isBracket(event?.format) && await prisma.match.count({ where: { tournamentId: match.tournamentId, round: { gt: match.round } } })) {
         res.status(400).json({ error: "The next round of the bracket is already drawn from this result" }); return;
       }
-      await revertRatingUpdate(match);
+      // Reopen first, with a write that only one request can win: two reopen taps
+      // at once would otherwise hand the rating back twice.
+      const { count } = await prisma.match.updateMany({ where: { id: match.id, status: "COMPLETED" }, data: { status: "IN_PROGRESS", endedAt: null } });
+      if (!count) { res.status(409).json({ error: "The match has already been reopened" }); return; }
+      try {
+        await revertRatingUpdate(match);
+      } catch (err) {
+        // The rating is still applied, so the match stays settled.
+        await prisma.match.update({ where: { id: match.id }, data: { status: "COMPLETED", endedAt: match.endedAt } }).catch(() => {});
+        throw err;
+      }
       // The event was flipped to COMPLETED by this match; it is live again.
       const [, , t] = await Promise.all([
-        prisma.match.update({ where: { id: match.id }, data: { status: "IN_PROGRESS", endedAt: null, eloDelta: null, eloDeltaLoser: null } }),
+        prisma.match.update({ where: { id: match.id }, data: { eloDelta: null, eloDeltaLoser: null } }),
         prisma.tournament.updateMany({ where: { id: match.tournamentId, status: "COMPLETED" }, data: { status: "ACTIVE" } }),
         prisma.tournament.findUnique({ where: { id: match.tournamentId }, select: { name: true } }),
       ]);
@@ -390,10 +423,21 @@ matchRouter.post("/:id/end", authMiddleware, async (req: AuthenticatedRequest, r
     if (match.status === "COMPLETED") { res.status(400).json({ error: "Match is already completed" }); return; }
     const endError = checkCanEnd(match.setsWon1, match.setsWon2);
     if (endError) { res.status(400).json({ error: endError }); return; }
-    await finishMatch(match, true, req.user!.userId);
+    if (!(await claimMatch(match.id))) { res.status(409).json({ error: MATCH_BUSY }); return; }
+    // Settle the tally as it stands now that nobody else can, not as it was read above.
+    let settled;
+    try {
+      settled = await findMatchToScore(match.id);
+      const error = settled ? checkCanEnd(settled.setsWon1, settled.setsWon2) : "Not found";
+      if (!settled || error) { await releaseMatch(match.id); res.status(400).json({ error }); return; }
+      await finishMatch(settled, true, req.user!.userId);
+    } catch (err) {
+      await releaseMatch(match.id).catch(() => {});
+      throw err;
+    }
     const [fresh] = await Promise.all([
       reload(match.id),
-      AuditLog.create({ userId: req.user!.userId, action: "MATCH_END", entity: "Match", entityId: match.id, newValue: { setsWon1: match.setsWon1, setsWon2: match.setsWon2 } }),
+      AuditLog.create({ userId: req.user!.userId, action: "MATCH_END", entity: "Match", entityId: match.id, newValue: { setsWon1: settled.setsWon1, setsWon2: settled.setsWon2 } }),
     ]);
     res.json(fresh);
   } catch (err: any) {
@@ -410,31 +454,37 @@ matchRouter.post("/:id/forfeit", authMiddleware, async (req: AuthenticatedReques
     if (match.status === "COMPLETED") { res.status(400).json({ error: "Match is already completed" }); return; }
 
     const { loserSide } = ForfeitSchema.parse(req.body);
-    // A walkover is recorded as a single set for whoever turned up, so the sets
-    // tally reads the same as a played match.
-    const nextIndex = match.sets.length ? Math.max(...match.sets.map(s => s.index)) + 1 : 1;
-    await prisma.$transaction([
-      prisma.matchSet.create({
-        data: {
-          matchId: match.id,
-          index: nextIndex,
-          status: "COMPLETED",
-          winner: loserSide === 1 ? 2 : 1,
-          endedAt: new Date(),
-        },
-      }),
-      prisma.match.update({
-        where: { id: match.id },
-        data: loserSide === 1 ? { setsWon2: { increment: 1 } } : { setsWon1: { increment: 1 } },
-      }),
-    ]);
+    if (!(await claimMatch(match.id))) { res.status(409).json({ error: MATCH_BUSY }); return; }
+    try {
+      // A walkover is recorded as a single set for whoever turned up, so the sets
+      // tally reads the same as a played match.
+      const nextIndex = match.sets.length ? Math.max(...match.sets.map(s => s.index)) + 1 : 1;
+      await prisma.$transaction([
+        prisma.matchSet.create({
+          data: {
+            matchId: match.id,
+            index: nextIndex,
+            status: "COMPLETED",
+            winner: loserSide === 1 ? 2 : 1,
+            endedAt: new Date(),
+          },
+        }),
+        prisma.match.update({
+          where: { id: match.id },
+          data: loserSide === 1 ? { setsWon2: { increment: 1 } } : { setsWon1: { increment: 1 } },
+        }),
+      ]);
 
-    const settled = await prisma.match.findUnique({
-      where: { id: match.id },
-      include: { tournament: { select: { kind: true, ratingWeight: true } } },
-    });
-    if (settled) await finishMatch({ ...settled, tournament: settled.tournament }, false, req.user!.userId);
-    else await maybeCompleteTournament(match.tournamentId, req.user!.userId);
+      const settled = await prisma.match.findUnique({
+        where: { id: match.id },
+        include: { tournament: { select: { kind: true, ratingWeight: true } } },
+      });
+      if (settled) await finishMatch({ ...settled, tournament: settled.tournament }, false, req.user!.userId);
+      else await maybeCompleteTournament(match.tournamentId, req.user!.userId);
+    } catch (err) {
+      await releaseMatch(match.id).catch(() => {});
+      throw err;
+    }
     const [fresh] = await Promise.all([
       reload(match.id),
       AuditLog.create({ userId: req.user!.userId, action: "MATCH_FORFEIT", entity: "Match", entityId: match.id, newValue: { loserSide } }),

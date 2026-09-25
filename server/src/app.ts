@@ -16,6 +16,7 @@ import { statsRouter } from "./routes/stats";
 import { setupRouter } from "./routes/setup";
 import { notificationRouter } from "./routes/notifications";
 import { maskHiddenPlayers } from "./shared/privacy";
+import { publicError } from "./shared/errors";
 
 // The whole HTTP API, built once and shared by both deployments: server/src/index.ts
 // listens on a port with it (Render, local), api/index.ts exports it as the Vercel
@@ -67,8 +68,16 @@ export function createApp(options: { defaultClientUrl?: string } = {}) {
 
   app.get("/api/health", (_req, res) => res.json({ status: "ok", timestamp: new Date().toISOString() }));
 
-  app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    console.error("[ERROR]", err.message);
+  // Everything a handler throws ends up here (shared/router.ts passes async
+  // rejections on), never as an unhandled rejection that would end the process.
+  // A request Prisma or Zod refuses is the caller's mistake, not ours.
+  app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (res.headersSent) { next(err); return; }
+    console.error("[ERROR]", err?.message);
+    if (err?.name === "ZodError" || err?.name === "PrismaClientValidationError" || err?.type === "entity.parse.failed") {
+      res.status(400).json({ error: publicError(err) });
+      return;
+    }
     res.status(500).json({ error: "Internal server error" });
   });
 

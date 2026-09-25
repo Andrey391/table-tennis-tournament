@@ -15,8 +15,11 @@ export function jwtSecret(): string {
   return secret;
 }
 
-export function generateToken(userId: string, role: string): string {
-  return jwt.sign({ userId, role }, jwtSecret(), { expiresIn: "10h" });
+// `demo` marks a token handed out by /auth/demo with no signup and no consent to
+// the terms: it opens the demo, not the names of players who hid them (see
+// maskHiddenPlayers). Claiming the account issues a token without it.
+export function generateToken(userId: string, role: string, options: { demo?: boolean } = {}): string {
+  return jwt.sign({ userId, role, ...(options.demo ? { demo: true } : {}) }, jwtSecret(), { expiresIn: "10h" });
 }
 
 export function authMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
