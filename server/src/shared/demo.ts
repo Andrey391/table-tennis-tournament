@@ -262,6 +262,7 @@ export async function sweepExpiredDemos(): Promise<number> {
     () => prisma.notification.deleteMany({ where: { OR: [{ userId: { in: userIds } }, { tournamentId: { in: tournamentIds } }] } }),
     () => prisma.session.deleteMany({ where: { userId: { in: userIds } } }),
     () => prisma.club.updateMany({ where: { createdById: { in: userIds } }, data: { createdById: null } }),
+    () => prisma.clubAdmin.deleteMany({ where: { userId: { in: userIds } } }),
     () => prisma.user.deleteMany({ where: { id: { in: userIds } } }),
   ]) await step();
   return userIds.length;

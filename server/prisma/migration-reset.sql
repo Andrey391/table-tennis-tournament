@@ -45,6 +45,7 @@ DROP TABLE IF EXISTS "TournamentUser" CASCADE;
 DROP TABLE IF EXISTS "Tournament" CASCADE;
 DROP TABLE IF EXISTS "Booking" CASCADE;
 DROP TABLE IF EXISTS "Subscription" CASCADE;
+DROP TABLE IF EXISTS "ClubAdmin" CASCADE;
 DROP TABLE IF EXISTS "ClubTable" CASCADE;
 DROP TABLE IF EXISTS "Club" CASCADE;
 DROP TABLE IF EXISTS "AuditLog" CASCADE;
@@ -131,6 +132,8 @@ CREATE TABLE "Club" (
     "address" TEXT,
     "phone" TEXT,
     "createdById" TEXT,
+    "ratingStatus" TEXT NOT NULL DEFAULT 'NONE',
+    "ratingReviewedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -138,7 +141,20 @@ CREATE TABLE "Club" (
 );
 CREATE UNIQUE INDEX "Club_name_city_key" ON "Club"("name", "city");
 CREATE INDEX "Club_city_idx" ON "Club"("city");
+CREATE INDEX "Club_ratingStatus_idx" ON "Club"("ratingStatus");
 ALTER TABLE "Club" ADD CONSTRAINT "Club_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- The people who run a club; a club can have several.
+CREATE TABLE "ClubAdmin" (
+    "clubId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "ClubAdmin_pkey" PRIMARY KEY ("clubId", "userId")
+);
+CREATE INDEX "ClubAdmin_userId_idx" ON "ClubAdmin"("userId");
+ALTER TABLE "ClubAdmin" ADD CONSTRAINT "ClubAdmin_clubId_fkey" FOREIGN KEY ("clubId") REFERENCES "Club"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "ClubAdmin" ADD CONSTRAINT "ClubAdmin_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 CREATE TABLE "ClubTable" (
     "id" TEXT NOT NULL,

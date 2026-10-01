@@ -38,7 +38,8 @@ React 18 + Vite + Tailwind v4 client (`client/`), Express + Prisma/PostgreSQL se
   - Rounds and matches: `/pair`, walkover, reopen a finished match, table/judge.
   - Event: edit, archive, delete.
 - **Manager or either player of the match**: `setsToWin` before the start, start, record sets, undo the last set, end. Players at the table score their own match.
-- **Any signed-in user**: create an event (and become its manager), request to join. All GETs of events, matches, standings and live boards are public.
+- **Any signed-in user**: create a `GAME` (and become its manager), request to join.
+- **Rated events** (`kind: TOURNAMENT`): only an admin of the event's club (`ClubAdmin`, a club can have several), and only once an app `ADMIN` has approved the club (`Club.ratingStatus = APPROVED`). Checked by `canHoldRatedEvent` (`shared/clubs.ts`) in `POST /tournaments`, `POST /bookings` and on a club change in `PUT /tournaments/:id`. All GETs of events, matches, standings and live boards are public.
 - The client mirrors this (`isManager`, `canScore`) only to decide what to render. **The server is the enforcement point**; re-check there for every new mutation.
 
 ## Invariants: check before changing anything
@@ -69,7 +70,7 @@ React 18 + Vite + Tailwind v4 client (`client/`), Express + Prisma/PostgreSQL se
 - `server/src/routes/*`: HTTP routes.
 - `server/src/shared/*`: logic and helpers.
   - Game logic: `scoring.ts`, `standings.ts`, `bracket.ts`, `scheduler.ts`, `stats.ts`.
-  - Features: `demo.ts`, `privacy.ts`, `notify.ts`, `push.ts`, `booking.ts`, `payments.ts`, `mail.ts`.
+  - Features: `clubs.ts`, `demo.ts`, `privacy.ts`, `notify.ts`, `push.ts`, `booking.ts`, `payments.ts`, `mail.ts`.
   - Plumbing: `queries.ts`, `schemas.ts`, `router.ts`, `errors.ts`.
 - `server/prisma/`: `schema.prisma`, `migration.sql` (idempotent, the one to run), `migration-reset.sql` (drops everything), `recalc-fntr.sql`, `seed.ts`.
 - `client/src/`:

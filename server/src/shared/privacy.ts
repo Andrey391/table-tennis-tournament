@@ -103,6 +103,7 @@ export async function anonymiseAccount(userId: string) {
       where: { userId, OR: [{ status: "PENDING" }, { tournament: { matches: { none: { OR: [{ player1Id: userId }, { player2Id: userId }] } } } }] },
     }),
     prisma.club.updateMany({ where: { createdById: userId }, data: { createdById: null } }),
+    prisma.clubAdmin.deleteMany({ where: { userId } }),
     // User.club is no longer mapped, but old rows still hold whatever was typed
     // into it, and that is personal data too.
     prisma.$executeRaw`UPDATE "User" SET "club" = NULL WHERE "id" = ${userId}`,

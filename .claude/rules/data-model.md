@@ -11,7 +11,8 @@ paths:
   - `rating` is a Float (FNTR). `city` is shown under names and used by city filters. `role` is not checked by tournament/match routes.
   - Other fields: `isDemo`/`demoOwnerId`/`demoExpiresAt`, `publicProfile`, `consentAt`/`consentVersion`, `deletedAt`.
   - A player's only link to a club is `Subscription` (follow). The legacy `User.club` column is unmapped.
-- `Club`: `name`+`city` unique, optional `address`/`phone`, `createdById` is its manager. A club with no manager is editable by an `ADMIN` only, with the role read from the DB.
+- `Club`: `name`+`city` unique, optional `address`/`phone`, `createdById` (creator, record only), `ratingStatus` (`NONE`/`PENDING`/`APPROVED`, see `bookings-clubs.md`), `ratingReviewedAt`.
+- `ClubAdmin`: `clubId`+`userId` (composite key), the club's admins. A club with none is run by an app `ADMIN` only, with the role read from the DB.
 - `ClubTable`: `number` unique per club, `indoor`, price.
 - `Tournament`:
   - `kind` is `TOURNAMENT` | `GAME`; `format` is `SWISS` | `KNOCKOUT` | `PLACEMENT`; `organizerId` is the manager.

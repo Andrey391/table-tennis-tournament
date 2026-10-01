@@ -40,6 +40,9 @@ export default function ClubPage() {
   const [editPriceId, setEditPriceId] = useState<string | null>(null);
   const [priceInput, setPriceInput] = useState("");
   const [error, setError] = useState("");
+  // Adding an admin: every signed-up player, loaded only once the picker opens.
+  const [allPlayers, setAllPlayers] = useState<any[] | null>(null);
+  const [adminSearch, setAdminSearch] = useState("");
   const [confirm, confirmDialog] = useConfirm();
   // Re-rendered each minute so "free until" does not go stale on an open screen.
   const [now, setNow] = useState(() => new Date());
@@ -65,8 +68,13 @@ export default function ClubPage() {
   if (notFound) return <Layout><EmptyState text={t("clubs.notFound")} /></Layout>;
   if (!club) return <Layout><Loader className="py-20" /></Layout>;
 
-  // Mirrors loadOwnedClub on the server: a club with no manager is an admin's to edit.
-  const isOwner = !!user && (club.createdById === user.id || (!club.createdById && user.role === "ADMIN"));
+  // Mirrors loadOwnedClub on the server: the club's admins run it, and a club with
+  // none left is the app admin's to run.
+  const admins: any[] = club.admins ?? [];
+  const isAppAdmin = user?.role === "ADMIN";
+  const isOwner = !!user && (admins.some(a => a.userId === user.id) || (admins.length === 0 && isAppAdmin));
+  // Mirrors loadClubForAdmins: an app admin appoints admins at any club.
+  const canManageAdmins = isOwner || isAppAdmin;
   const fail = (err: any) => setError(err.response?.data?.error || t("common.failed"));
   const mapsUrl = `${lang === "ru" ? "https://yandex.ru/maps/?text=" : "https://www.google.com/maps/search/?api=1&query="}${encodeURIComponent(`${club.city}, ${club.address || club.name}`)}`;
 
@@ -129,6 +137,43 @@ export default function ClubPage() {
     } catch (err) { fail(err); }
   };
 
+  const openAdminPicker = () => {
+    if (allPlayers) { setAllPlayers(null); return; }
+    setAdminSearch("");
+    apiService.players.getAll().then(r => setAllPlayers(r.data)).catch(fail);
+  };
+
+  const addAdmin = async (userId: string) => {
+    setError("");
+    try { await apiService.clubs.addAdmin(club.id, userId); setAllPlayers(null); loadClub(); } catch (err) { fail(err); }
+  };
+
+  const removeAdmin = async (a: any) => {
+    if (!(await confirm({ title: t("confirm.adminTitle", { name: playerName(a.user) }), text: t("confirm.adminText"), confirmLabel: t("clubs.removeAdmin"), danger: true }))) return;
+    setError("");
+    try {
+      await apiService.clubs.removeAdmin(club.id, a.userId);
+      // Stepping down: this screen is no longer theirs to manage.
+      if (a.userId === user?.id) setShowManage(false);
+      loadClub();
+    } catch (err) { fail(err); }
+  };
+
+  const requestRating = async () => {
+    setError("");
+    try { await apiService.clubs.requestRating(club.id); loadClub(); } catch (err) { fail(err); }
+  };
+
+  const decideRating = async (approved: boolean) => {
+    if (!approved && club.ratingStatus === "APPROVED"
+      && !(await confirm({ title: t("confirm.revokeRatingTitle", { club: club.name }), text: t("confirm.revokeRatingText"), confirmLabel: t("clubs.rating.revoke"), danger: true }))) return;
+    setError("");
+    try { await apiService.clubs.decideRating(club.id, approved); loadClub(); } catch (err) { fail(err); }
+  };
+
+  const adminIds = new Set(admins.map(a => a.userId));
+  const adminCandidates = (allPlayers ?? []).filter(p => !adminIds.has(p.id) && playerName(p).toLowerCase().includes(adminSearch.trim().toLowerCase())).slice(0, 20);
+
   const icon = "w-4 h-4 shrink-0 text-[#ccff00]";
   const line = { fill: "none", stroke: "currentColor", strokeWidth: 1.9, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, viewBox: "0 0 24 24" };
 
@@ -155,11 +200,18 @@ export default function ClubPage() {
           )}
           <div className="flex items-center gap-2.5">
             <svg {...line} className={icon}><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg>
-            {club.createdBy ? (
-              <Link to={`/player/${club.createdBy.id}`} className="flex items-center gap-2 min-w-0">
-                <span className="text-[#93a8c2] truncate">{t("clubs.admin")}: {playerName(club.createdBy)}</span>
-              </Link>
+            {admins.length > 0 ? (
+              <span className="text-[#93a8c2] min-w-0">
+                {t(admins.length > 1 ? "clubs.admins" : "clubs.admin")}:{" "}
+                {admins.map((a, i) => (
+                  <span key={a.userId}>{i > 0 && ", "}<Link to={`/player/${a.userId}`}>{playerName(a.user)}</Link></span>
+                ))}
+              </span>
             ) : <span className="text-[#4d6480]">{t("clubs.noAdmin")}</span>}
+          </div>
+          <div className="flex items-center gap-2.5">
+            <svg {...line} className={icon}><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4Z" /></svg>
+            <span className={club.ratingStatus === "APPROVED" ? "text-[#ccff00]" : "text-[#6b84a0]"}>{t(`clubs.rating.${club.ratingStatus || "NONE"}`)}</span>
           </div>
         </div>
       </div>
@@ -246,6 +298,59 @@ export default function ClubPage() {
         )}
       </section>
 
+      {isAppAdmin && (
+        <section className={`${card} p-3 mb-6`}>
+          <p className={`${sectionLabel} mb-2`}>{t("clubs.rating.appAdmin")}</p>
+          {club.ratingStatus === "APPROVED" ? (
+            <button onClick={() => decideRating(false)} className={`${btnGhost} w-full`}>{t("clubs.rating.revoke")}</button>
+          ) : (
+            <div className="flex gap-2">
+              <button onClick={() => decideRating(true)} className={`${btnPrimary} flex-1`}>{t("clubs.rating.approve")}</button>
+              {club.ratingStatus === "PENDING" && <button onClick={() => decideRating(false)} className={`${btnGhost} flex-1`}>{t("clubs.rating.decline")}</button>}
+            </div>
+          )}
+        </section>
+      )}
+
+      {canManageAdmins && (
+        <section className={`${card} p-3 mb-6`}>
+          <div className="flex items-center justify-between mb-2">
+            <p className={sectionLabel}>{t("clubs.admins")}</p>
+            <button type="button" onClick={openAdminPicker} className="text-xs text-[#ccff00] font-medium">
+              {allPlayers ? t("common.cancel") : `+ ${t("clubs.addAdmin")}`}
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2 mb-2">
+            {admins.map(a => (
+              <span key={a.userId} className="flex items-center gap-1.5 bg-[#0a1628] border border-[#1c3350] rounded-full pl-3 pr-1.5 py-1 text-xs text-[#93a8c2]">
+                {playerName(a.user)}
+                {admins.length > 1 && (
+                  <button type="button" onClick={() => removeAdmin(a)} aria-label={t("clubs.removeAdmin")} className="text-[#6b84a0] px-1">&times;</button>
+                )}
+              </span>
+            ))}
+          </div>
+          {allPlayers && (
+            <div className="space-y-2">
+              <input type="text" placeholder={t("clubs.adminSearch")} value={adminSearch} onChange={e => setAdminSearch(e.target.value)} className={field} />
+              {adminSearch.trim() && (adminCandidates.length === 0 ? (
+                <p className="text-xs text-[#4d6480]">{t("clubs.adminNoMatch")}</p>
+              ) : (
+                <div className="space-y-1">
+                  {adminCandidates.map(p => (
+                    <button key={p.id} type="button" onClick={() => addAdmin(p.id)}
+                      className="w-full flex justify-between items-center gap-2 px-3 py-2 rounded-lg bg-[#0a1628] border border-[#1c3350] text-sm text-left">
+                      <span className="truncate">{playerName(p)}{p.city ? <span className="text-xs text-[#4d6480]"> &middot; {p.city}</span> : null}</span>
+                      <span className="text-xs text-[#ccff00] shrink-0">{t("clubs.makeAdmin")}</span>
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
       {isOwner && (
         <section className="mb-6">
           <button onClick={() => setShowManage(v => !v)} className={`${btnGhost} w-full`}>
@@ -270,6 +375,14 @@ export default function ClubPage() {
                     <input type="text" placeholder={t("play.clubPhone")} value={editClub.phone} onChange={e => setEditClub({ ...editClub, phone: e.target.value })} className={field} />
                     <button type="button" onClick={saveClub} className={`${btnPrimary} w-full`}>{t("common.save")}</button>
                   </div>
+                )}
+              </div>
+
+              <div>
+                <p className={`${sectionLabel} mb-2`}>{t("clubs.rating.label")}</p>
+                <p className="text-xs text-[#93a8c2] mb-2">{t("clubs.rating.hint")}</p>
+                {club.ratingStatus === "NONE" && (
+                  <button type="button" onClick={requestRating} className={`${btnSecondary} w-full`}>{t("clubs.rating.request")}</button>
                 )}
               </div>
 
