@@ -550,5 +550,30 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 -- behaviour before this column, stays the default for every existing event.
 ALTER TABLE "Tournament" ADD COLUMN IF NOT EXISTS "format" TEXT NOT NULL DEFAULT 'SWISS';
 
+-- 25. Club admins and rated-event approval (see ClubAdmin and Club.ratingStatus
+-- in schema.prisma). A club can have several admins; every existing club's
+-- creator becomes its first one. Only an app ADMIN approves a club for rated
+-- tournaments, so every existing club starts at NONE.
+ALTER TABLE "Club" ADD COLUMN IF NOT EXISTS "ratingStatus" TEXT NOT NULL DEFAULT 'NONE';
+ALTER TABLE "Club" ADD COLUMN IF NOT EXISTS "ratingReviewedAt" TIMESTAMP(3);
+CREATE INDEX IF NOT EXISTS "Club_ratingStatus_idx" ON "Club"("ratingStatus");
+CREATE TABLE IF NOT EXISTS "ClubAdmin" (
+    "clubId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "ClubAdmin_pkey" PRIMARY KEY ("clubId", "userId")
+);
+CREATE INDEX IF NOT EXISTS "ClubAdmin_userId_idx" ON "ClubAdmin"("userId");
+DO $$ BEGIN
+  ALTER TABLE "ClubAdmin" ADD CONSTRAINT "ClubAdmin_clubId_fkey" FOREIGN KEY ("clubId") REFERENCES "Club"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  ALTER TABLE "ClubAdmin" ADD CONSTRAINT "ClubAdmin_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+INSERT INTO "ClubAdmin" ("clubId", "userId")
+  SELECT "id", "createdById" FROM "Club" WHERE "createdById" IS NOT NULL
+  ON CONFLICT DO NOTHING;
+
 
 COMMIT;

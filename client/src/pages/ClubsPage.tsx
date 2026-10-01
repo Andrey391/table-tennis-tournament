@@ -6,20 +6,27 @@ import Loader from "../components/Loader";
 import EmptyState from "../components/EmptyState";
 import { useAuth } from "../context/AuthContext";
 import { useT } from "../i18n";
-import { btnPrimary, card, errorBox, field, pageTitle, searchField } from "../lib/ui";
+import { btnPrimary, card, errorBox, field, pageTitle, searchField, sectionLabel } from "../lib/ui";
 
 // The full list of clubs — guest-readable, like the rest of the browsing screens.
 // Each row opens the club's own page (/club/:id), which holds everything about it,
 // including the manager's controls for its details and tables.
 export default function ClubsPage() {
   const { t } = useT();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const navigate = useNavigate();
   const [clubs, setClubs] = useState<any[] | null>(null);
   const [search, setSearch] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [newClub, setNewClub] = useState({ name: "", city: "", address: "", phone: "" });
   const [error, setError] = useState("");
+  // The app admin's queue: clubs asking to hold rated tournaments.
+  const [pending, setPending] = useState<any[]>([]);
+  const isAppAdmin = user?.role === "ADMIN";
+  useEffect(() => {
+    if (!isAppAdmin) return;
+    apiService.clubs.getAll({ ratingStatus: "PENDING" }).then(r => setPending(r.data)).catch(console.error);
+  }, [isAppAdmin]);
 
   // Debounced so every keystroke doesn't fire a request.
   useEffect(() => {
@@ -63,6 +70,23 @@ export default function ClubsPage() {
         </form>
       )}
 
+      {pending.length > 0 && (
+        <section className="mb-4">
+          <h2 className={`${sectionLabel} mb-2`}>{t("clubs.pendingRating")}</h2>
+          <div className="space-y-2">
+            {pending.map(c => (
+              <Link key={c.id} to={`/club/${c.id}`} className={`${card} flex justify-between items-center gap-3 p-3 active:brightness-110`}>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{c.name}</p>
+                  <p className="text-xs text-[#93a8c2] truncate">{c.city}</p>
+                </div>
+                <span className="text-lg text-[#4d6480] shrink-0">&rsaquo;</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
       <input type="text" placeholder={t("clubs.search")} value={search} onChange={e => setSearch(e.target.value)} className={`${searchField} mb-3`} />
 
       {clubs === null ? (
@@ -74,7 +98,10 @@ export default function ClubsPage() {
           {clubs.map(c => (
             <Link key={c.id} to={`/club/${c.id}`} className={`${card} flex justify-between items-center gap-3 p-3 active:brightness-110`}>
               <div className="min-w-0">
-                <p className="text-sm font-medium truncate">{c.name}</p>
+                <p className="text-sm font-medium truncate">
+                  {c.name}
+                  {c.ratingStatus === "APPROVED" && <span className="ml-2 text-[10px] font-bold uppercase text-[#ccff00]">{t("clubs.ratedBadge")}</span>}
+                </p>
                 <p className="text-xs text-[#93a8c2] truncate">{c.city}{c.address ? ` · ${c.address}` : ""}</p>
                 <p className="text-[11px] text-[#4d6480] mt-0.5">
                   {t("clubs.tablesCount", { n: c._count?.tables ?? 0 })}

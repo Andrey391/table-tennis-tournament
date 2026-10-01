@@ -100,7 +100,9 @@ export const apiService = {
     getAll: (params?: { city?: string; clubId?: string }) => api.get("/rating", { params }),
   },
   clubs: {
-    getAll: (params?: { city?: string; q?: string }) => api.get("/clubs", { params }),
+    getAll: (params?: { city?: string; q?: string; ratingStatus?: "PENDING" }) => api.get("/clubs", { params }),
+    // The clubs the caller is an admin of, each with its ratingStatus.
+    mine: () => api.get("/clubs/mine"),
     cities: () => api.get("/clubs/cities"),
     getById: (id: string) => api.get(`/clubs/${id}`),
     availability: (id: string, date: string) => api.get(`/clubs/${id}/availability`, { params: { date } }),
@@ -110,6 +112,11 @@ export const apiService = {
     updateTable: (id: string, tableId: string, d: { number?: number; indoor?: boolean; pricePerHour?: number | null }) =>
       api.put(`/clubs/${id}/tables/${tableId}`, d),
     removeTable: (id: string, tableId: string) => api.delete(`/clubs/${id}/tables/${tableId}`),
+    addAdmin: (id: string, userId: string) => api.post(`/clubs/${id}/admins`, { userId }),
+    removeAdmin: (id: string, userId: string) => api.delete(`/clubs/${id}/admins/${userId}`),
+    // A club admin asks to hold rated tournaments; an app admin decides.
+    requestRating: (id: string) => api.post(`/clubs/${id}/rating-request`),
+    decideRating: (id: string, approved: boolean) => api.post(`/clubs/${id}/rating-decision`, { approved }),
   },
   bookings: {
     getMine: () => api.get("/bookings/mine"),

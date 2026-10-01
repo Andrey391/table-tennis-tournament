@@ -21,7 +21,11 @@ export type NotificationType =
   | "EVENT_DELETED"       // participants: the event is gone
   | "CHAT_MESSAGE"        // participants: someone wrote in the event chat
   | "QUICK_GAME"          // opponent: someone recorded a game played against them
-  | "CLUB_NEW_EVENT";     // followers of a club: a new public event there
+  | "CLUB_NEW_EVENT"      // followers of a club: a new public event there
+  | "CLUB_ADMIN_ADDED"    // player: made an admin of a club
+  | "CLUB_RATING_REQUESTED" // app admins: a club asks to hold rated tournaments
+  | "CLUB_RATING_APPROVED"  // club admins: the club may now hold rated tournaments
+  | "CLUB_RATING_DECLINED"; // club admins: request turned down or approval withdrawn
 
 export interface NewNotification {
   userId: string;

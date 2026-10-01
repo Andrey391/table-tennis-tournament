@@ -88,6 +88,7 @@ model User {
   subscriptions    Subscription[]
   chatMessages     ChatMessage[]
   createdClubs     Club[]    @relation("clubCreator")
+  clubAdmins       ClubAdmin[]
   byes             RoundBye[]
   notifications    Notification[]
   pushSubscriptions PushSubscription[]
@@ -107,10 +108,18 @@ model Club {
   city          String
   address       String?
   phone         String?
+  // Who created the club. Kept for the record only: who may manage it is
+  // ClubAdmin, which the creator is put into when the club is made.
   createdById   String?
   createdBy     User?    @relation("clubCreator", fields: [createdById], references: [id])
+  // Whether the club may hold rated (TOURNAMENT-kind) events: NONE, PENDING
+  // (a club admin asked) or APPROVED. Only an app ADMIN moves it to APPROVED or
+  // back to NONE; only a club admin moves it to PENDING.
+  ratingStatus  String   @default("NONE")
+  ratingReviewedAt DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  admins        ClubAdmin[]
   tables        ClubTable[]
   bookings      Booking[]
   subscriptions Subscription[]
@@ -118,6 +127,20 @@ model Club {
 
   @@unique([name, city])
   @@index([city])
+  @@index([ratingStatus])
+}
+
+// The people who run a club: edit it, manage its tables and admins and, once the
+// club is approved, create rated tournaments there. A club can have several.
+model ClubAdmin {
+  clubId    String
+  club      Club     @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([clubId, userId])
+  @@index([userId])
 }
 
 model ClubTable {

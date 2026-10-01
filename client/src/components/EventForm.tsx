@@ -48,8 +48,11 @@ const overlaps = (aStart: string, aHours: number, bStart: string, bHours: number
 // submit into a real table booking (POST /bookings, which creates the booking
 // and the event together); with no club there is no table to hold, so the
 // event is created directly and — since a tournament's rounds need a venue —
-// only a plain game is offered. Managing a club's own tables/details lives
-// solely on /clubs now; this form only ever *selects* among what's there.
+// only a plain game is offered. A tournament moves rating, so it is offered
+// only at a club the user is an admin of and that an app admin has approved for
+// rated play (the server enforces the same rule). Managing a club's own
+// tables/details lives solely on /clubs now; this form only ever *selects*
+// among what's there.
 export default function EventForm({
   defaultEventType = "GAME",
   initialClubId = "",
@@ -62,6 +65,8 @@ export default function EventForm({
 }) {
   const { t, lang } = useT();
   const [clubs, setClubs] = useState<any[] | null>(null);
+  // Clubs where this user may create a rated tournament.
+  const [ratedClubIds, setRatedClubIds] = useState<Set<string>>(new Set());
   const [availability, setAvailability] = useState<any[]>([]);
   const [showSchedule, setShowSchedule] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -81,6 +86,15 @@ export default function EventForm({
   const [endTouched, setEndTouched] = useState(false);
 
   useEffect(() => { apiService.clubs.getAll().then(r => setClubs(r.data)).catch(e => { console.error(e); setClubs(p => p ?? []); }); }, []);
+  useEffect(() => {
+    apiService.clubs.mine().then(r => {
+      const rated: string[] = r.data.filter((c: any) => c.ratingStatus === "APPROVED").map((c: any) => c.id);
+      setRatedClubIds(new Set(rated));
+      // Opened as "new tournament" with no venue picked: start at the user's
+      // own approved club, the only kind of place a tournament can be held.
+      if (defaultEventType === "TOURNAMENT" && rated.length) setForm(f => (f.clubId ? f : { ...f, clubId: rated[0] }));
+    }).catch(console.error);
+  }, []);
 
   const loadAvailability = () => {
     if (!form.clubId || !form.date) { setAvailability([]); return; }
@@ -97,8 +111,10 @@ export default function EventForm({
   }));
 
   // No club selected means no table to hold, so a tournament (which needs a
-  // venue for its rounds) isn't on offer — only a simple game.
-  const effectiveType: "GAME" | "TOURNAMENT" = form.clubId ? form.eventType : "GAME";
+  // venue for its rounds) isn't on offer — only a simple game. Nor is it at a
+  // club where this user can't hold a rated event.
+  const canRate = !!form.clubId && ratedClubIds.has(form.clubId);
+  const effectiveType: "GAME" | "TOURNAMENT" = canRate ? form.eventType : "GAME";
 
   const hasSlot = !!(form.startTime && form.endTime);
   let slotHours = 0;
@@ -289,7 +305,7 @@ export default function EventForm({
 
       <div>
         <label className={fieldLabel}>{t("play.bookingFor")} <HelpTip text={t("help.bookingFor")} /></label>
-        {form.clubId ? (
+        {canRate ? (
           <div className="flex gap-2">
             {(["GAME", "TOURNAMENT"] as const).map(kind => (
               <button key={kind} type="button" onClick={() => set("eventType", kind)}
@@ -299,7 +315,7 @@ export default function EventForm({
             ))}
           </div>
         ) : (
-          <p className="text-xs text-[#4d6480]">{t("play.gameOnlyNoClub")}</p>
+          <p className="text-xs text-[#4d6480]">{t(form.clubId ? "play.tournamentNeedsRatedClub" : "play.gameOnlyNoClub")}</p>
         )}
       </div>
 

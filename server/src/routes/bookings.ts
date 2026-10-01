@@ -9,6 +9,7 @@ import { findBookingConflict } from "./clubs";
 import { bookingInclude } from "../shared/queries";
 import { computeBookingPrice, initiatePayment, paymentMode } from "../shared/payments";
 import { notifyClubFollowers } from "../shared/notify";
+import { canHoldRatedEvent, RATED_EVENT_FORBIDDEN } from "../shared/clubs";
 
 export const bookingRouter = Router();
 
@@ -20,6 +21,10 @@ bookingRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, res: R
     const data = CreateBookingSchema.parse(req.body);
     const club = await prisma.club.findUnique({ where: { id: data.clubId } });
     if (!club) { res.status(404).json({ error: "Club not found" }); return; }
+    // A rated event is only ever created by an admin of an approved club.
+    if (data.eventType === "TOURNAMENT" && !(await canHoldRatedEvent(club.id, req.user!.userId))) {
+      res.status(403).json({ error: RATED_EVENT_FORBIDDEN }); return;
+    }
 
     let table = null as Awaited<ReturnType<typeof prisma.clubTable.findUnique>>;
     if (data.tableId) {

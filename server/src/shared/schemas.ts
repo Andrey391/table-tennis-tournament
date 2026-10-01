@@ -70,6 +70,11 @@ export const CreateClubSchema = z.object({
 
 export const UpdateClubSchema = CreateClubSchema.partial();
 
+export const AddClubAdminSchema = z.object({ userId: z.string().min(1) });
+
+// The app admin's answer on a club's request to hold rated tournaments.
+export const ClubRatingDecisionSchema = z.object({ approved: z.boolean() });
+
 export const CreateClubTableSchema = z.object({
   number: z.number().int().min(1).max(200),
   indoor: z.boolean().default(true),

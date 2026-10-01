@@ -24,8 +24,12 @@ async function main() {
   const club = await prisma.club.upsert({
     where: { name_city: { name: "Moscow TT", city: "Moscow" } },
     update: {},
-    create: { name: "Moscow TT", city: "Moscow", address: "Ul. Primernaya 1", phone: "+7 900 000-00-00", createdById: admin.id },
+    create: { name: "Moscow TT", city: "Moscow", address: "Ul. Primernaya 1", phone: "+7 900 000-00-00", createdById: admin.id, ratingStatus: "APPROVED", ratingReviewedAt: new Date() },
   });
+  // Both seeded staff run it, so either can create a rated tournament there.
+  for (const userId of [admin.id, organizer.id]) {
+    await prisma.clubAdmin.upsert({ where: { clubId_userId: { clubId: club.id, userId } }, update: {}, create: { clubId: club.id, userId } });
+  }
   for (const number of [1, 2, 3, 4]) {
     await prisma.clubTable.upsert({
       where: { clubId_number: { clubId: club.id, number } },

@@ -11,6 +11,7 @@ import { isBracket, bracketOf, bracketView } from "../shared/bracket";
 import { playerSelect, clubSelect, matchInclude, tournamentDetailInclude, feedInclude, FEED_PLAYERS, standingsInclude, inCity, queryString, queryDate } from "../shared/queries";
 import { hasOpenDemoSeat, resetDemoRound1 } from "../shared/demo";
 import { notify, notifyClubFollowers, eventAudience, shortName } from "../shared/notify";
+import { canHoldRatedEvent, RATED_EVENT_FORBIDDEN } from "../shared/clubs";
 import AuditLog from "../models/AuditLog";
 
 export const tournamentRouter = Router();
@@ -39,6 +40,11 @@ tournamentRouter.post("/", authMiddleware, async (req: AuthenticatedRequest, res
     // and the event together.
     if (data.kind === "TOURNAMENT" && !data.clubId) {
       res.status(400).json({ error: "Tournaments need a club — book one instead" });
+      return;
+    }
+    // A rated event is only ever created by an admin of an approved club.
+    if (data.kind === "TOURNAMENT" && !(await canHoldRatedEvent(data.clubId, req.user!.userId))) {
+      res.status(403).json({ error: RATED_EVENT_FORBIDDEN });
       return;
     }
     // Same fallback POST /bookings uses for eventTitle: the club's name, or —
@@ -217,6 +223,12 @@ tournamentRouter.put("/:id", authMiddleware, async (req: AuthenticatedRequest, r
     // The format decides how round 1 is drawn and everything after it.
     if (data.format && data.format !== tournament.format && tournament.status !== "DRAFT") {
       res.status(400).json({ error: "The format can only be changed before round 1" }); return;
+    }
+    // Moving a rated event to another club (or off any club) would carry it past
+    // the gate it was created through.
+    if (tournament.kind === "TOURNAMENT" && data.clubId !== undefined && data.clubId !== tournament.clubId
+        && !(await canHoldRatedEvent(data.clubId, req.user!.userId))) {
+      res.status(403).json({ error: RATED_EVENT_FORBIDDEN }); return;
     }
     const updated = await prisma.tournament.update({ where: { id: tournament.id }, data });
     await AuditLog.create({ userId: req.user!.userId, action: "TOURNAMENT_UPDATE", entity: "Tournament", entityId: tournament.id, newValue: data });
