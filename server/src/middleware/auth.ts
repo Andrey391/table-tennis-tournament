@@ -39,6 +39,16 @@ export function authMiddleware(req: AuthenticatedRequest, res: Response, next: N
   }
 }
 
+// For routes a guest may call too: a valid token fills `req.user`, anything else
+// (no token, a bad or expired one) just leaves the request a guest's.
+export function optionalAuth(req: AuthenticatedRequest, _res: Response, next: NextFunction): void {
+  const header = req.headers.authorization;
+  if (header?.startsWith("Bearer ")) {
+    try { req.user = jwt.verify(header.split(" ")[1], jwtSecret()) as { userId: string; role: string }; } catch { /* a guest */ }
+  }
+  next();
+}
+
 export function roleMiddleware(...roles: string[]) {
   return (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
     if (!req.user) {

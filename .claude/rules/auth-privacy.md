@@ -48,5 +48,5 @@ paths:
 
 ## Guest access (server side)
 - `GET /players/:id` is unauthenticated and returns the public shape (no email or phone).
-- `GET /players` requires auth and carries no email or phone.
-- The gated GETs (`/auth/me`, `/players`, `/profile/stats`, `/tournaments/mine`, chat, `/bookings/mine`, `/subscriptions/mine`) are exactly the ones no guest screen calls.
+- `GET /players?q=` never carries email or phone. With a valid token (`optionalAuth`, a demo token included) it is everyone you could add to an event (`notDemo`, not deleted). Without one it is the public list: `listed` only, the public shape, top 100 by rating. `q` matches every word against first or last name.
+- The gated GETs (`/auth/me`, `/profile/stats`, `/tournaments/mine`, chat, `/bookings/mine`, `/subscriptions/mine`) are exactly the ones no guest screen calls.

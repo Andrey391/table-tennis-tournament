@@ -2,7 +2,7 @@ import { Response } from "express";
 import { Router } from "../shared/router";
 import { publicError } from "../shared/errors";
 import { prisma } from "../config/db";
-import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
+import { AuthenticatedRequest, authMiddleware, optionalAuth } from "../middleware/auth";
 import { UpdateProfileSchema } from "../shared/schemas";
 import { summariseMatches } from "../shared/stats";
 import { notDemo } from "../shared/demo";
@@ -13,24 +13,44 @@ import bcrypt from "bcryptjs";
 
 export const playerRouter = Router();
 
-// Any signed-up account can read this list, so it carries no contact details.
+// Anyone can read this list, so it carries no contact details.
 const listSelect = { id: true, firstName: true, lastName: true, role: true, city: true, rating: true, createdAt: true };
+// What a guest gets: the same fields as the public profile (GET /players/:id).
+const publicListSelect = { id: true, firstName: true, lastName: true, city: true, rating: true };
 // What the owner gets back after editing — the same shape `/auth/me` returns, so
 // the client can drop it straight into its session user.
 const selfSelect = { ...listSelect, email: true, phone: true, dateOfBirth: true, isDemo: true, demoExpiresAt: true, publicProfile: true, consentAt: true };
 
-playerRouter.get("/", authMiddleware, async (_req, res: Response) => {
+// `?q=` matches every word against the first or last name, so "Иван Петров",
+// "петров" and "Пет Ив" all find the same player.
+function nameSearch(q: string | undefined) {
+  const words = q?.trim().split(/\s+/).filter(Boolean).slice(0, 4) ?? [];
+  return words.map(w => ({ OR: [{ firstName: { contains: w, mode: "insensitive" as const } }, { lastName: { contains: w, mode: "insensitive" as const } }] }));
+}
+
+// Signed in, this is everyone you could add to an event (the roster picker).
+// A guest gets the public list instead: only players who agreed to their name
+// being shown to anyone (`listed`), in the public shape, at most 100 at a time —
+// enough to search by name and tap through to /player/:id.
+playerRouter.get("/", optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const search = nameSearch(queryString(req.query.q));
+  const where = search.length ? { AND: search } : {};
+  if (!req.user) {
+    const players = await prisma.user.findMany({ where: { ...listed, ...where }, select: publicListSelect, orderBy: { rating: "desc" }, take: 100 });
+    res.json(players);
+    return;
+  }
   // Demo accounts are throwaway, and their sparring partners are not people at
   // all — neither belongs in a list of players you can add to a real event.
   // Deleted accounts are not people you can add either.
-  const players = await prisma.user.findMany({ where: { ...notDemo, deletedAt: null }, select: listSelect, orderBy: { rating: "desc" } });
+  const players = await prisma.user.findMany({ where: { ...notDemo, deletedAt: null, ...where }, select: listSelect, orderBy: { rating: "desc" } });
   res.json(players);
 });
 
 // Anyone can open anyone's profile, signed in or not: who they are, how they are
 // doing, and the matches behind it. Unauthenticated because a guest browsing the
 // rating table must be able to tap through to a player — the select below is the
-// public shape (no email, no phone), unlike GET /players, which stays gated.
+// public shape (no email, no phone).
 playerRouter.get("/:id", async (req: AuthenticatedRequest, res: Response) => {
   const player = await prisma.user.findUnique({
     where: { id: req.params.id },

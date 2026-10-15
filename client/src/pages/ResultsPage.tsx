@@ -51,7 +51,20 @@ export default function ResultsPage() {
     apiService.rating.getAll().then(r => setRatingPlayers(r.data)).catch(() => setRatingPlayers([]));
   }, [tab, metric, ratingPlayers]);
 
-  const filteredRatingPlayers = (ratingPlayers ?? []).filter(p => `${p.firstName} ${p.lastName}`.toLowerCase().includes(ratingSearch.toLowerCase()));
+  // The table holds the top 100 only, so a name search asks the server, which
+  // finds anyone listed. Until it answers, the top 100 are filtered locally.
+  const [searchHits, setSearchHits] = useState<any[] | null>(null);
+  useEffect(() => {
+    setSearchHits(null);
+    const q = ratingSearch.trim();
+    if (q.length < 2) return;
+    const timer = setTimeout(() => {
+      apiService.players.getAll({ q }).then(r => setSearchHits(r.data)).catch(() => setSearchHits(null));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [ratingSearch]);
+
+  const filteredRatingPlayers = searchHits ?? (ratingPlayers ?? []).filter(p => `${p.firstName} ${p.lastName}`.toLowerCase().includes(ratingSearch.toLowerCase()));
 
   return (
     <Layout>
@@ -145,7 +158,7 @@ export default function ResultsPage() {
                         {/* Ranks come from the unfiltered order, so searching doesn't crown someone 1st. */}
                         {!ratingSearch && i < 3 ? (
                           <span className="shrink-0 inline-flex w-6 h-6 rounded-full text-xs font-bold items-center justify-center text-[#0a1628]" style={{ background: MEDALS[i] }}>{i + 1}</span>
-                        ) : <span className="text-xs text-[#4d6480] w-6 shrink-0 text-center">{(ratingPlayers ?? []).indexOf(p) + 1}</span>}
+                        ) : <span className="text-xs text-[#4d6480] w-6 shrink-0 text-center">{(rank => rank > 0 ? rank : "")((ratingPlayers ?? []).findIndex(r => r.id === p.id) + 1)}</span>}
                         <Avatar firstName={p.firstName} lastName={p.lastName} rating={p.rating} size="sm" />
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate">{p.firstName} {p.lastName}</p>
