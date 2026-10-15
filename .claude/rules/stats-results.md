@@ -18,7 +18,7 @@ Everything is computed live from completed matches. Nothing is cached or denorma
 - `GET /results?kind=&city=&clubId=&q=&userId=`: `ACTIVE`/`COMPLETED` events, newest first. Each has a `podium` (top 3 of `eventStandings`, with `ratingChange` and set score), a player count and a live-match count. `userId` narrows to that player's events and then includes private ones. Backs the "Итоги" tab of `ResultsPage`.
 - `GET /leaders?metric=rating|wins|played&period=month|year|all&city=`: "Лидеры" tab. `rating` = net change (`eloDelta` for wins, `eloDeltaLoser` for losses) over the window. Demo players are excluded and the output is filtered by `listed`.
 - **Rating list**: `GET /rating?city=&clubId=`. `clubId` means followers of the club, or players with a `REGISTERED`/`WITHDRAWN` row in an event there. Uses `notDemo` + `listed`.
-  - Its UI is the "Таблица" option of the Leaders tab in `ResultsPage` (no city filter there).
+  - Its UI is the "Таблица" option of the Leaders tab in `ResultsPage` (no city filter there). It holds the top 100; a search of 2+ characters asks `GET /players?q=` instead, so a guest finds any listed player by name.
   - `RatingPage.tsx` (opens on the viewer's city, keeps a hand-picked one under `localStorage` `ratingCity`) is still routed at `/rating` and `/players` (`PlayersPage` re-exports it), but nothing links to it.
   - Both explain that this is the app's own FNTR-formula rating, not the official one.
 - `GET /players/:id/stats`:

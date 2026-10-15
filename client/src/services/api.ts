@@ -29,7 +29,9 @@ export const apiService = {
     deleteAccount: (password: string) => api.delete("/auth/me", { data: { password } }),
   },
   players: {
-    getAll: () => api.get("/players"),
+    // Signed in: everyone you could add to an event. A guest gets only players
+    // with a public profile, at most 100. `q` searches first and last names.
+    getAll: (params?: { q?: string }) => api.get("/players", { params }),
     // A player's public profile plus the matches behind their rating.
     getById: (id: string) => api.get(`/players/${id}`),
     // That player's matches on one calendar day — played ones with their real
